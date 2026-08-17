@@ -1,0 +1,269 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Lexend:wght@400;500;600;700;800&family=Noto+Sans+Sinhala:wght@400;500;600;700&display=swap');
+
+:root {
+  --moodle-bg: #f8f9fa;
+  --moodle-primary: #0f4c81; /* Premium Moodle blue */
+  --moodle-accent: #f26f21;  /* Classic Orange accent */
+  --moodle-success: #198754;
+  --moodle-card-bg: #ffffff;
+  --moodle-border: #dee2e6;
+  --moodle-text: #212529;
+  --moodle-text-muted: #6c757d;
+  --sidebar-width: 260px;
+}
+
+body {
+  font-family: 'Noto Sans Sinhala', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background-color: var(--moodle-bg);
+  color: var(--moodle-text);
+  overflow-x: hidden;
+}
+
+h1, h2, h3, h4, h5, h6, .moodle-brand {
+  font-family: 'Noto Sans Sinhala', 'Lexend', sans-serif;
+}
+
+/* Collapsible Left Navigation Drawer */
+.moodle-drawer {
+  width: var(--sidebar-width);
+  height: 100vh;
+  position: fixed;
+  top: 0;
+  left: 0;
+  background-color: #ffffff;
+  border-right: 1px solid var(--moodle-border);
+  z-index: 1040;
+  transition: transform 0.3s ease;
+  overflow-y: auto;
+  padding-top: 70px;
+}
+
+.moodle-drawer.collapsed {
+  transform: translateX(-100%);
+}
+
+/* Main Content Wrapper adjust to sidebar */
+.moodle-content-wrapper {
+  margin-left: var(--sidebar-width);
+  transition: margin-left 0.3s ease;
+  min-height: 100vh;
+  padding-top: 70px;
+}
+
+.moodle-content-wrapper.full-width {
+  margin-left: 0;
+}
+
+/* Moodle Top Navigation Header */
+.moodle-header {
+  height: 70px;
+  position: fixed;
+  top: 0;
+  right: 0;
+  left: 0;
+  background-color: #ffffff;
+  border-bottom: 1px solid var(--moodle-border);
+  z-index: 1050;
+  display: flex;
+  align-items: center;
+  justify-content: justify;
+}
+
+/* Moodle Cards */
+.moodle-card {
+  background: var(--moodle-card-bg);
+  border: 1px solid var(--moodle-border);
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.moodle-card:hover {
+  box-shadow: 0 4px 12px rgba(0,0,0,0.07);
+}
+
+/* Navigation Drawer Links */
+.drawer-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 24px;
+  color: var(--moodle-text);
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 0.95rem;
+  border-left: 4px solid transparent;
+  transition: all 0.2s ease;
+}
+
+.drawer-link:hover {
+  background-color: #f1f3f5;
+  color: var(--moodle-primary);
+}
+
+.drawer-link.active {
+  background-color: #e8f0fe;
+  color: var(--moodle-primary);
+  border-left-color: var(--moodle-primary);
+  font-weight: 600;
+}
+
+/* Activity Icons & Checkboxes */
+.activity-icon-box {
+  width: 40px;
+  height: 40px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 1.25rem;
+  flex-shrink: 0;
+}
+
+.icon-blue { background-color: #3b82f6; }
+.icon-red { background-color: #ef4444; }
+.icon-green { background-color: #10b981; }
+.icon-orange { background-color: #f59e0b; }
+
+.moodle-checkbox {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  border: 2px solid var(--moodle-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background-color: #fff;
+}
+
+.moodle-checkbox.checked {
+  background-color: var(--moodle-success);
+  border-color: var(--moodle-success);
+  color: #fff;
+}
+
+/* Timeline Activity List */
+.timeline-item {
+  position: relative;
+  padding-left: 20px;
+  border-left: 2px solid var(--moodle-border);
+  padding-bottom: 20px;
+}
+
+.timeline-item::before {
+  content: '';
+  position: absolute;
+  left: -7px;
+  top: 5px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background-color: var(--moodle-primary);
+}
+
+.timeline-item.done::before {
+  background-color: var(--moodle-success);
+}
+
+/* Course progress rings */
+.progress-ring-circle {
+  transition: stroke-dashoffset 0.35s;
+  transform: rotate(-90deg);
+  transform-origin: 50% 50%;
+}
+
+/* Custom interactive sections */
+.section-header {
+  background-color: #f8f9fa;
+  border: 1px solid var(--moodle-border);
+  border-radius: 6px;
+  padding: 16px 20px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.section-header:hover {
+  background-color: #e9ecef;
+}
+
+/* Profile Dropdown Header styling */
+.user-menu-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: none;
+  padding: 4px;
+  border-radius: 4px;
+  transition: background-color 0.2s ease;
+}
+
+.user-menu-btn:hover {
+  background-color: #f1f3f5;
+}
+
+/* Breadcrumbs customization */
+.moodle-breadcrumb {
+  background-color: transparent;
+  padding: 0;
+  margin-bottom: 20px;
+}
+
+.moodle-breadcrumb a {
+  color: var(--moodle-primary);
+  text-decoration: none;
+}
+
+.moodle-breadcrumb a:hover {
+  text-decoration: underline;
+}
+
+/* Quick Tab selectors */
+.moodle-tab-btn {
+  font-weight: 500;
+  padding: 8px 16px;
+  border: none;
+  background: none;
+  border-bottom: 3px solid transparent;
+  color: var(--moodle-text-muted);
+  transition: all 0.2s ease;
+}
+
+.moodle-tab-btn:hover, .moodle-tab-btn.active {
+  color: var(--moodle-primary);
+  border-bottom-color: var(--moodle-primary);
+}
+
+/* Custom Modal/Popup styled for Moodle */
+.moodle-popup-dialog {
+  border-radius: 8px;
+  border: 0;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+}
+
+.moodle-popup-header {
+  border-bottom: 1px solid var(--moodle-border);
+  padding: 16px 24px;
+}
+
+.moodle-popup-body {
+  padding: 24px;
+}
+
+.moodle-popup-footer {
+  border-top: 1px solid var(--moodle-border);
+  padding: 16px 24px;
+}
+
+/* Tailwind & Bootstrap Collapse Conflict Fix */
+.collapse.show {
+  visibility: visible !important;
+  display: block !important;
+}
+.collapsing {
+  visibility: visible !important;
+}
+

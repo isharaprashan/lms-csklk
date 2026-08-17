@@ -1,0 +1,297 @@
+{
+  "courses": [
+    {
+      "id": "cs-101",
+      "title": "Introduction to Computer Science & Algorithms",
+      "category": "Computer Science",
+      "level": "Beginner",
+      "duration": 18,
+      "enrolled_count": 1420,
+      "rating": 4.8,
+      "review_count": 312,
+      "tutor": {
+        "name": "Dr. Sanduni Perera",
+        "title": "Senior Lecturer in CS",
+        "avatar": "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&h=150&fit=crop&crop=faces"
+      },
+      "short_description": "Master the fundamental concepts of computational thinking, algorithms, and data structures.",
+      "long_description": "This course is designed to introduce students to the foundational concepts of computer science. You will learn how to design, analyze, and implement algorithms to solve real-world problems. We will cover variables, control structures, basic data structures (arrays, lists, stacks, queues), sorting and searching algorithms, and complexity analysis (Big O notation).",
+      "thumbnail": "https://images.unsplash.com/photo-1517694712202-14dd9538aa97?w=600&h=400&fit=crop",
+      "lessons": [
+        {
+          "id": "l-101-1",
+          "title": "Welcome to Computer Science",
+          "duration": "12 mins",
+          "video_url": "https://www.w3schools.com/html/mov_bbb.mp4",
+          "content": "In this lesson, we will explore what computer science is, its history, and its applications in the modern world."
+        },
+        {
+          "id": "l-101-2",
+          "title": "Understanding Algorithms & Pseudocode",
+          "duration": "24 mins",
+          "video_url": "https://www.w3schools.com/html/mov_bbb.mp4",
+          "content": "Algorithms are step-by-step procedures for calculations. We will learn how to write algorithms using clear pseudocode."
+        },
+        {
+          "id": "l-101-3",
+          "title": "Basic Control Flow: Conditionals and Loops",
+          "duration": "30 mins",
+          "video_url": "https://www.w3schools.com/html/mov_bbb.mp4",
+          "content": "Learn how programs make decisions and repeat actions using if-else statements and while/for loops."
+        },
+        {
+          "id": "l-101-4",
+          "title": "Introduction to Complexity Analysis (Big O)",
+          "duration": "35 mins",
+          "video_url": "https://www.w3schools.com/html/mov_bbb.mp4",
+          "content": "Understand how to measure the performance and efficiency of your algorithms as data scales."
+        }
+      ],
+      "quiz": [
+        {
+          "question_id": "q-101-1",
+          "question": "Which of the following describes the worst-case time complexity of linear search?",
+          "options": [
+            "O(1)",
+            "O(log n)",
+            "O(n)",
+            "O(n^2)"
+          ],
+          "answer_index": 2
+        },
+        {
+          "question_id": "q-101-2",
+          "question": "What is an algorithm?",
+          "options": [
+            "A type of programming language",
+            "A step-by-step set of instructions for solving a problem",
+            "A hardware component in a computer",
+            "A database management system"
+          ],
+          "answer_index": 1
+        },
+        {
+          "question_id": "q-101-3",
+          "question": "Which data structure operates on a Last-In, First-Out (LIFO) basis?",
+          "options": [
+            "Queue",
+            "Array",
+            "Linked List",
+            "Stack"
+          ],
+          "answer_index": 3
+        }
+      ],
+      "qa": [
+        {
+          "qa_id": "qa-101-1",
+          "student_name": "Kasun Silva",
+          "student_avatar": "https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=100&h=100&fit=crop",
+          "timestamp": "2026-07-15 10:30",
+          "question": "Is it critical to understand Big O notation before learning Java or Python?",
+          "answers": [
+            {
+              "replier_name": "Dr. Sanduni Perera",
+              "replier_avatar": "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=100&h=100&fit=crop",
+              "content": "Not strictly necessary for writing basic syntax, but as soon as you start writing code that handles larger datasets or needs to perform well, Big O becomes essential. It's best to learn them hand-in-hand!",
+              "timestamp": "2026-07-15 14:15"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "webdev-full",
+      "title": "Full-Stack Web Development Boot Camp",
+      "category": "Web Development",
+      "level": "Intermediate",
+      "duration": 45,
+      "enrolled_count": 2840,
+      "rating": 4.9,
+      "review_count": 890,
+      "tutor": {
+        "name": "Amara Bandara",
+        "title": "Lead Software Engineer",
+        "avatar": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&h=150&fit=crop&crop=faces"
+      },
+      "short_description": "Build high-performance web applications using HTML5, CSS3, Tailwind, JavaScript, and Node.js.",
+      "long_description": "Transform from a complete beginner to a production-ready developer. This comprehensive boot camp covers frontend design utilizing Bootstrap and Tailwind CSS, native JavaScript DOM manipulation, AJAX communication, and backend development with Node.js, Express, and databases.",
+      "thumbnail": "https://images.unsplash.com/photo-1498050108023-c5249f4df085?w=600&h=400&fit=crop",
+      "lessons": [
+        {
+          "id": "l-web-1",
+          "title": "Building Modern Layouts with Tailwind CSS",
+          "duration": "18 mins",
+          "video_url": "https://www.w3schools.com/html/mov_bbb.mp4",
+          "content": "Discover how utility-first CSS styling allows you to build modern interfaces directly in your HTML markup without writing custom stylesheets."
+        },
+        {
+          "id": "l-web-2",
+          "title": "Asynchronous JavaScript & AJAX Explained",
+          "duration": "28 mins",
+          "video_url": "https://www.w3schools.com/html/mov_bbb.mp4",
+          "content": "Learn the power of asynchronous operations. We will look at fetch(), promises, and how AJAX updates content dynamically."
+        },
+        {
+          "id": "l-web-3",
+          "title": "Creating Dynamic Web APIs with Node & Express",
+          "duration": "35 mins",
+          "video_url": "https://www.w3schools.com/html/mov_bbb.mp4",
+          "content": "Set up a lightweight server in Node, define routes, handle requests, and send custom JSON payloads to client-side AJAX calls."
+        }
+      ],
+      "quiz": [
+        {
+          "question_id": "q-web-1",
+          "question": "What does AJAX stand for?",
+          "options": [
+            "Asynchronous JavaScript and XML",
+            "Advanced Junction of Auxiliary XML",
+            "Active Java And XHTML",
+            "Aligned JavaScript and XHTML"
+          ],
+          "answer_index": 0
+        },
+        {
+          "question_id": "q-web-2",
+          "question": "Which Tailwind CSS class is used to set the background opacity to 50%?",
+          "options": [
+            "bg-opacity-50",
+            "opacity-50",
+            "bg-black/50",
+            "All of the above depending on configuration"
+          ],
+          "answer_index": 3
+        }
+      ],
+      "qa": [
+        {
+          "qa_id": "qa-web-1",
+          "student_name": "Ruwan Fernando",
+          "student_avatar": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop",
+          "timestamp": "2026-07-16 08:00",
+          "question": "Is it possible to use both Bootstrap and Tailwind CSS in the same enterprise project?",
+          "answers": [
+            {
+              "replier_name": "Amara Bandara",
+              "replier_avatar": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&h=100&fit=crop",
+              "content": "Yes! You can disable preflight in Tailwind to avoid overriding Bootstrap's resets. Many teams use Bootstrap for components (Modals, Tables) and Tailwind for spacing, colors, and fine layouts.",
+              "timestamp": "2026-07-16 09:12"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ai-python",
+      "title": "Applied Artificial Intelligence & Machine Learning",
+      "category": "Artificial Intelligence",
+      "level": "Advanced",
+      "duration": 32,
+      "enrolled_count": 940,
+      "rating": 4.7,
+      "review_count": 188,
+      "tutor": {
+        "name": "Prof. Nalin Wijesekera",
+        "title": "AI Research Scientist",
+        "avatar": "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop&crop=faces"
+      },
+      "short_description": "Build intelligent agents, predict patterns, and train Neural Networks with Python and PyTorch.",
+      "long_description": "Dive deep into the mathematical models and software design principles that drive modern Artificial Intelligence. You will build and train models from scratch, work with classification, regression, and deep learning, and deploy models as simple web endpoints.",
+      "thumbnail": "https://images.unsplash.com/photo-1507146426996-ef05306b995a?w=600&h=400&fit=crop",
+      "lessons": [
+        {
+          "id": "l-ai-1",
+          "title": "Foundations of Supervised Learning",
+          "duration": "22 mins",
+          "video_url": "https://www.w3schools.com/html/mov_bbb.mp4",
+          "content": "Learn the math and intuition behind linear regression, cost functions, and gradient descent algorithms."
+        },
+        {
+          "id": "l-ai-2",
+          "title": "Building Neural Networks from Scratch",
+          "duration": "40 mins",
+          "video_url": "https://www.w3schools.com/html/mov_bbb.mp4",
+          "content": "Implement feed-forward propagation, backpropagation, and activation functions like ReLU and Sigmoid."
+        }
+      ],
+      "quiz": [
+        {
+          "question_id": "q-ai-1",
+          "question": "What is the primary objective of Gradient Descent?",
+          "options": [
+            "Maximize accuracy directly",
+            "Minimize the Cost/Loss function",
+            "Sort training data features",
+            "Increase network layers dynamically"
+          ],
+          "answer_index": 1
+        }
+      ],
+      "qa": []
+    },
+    {
+      "id": "cyber-sec",
+      "title": "Practical Cybersecurity & Ethical Hacking",
+      "category": "Cyber Security",
+      "level": "Intermediate",
+      "duration": 25,
+      "enrolled_count": 810,
+      "rating": 4.6,
+      "review_count": 92,
+      "tutor": {
+        "name": "Janaka Silva",
+        "title": "Certified Ethical Hacker (CEH)",
+        "avatar": "https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=150&h=150&fit=crop&crop=faces"
+      },
+      "short_description": "Protect your networks, audit web apps, and understand key encryption & security concepts.",
+      "long_description": "Understand security from an attacker's perspective. In this course, you will learn the basics of network security, ethical hacking methodologies, penetration testing, SQL injection, XSS, and how to defend systems from vulnerabilities.",
+      "thumbnail": "https://images.unsplash.com/photo-1550751827-4bd374c3f58b?w=600&h=400&fit=crop",
+      "lessons": [
+        {
+          "id": "l-sec-1",
+          "title": "Introduction to Penetration Testing",
+          "duration": "20 mins",
+          "video_url": "https://www.w3schools.com/html/mov_bbb.mp4",
+          "content": "Learn the legal boundaries and core phases of security audits, from reconnaissance to reporting."
+        },
+        {
+          "id": "l-sec-2",
+          "title": "Cross-Site Scripting (XSS) Attacks and Mitigation",
+          "duration": "30 mins",
+          "video_url": "https://www.w3schools.com/html/mov_bbb.mp4",
+          "content": "Understand how user input can execute script payloads in the browser and how to prevent it."
+        }
+      ],
+      "quiz": [
+        {
+          "question_id": "q-sec-1",
+          "question": "Which of the following is the best defense against SQL injection?",
+          "options": [
+            "Client-side form validation",
+            "Encrypting the database storage",
+            "Using parameterized queries (prepared statements)",
+            "Hiding URL path parameters"
+          ],
+          "answer_index": 2
+        }
+      ],
+      "qa": []
+    }
+  ],
+  "enrolled_courses": [
+    "cs-101"
+  ],
+  "student": {
+    "name": "Devin Perera",
+    "email": "devin@computerscience.lk",
+    "avatar": "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&h=150&fit=crop&crop=faces",
+    "completed_lessons": [
+      "l-101-1",
+      "l-101-2"
+    ],
+    "quiz_results": {
+      "cs-101": 2
+    }
+  }
+}
