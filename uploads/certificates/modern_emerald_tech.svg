@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 707" width="1000" height="707">
+  <defs>
+    <linearGradient id="emBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#022c22"/>
+      <stop offset="50%" stop-color="#064e3b"/>
+      <stop offset="100%" stop-color="#065f46"/>
+    </linearGradient>
+    <linearGradient id="emAccent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#34d399"/>
+      <stop offset="50%" stop-color="#10b981"/>
+      <stop offset="100%" stop-color="#059669"/>
+    </linearGradient>
+    <pattern id="gridPat" width="30" height="30" patternUnits="userSpaceOnUse">
+      <path d="M 30 0 L 0 0 0 30" fill="none" stroke="#34d399" stroke-width="0.5" opacity="0.08"/>
+    </pattern>
+  </defs>
+
+  <!-- Background Base -->
+  <rect width="1000" height="707" fill="url(#emBg)"/>
+  <rect width="1000" height="707" fill="url(#gridPat)"/>
+
+  <!-- Outer Tech Border -->
+  <rect x="22" y="22" width="956" height="663" rx="8" fill="none" stroke="url(#emAccent)" stroke-width="3"/>
+  <rect x="32" y="32" width="936" height="643" rx="4" fill="none" stroke="#10b981" stroke-width="1" stroke-dasharray="10 5" opacity="0.4"/>
+
+  <!-- Geometric Tech Corners -->
+  <path d="M 22 80 L 22 22 L 80 22" fill="none" stroke="#34d399" stroke-width="6"/>
+  <path d="M 978 80 L 978 22 L 920 22" fill="none" stroke="#34d399" stroke-width="6"/>
+  <path d="M 22 627 L 22 685 L 80 685" fill="none" stroke="#34d399" stroke-width="6"/>
+  <path d="M 978 627 L 978 685 L 920 685" fill="none" stroke="#34d399" stroke-width="6"/>
+
+  <!-- Header Branding Area -->
+  <g transform="translate(500, 115)">
+    <!-- Tech Diamond Icon -->
+    <polygon points="0,-40 30,-15 30,15 0,40 -30,15 -30,-15" fill="#022c22" stroke="url(#emAccent)" stroke-width="2"/>
+    <circle cx="0" cy="0" r="10" fill="#34d399"/>
+    <text x="0" y="70" font-family="'Montserrat', 'Inter', sans-serif" font-size="22" font-weight="900" fill="#ecfdf5" text-anchor="middle" letter-spacing="5">COMPUTERSCIENCE.LK</text>
+    <text x="0" y="90" font-family="'Inter', sans-serif" font-size="9" font-weight="700" fill="#a7f3d0" text-anchor="middle" letter-spacing="3">GLOBAL TECH EXCELLENCE &amp; CERTIFICATION</text>
+    <text x="0" y="140" font-family="'Montserrat', sans-serif" font-size="32" font-weight="900" fill="#34d399" text-anchor="middle" letter-spacing="6">CERTIFICATE OF MASTERY</text>
+    <text x="0" y="165" font-family="'Inter', sans-serif" font-size="11" font-weight="600" fill="#a7f3d0" text-anchor="middle" letter-spacing="3">PRESENTED IN RECOGNITION OF OUTSTANDING PROFICIENCY TO</text>
+  </g>
+
+  <!-- Verified Security Badge Bottom Center -->
+  <g transform="translate(500, 580)">
+    <circle cx="0" cy="0" r="36" fill="#022c22" stroke="url(#emAccent)" stroke-width="2"/>
+    <path d="M 0 -18 L 14 -8 L 14 10 C 14 20 0 26 0 26 C 0 26 -14 20 -14 10 L -14 -8 Z" fill="none" stroke="#34d399" stroke-width="1.5"/>
+    <polyline points="-6,2 -1,7 7,-2" fill="none" stroke="#34d399" stroke-width="2"/>
+  </g>
+
+  <!-- Light Accent Divider Line -->
+  <line x1="120" y1="520" x2="880" y2="520" stroke="#34d399" stroke-width="1" opacity="0.2"/>
+</svg>

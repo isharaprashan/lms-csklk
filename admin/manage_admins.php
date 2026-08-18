@@ -323,11 +323,14 @@ try {
         
         <!-- Navigation Back Bar -->
         <div class="d-flex justify-content-between align-items-center mb-4">
-            <div>
+            <div class="d-flex align-items-center gap-2">
                 <a href="index.php" class="btn btn-outline-success btn-sm rounded-pill px-3 fw-semibold">
                     <i class="bi bi-arrow-left me-1.5"></i> <?php echo __('back_to_dashboard', 'Back to Admin Dashboard'); ?>
                 </a>
-                <a href="students.php" class="btn btn-outline-info btn-sm rounded-pill px-3 ms-2 fw-semibold">
+                <a href="email_settings.php" class="btn btn-outline-warning btn-sm rounded-pill px-3 fw-semibold">
+                    <i class="bi bi-envelope-gear-fill me-1 text-warning"></i> Email Settings
+                </a>
+                <a href="students.php" class="btn btn-outline-info btn-sm rounded-pill px-3 fw-semibold">
                     <i class="bi bi-person-badge-fill me-1"></i> Registered Students
                 </a>
             </div>

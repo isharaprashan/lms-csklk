@@ -968,6 +968,32 @@ try {
         </div>
       </a>
 
+      <!-- Student Progress & Performance Analytics -->
+      <a href="student_analytics.php" class="nav-link-item">
+        <div class="d-flex align-items-center gap-2.5">
+          <i class="bi bi-graph-up-arrow text-success"></i>
+          <span>Student Analytics</span>
+        </div>
+      </a>
+
+      <!-- Course Certificate Management & Issuing -->
+      <?php
+      $pending_cert_count = 0;
+      try {
+        $pCertStmt = $pdo->query("SELECT COUNT(*) FROM certificate_requests WHERE status = 'pending'");
+        $pending_cert_count = (int)$pCertStmt->fetchColumn();
+      } catch (Exception $e) {}
+      ?>
+      <a href="certificates.php" class="nav-link-item">
+        <div class="d-flex align-items-center gap-2.5">
+          <i class="bi bi-award-fill text-warning"></i>
+          <span>Course Certificates</span>
+        </div>
+        <?php if ($pending_cert_count > 0): ?>
+          <span class="badge bg-warning text-dark rounded-pill px-2 py-0.5 fs-9 fw-bold"><?php echo $pending_cert_count; ?></span>
+        <?php endif; ?>
+      </a>
+
       <!-- Course Approvals -->
       <?php $pending_courses = array_filter($courses, function ($c) {
         return ($c['status'] ?? '') === 'pending';
@@ -1053,6 +1079,14 @@ try {
       <?php endif; ?>
 
       <div class="sidebar-section-title mt-3">System & Security</div>
+
+      <!-- Email / SMTP Settings -->
+      <a href="email_settings.php" class="nav-link-item">
+        <div class="d-flex align-items-center gap-2.5">
+          <i class="bi bi-envelope-gear-fill text-warning"></i>
+          <span>Email & SMTP Settings</span>
+        </div>
+      </a>
 
       <!-- Change Admin Password -->
       <a class="nav-link-item" id="btn-password-tab">
@@ -3174,8 +3208,10 @@ try {
           });
         }
 
-        // Check persistent active tab from localStorage
-        const activeTab = localStorage.getItem('adminActiveTab') || 'teachers';
+        // Check URL parameter first (e.g. index.php?tab=courses), then persistent active tab from localStorage
+        const urlParams = new URLSearchParams(window.location.search);
+        const tabParam = urlParams.get('tab');
+        const activeTab = tabParam || localStorage.getItem('adminActiveTab') || 'teachers';
         switch (activeTab) {
           case 'teachers': switchToTeachers(); break;
           case 'students': switchToStudents(); break;

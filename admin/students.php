@@ -210,43 +210,73 @@ $inactive_students = $total_students - $active_students;
 </head>
 <body>
 
-    <div class="container py-4" style="max-width: 1200px;">
+    <?php
+      $active_nav = 'students';
+      require __DIR__ . '/sidebar.php';
+    ?>
+
+    <!-- Main Content Wrapper -->
+    <div class="admin-main-wrapper" id="admin-main-wrapper">
 
         <!-- Top Navigation Bar -->
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <a href="index.php" class="btn btn-outline-secondary btn-sm rounded-pill px-3.5 fw-bold">
-                <i class="bi bi-arrow-left me-1.5"></i> Return to Main Admin Dashboard
-            </a>
+        <header class="admin-topbar-nav d-flex justify-content-between align-items-center">
             <div class="d-flex align-items-center gap-3">
-                <span class="badge <?php echo $is_super_admin ? 'bg-success' : 'bg-primary'; ?> text-white px-3 py-1.5 rounded-pill fs-8 fw-bold shadow-sm">
-                    <i class="bi bi-shield-lock-fill me-1.5"></i> <?php echo $is_super_admin ? 'Super Admin' : 'Admin Console'; ?>
-                </span>
-                <div class="d-flex align-items-center gap-2.5 border-start ps-3">
-                    <img src="<?php echo htmlspecialchars($current_admin_avatar); ?>"
-                         onerror="this.onerror=null; this.src='https://ui-avatars.com/api/?name=<?php echo urlencode($current_admin_name); ?>&background=0f4c81&color=fff';"
-                         alt="<?php echo htmlspecialchars($current_admin_name); ?>"
-                         class="rounded-circle border shadow-sm"
-                         style="width: 36px; height: 36px; object-fit: cover;">
-                    <div class="d-none d-sm-block text-end">
-                        <div class="fw-bold fs-8 text-dark mb-0"><?php echo htmlspecialchars($current_admin_name); ?></div>
-                        <div class="fs-9 text-muted"><?php echo htmlspecialchars($current_admin_email); ?> &bull; <strong class="<?php echo $is_super_admin ? 'text-success' : 'text-primary'; ?>"><?php echo $is_super_admin ? 'Super Admin' : 'Admin'; ?></strong></div>
-                    </div>
+                <button class="btn btn-outline-secondary btn-sm d-lg-none rounded-pill px-2.5" id="mobile-sidebar-toggle" type="button" aria-label="Toggle sidebar">
+                    <i class="bi bi-list fs-5"></i>
+                </button>
+                <div>
+                    <span class="fs-7 fw-bold text-dark brand-font d-flex align-items-center gap-2">
+                        <i class="bi bi-person-badge-fill text-info"></i>
+                        <span>Registered Students Directory</span>
+                    </span>
                 </div>
             </div>
-        </div>
 
-        <!-- Header Hero Card -->
-        <div class="header-gradient mb-4 d-flex flex-wrap justify-content-between align-items-center gap-3">
-            <div>
-                <span class="badge bg-white text-dark fw-bold px-3 py-1 rounded-pill mb-2 fs-9 text-uppercase tracking-wider">
-                    <i class="bi bi-person-badge-fill me-1 text-primary"></i> Student Management
+            <div class="d-flex align-items-center gap-2.5">
+                <a href="index.php" class="btn btn-sm btn-outline-primary rounded-pill px-3 fw-semibold">
+                    <i class="bi bi-speedometer2 me-1"></i> Dashboard
+                </a>
+                <a href="student_analytics.php" class="btn btn-sm btn-outline-success rounded-pill px-3 fw-semibold">
+                    <i class="bi bi-graph-up-arrow me-1"></i> Analytics
+                </a>
+                <a href="certificates.php" class="btn btn-sm btn-outline-secondary rounded-pill px-3 fw-semibold">
+                    <i class="bi bi-award-fill text-warning me-1"></i> Certificates
+                </a>
+                <span class="badge bg-white text-dark border px-3 py-1.5 rounded-pill shadow-xs fs-8 fw-semibold d-flex align-items-center gap-2">
+                    <img src="<?php echo htmlspecialchars($current_admin_avatar); ?>"
+                         onerror="this.onerror=null; this.src='https://ui-avatars.com/api/?name=<?php echo urlencode($current_admin_name); ?>&background=0f4c81&color=fff';"
+                         class="rounded-circle" style="width: 24px; height: 24px; object-fit: cover;">
+                    <span class="d-none d-md-inline"><?php echo $is_super_admin ? 'Super Admin' : 'Admin'; ?>: <?php echo htmlspecialchars($current_admin_name); ?></span>
                 </span>
-                <h2 class="fw-bold mb-1 text-white">Registered Students Directory</h2>
-                <p class="text-white-50 fs-7 mb-0">View full student profiles in preview mode, toggle active/inactive status, dispatch bell notifications, and delete student accounts securely.</p>
+                <a href="logout.php" class="btn btn-sm btn-outline-danger rounded-pill px-3 fw-semibold" title="Logout">
+                    <i class="bi bi-box-arrow-right"></i>
+                </a>
             </div>
-            <a href="index.php" class="btn btn-light btn-lg rounded-pill px-4 fw-bold shadow-sm text-dark border-0">
-                <i class="bi bi-speedometer2 me-2 text-primary"></i> Main Dashboard
-            </a>
+        </header>
+
+        <main class="py-4 flex-grow-1">
+            <div class="container-fluid px-3 px-md-4" style="max-width: 1400px;">
+
+                <!-- Header Hero Card -->
+                <div class="header-gradient mb-4 d-flex flex-wrap justify-content-between align-items-center gap-3">
+                    <div>
+                        <span class="badge bg-white text-dark fw-bold px-3 py-1 rounded-pill mb-2 fs-9 text-uppercase tracking-wider">
+                            <i class="bi bi-person-badge-fill me-1 text-primary"></i> Student Management
+                        </span>
+                        <h2 class="fw-bold mb-1 text-white">Registered Students Directory</h2>
+                        <p class="text-white-50 fs-7 mb-0">View full student profiles in preview mode, toggle active/inactive status, dispatch bell notifications, and delete student accounts securely.</p>
+                    </div>
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+                <a href="certificates.php" class="btn btn-warning btn-lg rounded-pill px-4 fw-bold shadow-sm text-dark border-0">
+                    <i class="bi bi-award-fill me-2"></i> Certificates
+                </a>
+                <a href="student_analytics.php" class="btn btn-outline-light btn-lg rounded-pill px-4 fw-bold shadow-sm border-2">
+                    <i class="bi bi-graph-up-arrow me-2"></i> Student Analytics
+                </a>
+                <a href="index.php" class="btn btn-light btn-lg rounded-pill px-4 fw-bold shadow-sm text-dark border-0">
+                    <i class="bi bi-speedometer2 me-2 text-primary"></i> Main Dashboard
+                </a>
+            </div>
         </div>
 
         <!-- Toast Notifications -->
@@ -646,6 +676,8 @@ $inactive_students = $total_students - $active_students;
             <?php endif; ?>
         </div>
 
+            </div>
+        </main>
     </div>
 
     <!-- Bootstrap 5 JS -->

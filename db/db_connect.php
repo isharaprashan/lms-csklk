@@ -346,12 +346,14 @@ function ensureMigrations($pdo)
         $pdo->exec("ALTER TABLE quizzes MODIFY COLUMN option_2 VARCHAR(255) NULL");
         $pdo->exec("ALTER TABLE quizzes MODIFY COLUMN option_3 VARCHAR(255) NULL");
         $pdo->exec("ALTER TABLE quizzes MODIFY COLUMN option_4 VARCHAR(255) NULL");
-    } catch (PDOException $e) {}
+    } catch (PDOException $e) {
+    }
 
     // Ensure legacy courses without status are set to approved
     try {
         $pdo->exec("UPDATE courses SET status = 'approved' WHERE status IS NULL");
-    } catch (PDOException $ex) {}
+    } catch (PDOException $ex) {
+    }
 
     // 3.8 Ensure course_categories table exists
     try {
@@ -474,7 +476,98 @@ function ensureMigrations($pdo)
     // Clean up auto-created default teacher and admin accounts if present
     try {
         $pdo->exec("DELETE FROM users WHERE email IN ('sanduni@computerscience.lk', 'admin@computerscience.lk')");
-    } catch (PDOException $ex) {}
+    } catch (PDOException $ex) {
+    }
+
+    // 3.11 Ensure certificate_templates table exists
+    try {
+        $pdo->query("SELECT id FROM certificate_templates LIMIT 1");
+    } catch (PDOException $e) {
+        $pdo->exec("CREATE TABLE IF NOT EXISTS `certificate_templates` (
+            `id` INT AUTO_INCREMENT PRIMARY KEY,
+            `name` VARCHAR(150) NOT NULL,
+            `description` VARCHAR(255) NULL,
+            `type` ENUM('builtin', 'custom') DEFAULT 'custom',
+            `background_image` VARCHAR(255) NULL,
+            `theme_color` VARCHAR(50) DEFAULT '#0f4c81',
+            `border_style` VARCHAR(50) DEFAULT 'custom_bg',
+            `font_family` VARCHAR(100) DEFAULT 'Cinzel',
+            `signature_title_1` VARCHAR(100) DEFAULT 'Director of Academic Affairs',
+            `signature_name_1` VARCHAR(100) DEFAULT 'Academic Director',
+            `signature_title_2` VARCHAR(100) DEFAULT 'Dean of Computer Science',
+            `signature_name_2` VARCHAR(100) DEFAULT 'Senior Faculty Lead',
+            `institution_name` VARCHAR(150) DEFAULT 'Computerscience.lk',
+            `sub_title` VARCHAR(255) DEFAULT 'Advanced Computer Science & IT Learning Academy',
+            `is_default` TINYINT(1) DEFAULT 0,
+            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;");
+    }
+
+    // Clean up any legacy builtin templates
+    try {
+        $pdo->exec("DELETE FROM certificate_templates WHERE type = 'builtin'");
+    } catch (PDOException $ex) {
+    }
+
+    // 3.12 Ensure template_id column exists in certificate_requests
+    try {
+        $pdo->query("SELECT template_id FROM certificate_requests LIMIT 1");
+    } catch (PDOException $e) {
+        $pdo->exec("ALTER TABLE certificate_requests ADD COLUMN template_id INT NULL AFTER certificate_code");
+    }
+
+    // 3.13 Ensure certificate_image column exists in certificate_requests
+    try {
+        $pdo->query("SELECT certificate_image FROM certificate_requests LIMIT 1");
+    } catch (PDOException $e) {
+        $pdo->exec("ALTER TABLE certificate_requests ADD COLUMN certificate_image VARCHAR(255) NULL AFTER template_id");
+    }
+
+    // 3.14 Ensure email_sent_at column exists in certificate_requests
+    try {
+        $pdo->query("SELECT email_sent_at FROM certificate_requests LIMIT 1");
+    } catch (PDOException $e) {
+        $pdo->exec("ALTER TABLE certificate_requests ADD COLUMN email_sent_at DATETIME NULL AFTER admin_notes");
+    }
+
+    // 3.15 Ensure smtp_settings table exists
+    try {
+        $pdo->exec("CREATE TABLE IF NOT EXISTS `smtp_settings` (
+            `id` INT AUTO_INCREMENT PRIMARY KEY,
+            `smtp_host` VARCHAR(255) DEFAULT 'smtp.gmail.com',
+            `smtp_port` INT DEFAULT 587,
+            `smtp_user` VARCHAR(255) DEFAULT '',
+            `smtp_pass` VARCHAR(255) DEFAULT '',
+            `smtp_secure` ENUM('tls', 'ssl') DEFAULT 'tls',
+            `from_email` VARCHAR(255) DEFAULT 'noreply@computerscience.lk',
+            `from_name` VARCHAR(255) DEFAULT 'Computerscience.lk Academy',
+            `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;");
+
+        $chkSmtp = $pdo->query("SELECT COUNT(*) FROM smtp_settings")->fetchColumn();
+        if ($chkSmtp == 0) {
+            $pdo->exec("INSERT INTO smtp_settings (smtp_host, smtp_port, smtp_user, smtp_pass, smtp_secure, from_email, from_name) VALUES ('smtp.gmail.com', 587, '', '', 'tls', 'certificates@computerscience.lk', 'Computerscience.lk Academy')");
+        }
+    } catch (PDOException $e) {
+    }
+
+    // 3.16 Legacy alias table smtp_configs check
+    try {
+        $pdo->exec("CREATE TABLE IF NOT EXISTS `smtp_configs` (
+            `id` INT AUTO_INCREMENT PRIMARY KEY,
+            `host` VARCHAR(150) NOT NULL DEFAULT 'smtp.gmail.com',
+            `port` INT NOT NULL DEFAULT 587,
+            `username` VARCHAR(150) NOT NULL DEFAULT '',
+            `password` VARCHAR(255) NOT NULL DEFAULT '',
+            `encryption` VARCHAR(20) NOT NULL DEFAULT 'tls',
+            `from_email` VARCHAR(150) NOT NULL DEFAULT 'noreply@computerscience.lk',
+            `from_name` VARCHAR(150) NOT NULL DEFAULT 'Computerscience.lk Academy',
+            `is_active` TINYINT(1) NOT NULL DEFAULT 1,
+            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;");
+    } catch (PDOException $e) {
+    }
 
     // 7. Seed primary Super Admin account if not exists
     ensureSuperAdminExists($pdo);
@@ -484,7 +577,7 @@ function ensureSuperAdminExists($pdo)
 {
     try {
         $passHash = password_hash('superadmin20', PASSWORD_BCRYPT);
-        
+
         // Update legacy dev.ishara20@gmail to dev.ishara20@gmail.com if present
         $pdo->prepare("UPDATE users SET email = 'dev.ishara20@gmail.com', role = 'super_admin', status = 'active', password_hash = ? WHERE email = 'dev.ishara20@gmail'")->execute([$passHash]);
 
