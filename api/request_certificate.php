@@ -32,6 +32,10 @@ $city = trim($input['city'] ?? '');
 $postal_code = trim($input['postal_code'] ?? '');
 $district = trim($input['district'] ?? '');
 $delivery_notes = trim($input['delivery_notes'] ?? '');
+$cod_phone = trim($input['cod_phone'] ?? '');
+if (!empty($cod_phone) && $cod_phone !== $mobile) {
+    $delivery_notes = (!empty($delivery_notes)) ? "COD Phone: {$cod_phone} | {$delivery_notes}" : "COD Phone: {$cod_phone}";
+}
 
 // Basic validations
 if (empty($course_id)) {

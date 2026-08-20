@@ -268,6 +268,14 @@ $sidebar_text = $is_super_admin ? '#a3cfbb' : '#94a3b8';
       </div>
     </a>
 
+    <!-- Certificate Delivery Note / COD Settings -->
+    <a href="index.php?tab=delivery_note" class="nav-link-item <?php echo ($current_page === 'delivery_note') ? 'active' : ''; ?>">
+      <div class="d-flex align-items-center gap-2.5">
+        <i class="bi bi-truck text-info"></i>
+        <span>Certificate Delivery Note</span>
+      </div>
+    </a>
+
     <!-- Site Logo Customization -->
     <a href="index.php?tab=logo" class="nav-link-item <?php echo ($current_page === 'logo') ? 'active' : ''; ?>">
       <div class="d-flex align-items-center gap-2.5">

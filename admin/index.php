@@ -689,6 +689,26 @@ try {
     }
   }
 
+  // Handle Certificate Delivery Note Update action
+  if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_delivery_note') {
+    $cert_cod_title = trim($_POST['cert_cod_title'] ?? 'Cash on Delivery & Courier Details:');
+    $cert_cod_fee_note = trim($_POST['cert_cod_fee_note'] ?? '');
+    $cert_cod_timeframe_note = trim($_POST['cert_cod_timeframe_note'] ?? '');
+    $cert_cod_custom_notice = trim($_POST['cert_cod_custom_notice'] ?? '');
+
+    if (empty($cert_cod_fee_note) || empty($cert_cod_timeframe_note)) {
+      $error_message = 'Please provide both the Associated Fee note and the Delivery Timeframe note.';
+    } else {
+      $stmt = $pdo->prepare("INSERT INTO site_settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)");
+      $stmt->execute(['cert_cod_title', $cert_cod_title]);
+      $stmt->execute(['cert_cod_fee_note', $cert_cod_fee_note]);
+      $stmt->execute(['cert_cod_timeframe_note', $cert_cod_timeframe_note]);
+      $stmt->execute(['cert_cod_custom_notice', $cert_cod_custom_notice]);
+
+      $success_message = 'Cash on Delivery & Courier Details note updated successfully and synchronized across all student certificate application modals!';
+    }
+  }
+
   // Fetch all teachers
   $stmt = $pdo->query("SELECT u.*, (SELECT COUNT(*) FROM courses c WHERE c.tutor_id = u.id) as teacher_courses_count FROM users u WHERE u.role = 'teacher' ORDER BY CASE WHEN u.status = 'pending' THEN 1 ELSE 2 END, u.created_at DESC");
   $teachers = $stmt->fetchAll();
@@ -1055,6 +1075,14 @@ try {
         <div class="d-flex align-items-center gap-2.5">
           <i class="bi bi-layout-text-window-reverse text-success"></i>
           <span>Hero Banner</span>
+        </div>
+      </a>
+
+      <!-- Certificate Delivery Note / COD Settings -->
+      <a class="nav-link-item" id="btn-delivery-note-tab">
+        <div class="d-flex align-items-center gap-2.5">
+          <i class="bi bi-truck text-info"></i>
+          <span>Certificate Delivery Note</span>
         </div>
       </a>
 
@@ -2612,6 +2640,94 @@ try {
         </div>
       </div>
 
+      <!-- Section: Certificate Delivery Note & COD Customization -->
+      <div id="delivery-note-section" class="d-none">
+        <div class="mb-4">
+          <h2 class="fw-bold text-dark mb-1">Certificate Delivery Note & COD Customization</h2>
+          <p class="text-secondary fs-7">Customize the Cash on Delivery (COD) information, associated fee breakdown, and delivery timeframe notes displayed to students when requesting official course certificates.</p>
+        </div>
+
+        <div class="row g-4">
+          <!-- Card 1: Customization Form -->
+          <div class="col-lg-7">
+            <div class="glass-card p-4">
+              <h5 class="fw-bold text-dark mb-3"><i class="bi bi-pencil-square text-primary me-2"></i>Edit Delivery & Courier Note</h5>
+
+              <form action="index.php" method="POST">
+                <input type="hidden" name="action" value="update_delivery_note">
+
+                <div class="mb-3">
+                  <label for="cert_cod_title_input" class="form-label fw-semibold text-secondary fs-8">Section Header Title</label>
+                  <input type="text" name="cert_cod_title" id="cert_cod_title_input" class="form-control form-control-sm"
+                    value="<?php echo htmlspecialchars(get_site_setting('cert_cod_title', 'Cash on Delivery & Courier Details:')); ?>" required>
+                  <small class="text-muted fs-9">Headline displayed at the top of the information alert box in the student modal.</small>
+                </div>
+
+                <div class="mb-3">
+                  <label for="cert_cod_fee_input" class="form-label fw-semibold text-secondary fs-8">Associated Fees Note <span class="text-danger">*</span></label>
+                  <textarea name="cert_cod_fee_note" id="cert_cod_fee_input" class="form-control form-control-sm" rows="3" required><?php echo htmlspecialchars(get_site_setting('cert_cod_fee_note', 'LKR 1,500 Cash on Delivery fee for embossed certificate printing, security hard-folder, and island-wide registered courier handling (Payable in Cash to the courier delivery rider upon package arrival). The digital e-certificate remains 100% free.')); ?></textarea>
+                  <small class="text-muted fs-9">Explain the printing/courier fee and payment terms (e.g. Cash on Delivery to courier driver).</small>
+                </div>
+
+                <div class="mb-3">
+                  <label for="cert_cod_timeframe_input" class="form-label fw-semibold text-secondary fs-8">Delivery Timeframe Note <span class="text-danger">*</span></label>
+                  <textarea name="cert_cod_timeframe_note" id="cert_cod_timeframe_input" class="form-control form-control-sm" rows="2" required><?php echo htmlspecialchars(get_site_setting('cert_cod_timeframe_note', 'Dispatched within 24–48 hours after application approval. Island-wide doorstep delivery takes 2 to 4 working days.')); ?></textarea>
+                  <small class="text-muted fs-9">Specify processing turnaround and expected courier transit duration.</small>
+                </div>
+
+                <div class="mb-4">
+                  <label for="cert_cod_custom_input" class="form-label fw-semibold text-secondary fs-8">Additional Instructions / Advisory (Optional)</label>
+                  <textarea name="cert_cod_custom_notice" id="cert_cod_custom_input" class="form-control form-control-sm" rows="2" placeholder="e.g. Please ensure a valid contact number is provided for courier dispatch coordination."><?php echo htmlspecialchars(get_site_setting('cert_cod_custom_notice', '')); ?></textarea>
+                  <small class="text-muted fs-9">Optional special note or student guidance.</small>
+                </div>
+
+                <div class="pt-2">
+                  <button type="submit" class="btn btn-primary px-4 py-2 rounded-pill fw-semibold shadow-sm"
+                    style="background-color: <?php echo $is_super_admin ? '#0b4528' : '#0f4c81'; ?>; border: none;">
+                    <i class="bi bi-check-circle me-1"></i> Save & Publish Delivery Note
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          <!-- Card 2: Real-time Live Preview -->
+          <div class="col-lg-5">
+            <div class="glass-card p-4 h-100">
+              <h5 class="fw-bold text-dark mb-3"><i class="bi bi-eye-fill text-success me-2"></i>Live Student Modal Preview</h5>
+              <p class="text-muted fs-8 mb-3">This is exactly how students will see the note inside the Official Course Certificate Application modal:</p>
+
+              <div class="p-3 bg-light rounded-4 border">
+                <div class="d-flex align-items-center justify-content-between mb-2 pb-2 border-bottom">
+                  <span class="fw-bold text-dark fs-8 d-flex align-items-center gap-1.5">
+                    <i class="bi bi-cash-coin text-success"></i> Cash on Delivery (COD) & Postal Details
+                  </span>
+                  <span class="badge bg-secondary bg-opacity-10 text-secondary border fs-9">Courier Service</span>
+                </div>
+
+                <div class="alert alert-info border-info border-opacity-25 bg-info bg-opacity-10 py-2.5 px-3 rounded-3 mb-0 fs-9 text-dark" id="preview-alert-box">
+                  <div class="d-flex align-items-start gap-2">
+                    <i class="bi bi-info-circle-fill text-info fs-6 mt-0.5"></i>
+                    <div class="flex-grow-1">
+                      <div class="fw-bold text-dark mb-1" id="preview-title"><?php echo htmlspecialchars(get_site_setting('cert_cod_title', 'Cash on Delivery & Courier Details:')); ?></div>
+                      <ul class="mb-0 ps-3 text-secondary fs-9" style="line-height: 1.5;">
+                        <li><strong>Associated Fee:</strong> <span id="preview-fee"><?php echo htmlspecialchars(get_site_setting('cert_cod_fee_note', 'LKR 1,500 Cash on Delivery fee for embossed certificate printing, security hard-folder, and island-wide registered courier handling (Payable in Cash to the courier delivery rider upon package arrival). The digital e-certificate remains 100% free.')); ?></span></li>
+                        <li><strong>Delivery Timeframe:</strong> <span id="preview-timeframe"><?php echo htmlspecialchars(get_site_setting('cert_cod_timeframe_note', 'Dispatched within 24–48 hours after application approval. Island-wide doorstep delivery takes 2 to 4 working days.')); ?></span></li>
+                        <li id="preview-extra-item" style="<?php echo empty(get_site_setting('cert_cod_custom_notice', '')) ? 'display:none;' : ''; ?>"><strong>Important:</strong> <span id="preview-extra"><?php echo htmlspecialchars(get_site_setting('cert_cod_custom_notice', '')); ?></span></li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="p-3 bg-success bg-opacity-10 text-success rounded-3 border border-success border-opacity-25 mt-3 fs-9">
+                <i class="bi bi-shield-check me-1"></i> Changes saved here immediately update both the <strong>My Courses</strong> and <strong>Student Dashboard</strong> certificate request modals.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Section: Admin Account Security -->
       <div id="password-section" class="d-none">
         <div class="mb-4">
@@ -3175,6 +3291,7 @@ try {
         const btnOptions = document.getElementById('btn-options-tab');
         const btnAnnouncements = document.getElementById('btn-announcements-tab');
         const btnHero = document.getElementById('btn-hero-tab');
+        const btnDeliveryNote = document.getElementById('btn-delivery-note-tab');
         const btnLogo = document.getElementById('btn-logo-tab');
         const btnPassword = document.getElementById('btn-password-tab');
 
@@ -3188,6 +3305,7 @@ try {
         const secOptions = document.getElementById('options-section');
         const secAnnouncements = document.getElementById('announcements-section');
         const secHero = document.getElementById('hero-section');
+        const secDeliveryNote = document.getElementById('delivery-note-section');
         const secLogo = document.getElementById('logo-section');
         const secPassword = document.getElementById('password-section');
 
@@ -3208,6 +3326,40 @@ try {
           });
         }
 
+        // Live Preview Event Listeners for Delivery Note
+        const codTitleInput = document.getElementById('cert_cod_title_input');
+        const codFeeInput = document.getElementById('cert_cod_fee_input');
+        const codTimeframeInput = document.getElementById('cert_cod_timeframe_input');
+        const codCustomInput = document.getElementById('cert_cod_custom_input');
+
+        const previewTitle = document.getElementById('preview-title');
+        const previewFee = document.getElementById('preview-fee');
+        const previewTimeframe = document.getElementById('preview-timeframe');
+        const previewExtra = document.getElementById('preview-extra');
+        const previewExtraItem = document.getElementById('preview-extra-item');
+
+        if (codTitleInput && previewTitle) {
+          codTitleInput.addEventListener('input', function () {
+            previewTitle.textContent = this.value || 'Cash on Delivery & Courier Details:';
+          });
+        }
+        if (codFeeInput && previewFee) {
+          codFeeInput.addEventListener('input', function () {
+            previewFee.textContent = this.value || '';
+          });
+        }
+        if (codTimeframeInput && previewTimeframe) {
+          codTimeframeInput.addEventListener('input', function () {
+            previewTimeframe.textContent = this.value || '';
+          });
+        }
+        if (codCustomInput && previewExtra && previewExtraItem) {
+          codCustomInput.addEventListener('input', function () {
+            previewExtra.textContent = this.value;
+            previewExtraItem.style.display = this.value.trim() ? 'list-item' : 'none';
+          });
+        }
+
         // Check URL parameter first (e.g. index.php?tab=courses), then persistent active tab from localStorage
         const urlParams = new URLSearchParams(window.location.search);
         const tabParam = urlParams.get('tab');
@@ -3221,6 +3373,7 @@ try {
           case 'options': switchToOptions(); break;
           case 'announcements': switchToAnnouncements(); break;
           case 'hero': switchToHero(); break;
+          case 'delivery_note': switchToDeliveryNote(); break;
           case 'logo': switchToLogo(); break;
           case 'password': switchToPassword(); break;
           default: switchToTeachers(); break;
@@ -3235,12 +3388,13 @@ try {
         if (btnOptions) btnOptions.addEventListener('click', switchToOptions);
         if (btnAnnouncements) btnAnnouncements.addEventListener('click', switchToAnnouncements);
         if (btnHero) btnHero.addEventListener('click', switchToHero);
+        if (btnDeliveryNote) btnDeliveryNote.addEventListener('click', switchToDeliveryNote);
         if (btnLogo) btnLogo.addEventListener('click', switchToLogo);
         if (btnPassword) btnPassword.addEventListener('click', switchToPassword);
 
         function resetTabStyles() {
-          const allBtns = [btnTeachers, btnStudents, btnCourses, btnBank, btnManageBank, btnOptions, btnAnnouncements, btnHero, btnLogo, btnPassword];
-          const allSecs = [secTeachers, secStudents, secCourses, secBank, secManageBank, secOptions, secAnnouncements, secHero, secLogo, secPassword];
+          const allBtns = [btnTeachers, btnStudents, btnCourses, btnBank, btnManageBank, btnOptions, btnAnnouncements, btnHero, btnDeliveryNote, btnLogo, btnPassword];
+          const allSecs = [secTeachers, secStudents, secCourses, secBank, secManageBank, secOptions, secAnnouncements, secHero, secDeliveryNote, secLogo, secPassword];
 
           allBtns.forEach(btn => {
             if (btn) btn.classList.remove('active');
@@ -3270,6 +3424,7 @@ try {
         function switchToOptions() { setActiveTab(btnOptions, secOptions, 'options', 'Category & Batch Options'); }
         function switchToAnnouncements() { setActiveTab(btnAnnouncements, secAnnouncements, 'announcements', 'Site Announcements'); }
         function switchToHero() { setActiveTab(btnHero, secHero, 'hero', 'Hero Banner Settings'); }
+        function switchToDeliveryNote() { setActiveTab(btnDeliveryNote, secDeliveryNote, 'delivery_note', 'Certificate Delivery Note & COD Settings'); }
         function switchToLogo() { setActiveTab(btnLogo, secLogo, 'logo', 'Site Logo Customization'); }
         function switchToPassword() { setActiveTab(btnPassword, secPassword, 'password', 'Change Admin Password'); }
       });

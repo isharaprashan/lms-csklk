@@ -1531,36 +1531,72 @@ try {
             <!-- Certificate Obtaining & Delivery Options -->
             <div class="bg-white p-3.5 rounded-4 border shadow-xs">
               <div class="d-flex align-items-center gap-2 mb-3 pb-2 border-bottom text-dark fw-bold fs-8">
-                <i class="bi bi-truck text-warning fs-6"></i>
-                <span><?php echo __('delivery_method', 'Certificate Obtaining Method'); ?></span>
+                <i class="bi bi-award text-warning fs-6"></i>
+                <span><?php echo __('delivery_method', 'Certificate Format & Delivery Options'); ?></span>
               </div>
 
-              <div class="d-flex flex-column gap-2 mb-3">
-                <!-- Option 1: Digital Copy Only -->
-                <div class="form-check p-3 border rounded-3 bg-light cursor-pointer hover:bg-white transition-all">
-                  <input class="form-check-input ms-0 me-2.5" type="radio" name="delivery_method" id="delivery-method-digital" value="digital_only" checked onchange="toggleDeliveryFields()">
-                  <label class="form-check-label fw-semibold text-dark cursor-pointer d-flex flex-column" for="delivery-method-digital">
-                    <span class="d-flex align-items-center gap-1.5"><i class="bi bi-file-earmark-pdf-fill text-danger"></i> <?php echo __('digital_copy_only', 'Digital Copy Only (PDF e-Certificate)'); ?></span>
-                    <small class="text-muted fw-normal fs-9 mt-0.5">High-resolution PDF certificate with QR verification code emailed immediately upon approval.</small>
+              <div class="d-flex flex-column gap-2.5 mb-3">
+                <!-- Option 1: Digital Copy (PDF) -->
+                <div class="form-check p-3 border rounded-3 bg-light cursor-pointer hover:bg-white transition-all d-flex align-items-start gap-2.5">
+                  <input class="form-check-input ms-0 mt-1" type="checkbox" id="cert-option-digital" checked onchange="handleCertOptionChange('digital')">
+                  <label class="form-check-label fw-semibold text-dark cursor-pointer flex-grow-1" for="cert-option-digital">
+                    <div class="d-flex align-items-center justify-content-between flex-wrap gap-1">
+                      <span class="d-flex align-items-center gap-1.5"><i class="bi bi-file-earmark-pdf-fill text-danger fs-6"></i> <?php echo __('digital_copy_title', 'Digital Copy (Verifiable PDF e-Certificate)'); ?></span>
+                      <span class="badge bg-success bg-opacity-15 text-success border border-success border-opacity-25 px-2 py-0.5 rounded-pill fs-9 fw-bold">FREE INCLUDED</span>
+                    </div>
+                    <small class="text-muted fw-normal fs-9 mt-1 d-block">High-resolution PDF certificate with secure QR verification code emailed immediately upon academic approval.</small>
                   </label>
                 </div>
 
-                <!-- Option 2: Home Delivery -->
-                <div class="form-check p-3 border rounded-3 bg-light cursor-pointer hover:bg-white transition-all">
-                  <input class="form-check-input ms-0 me-2.5" type="radio" name="delivery_method" id="delivery-method-home" value="home_delivery" onchange="toggleDeliveryFields()">
-                  <label class="form-check-label fw-semibold text-dark cursor-pointer d-flex flex-column" for="delivery-method-home">
-                    <span class="d-flex align-items-center gap-1.5"><i class="bi bi-box-seam-fill text-success"></i> <?php echo __('printed_home_delivery', 'Printed Hard Copy (Delivered to Home Address)'); ?></span>
-                    <small class="text-muted fw-normal fs-9 mt-0.5">Official embossed parchment certificate dispatched to your doorstep via registered courier.</small>
+                <!-- Option 2: Printed Hard Copy (Cash on Delivery) -->
+                <div class="form-check p-3 border rounded-3 bg-light cursor-pointer hover:bg-white transition-all d-flex align-items-start gap-2.5">
+                  <input class="form-check-input ms-0 mt-1" type="checkbox" id="cert-option-hardcopy" onchange="handleCertOptionChange('hardcopy')">
+                  <label class="form-check-label fw-semibold text-dark cursor-pointer flex-grow-1" for="cert-option-hardcopy">
+                    <div class="d-flex align-items-center justify-content-between flex-wrap gap-1">
+                      <span class="d-flex align-items-center gap-1.5"><i class="bi bi-box-seam-fill text-primary fs-6"></i> <?php echo __('printed_hard_copy_title', 'Printed Hard Copy (Doorstep Delivery via Cash on Delivery)'); ?></span>
+                      <span class="badge bg-warning bg-opacity-20 text-warning-emphasis border border-warning border-opacity-35 px-2 py-0.5 rounded-pill fs-9 fw-bold">Cash on Delivery</span>
+                    </div>
+                    <small class="text-muted fw-normal fs-9 mt-1 d-block">Official embossed parchment certificate dispatched to your doorstep. <em>Selecting hard copy automatically includes the digital copy.</em></small>
                   </label>
                 </div>
               </div>
 
-              <!-- Dynamic Home Delivery Form Fields -->
+              <!-- Cash on Delivery Details & Delivery Information -->
               <div id="home-delivery-details" style="display: none;" class="p-3 bg-light rounded-3 border mt-3">
-                <h6 class="fw-bold text-dark fs-8 mb-3"><i class="bi bi-geo-alt-fill text-danger me-1"></i>Postal Delivery Address Details</h6>
+                <div class="d-flex align-items-center justify-content-between mb-2 pb-2 border-bottom">
+                  <h6 class="fw-bold text-dark fs-8 mb-0 d-flex align-items-center gap-1.5">
+                    <i class="bi bi-cash-coin text-success fs-6"></i>
+                    <span><?php echo __('cod_details_title', 'Cash on Delivery (COD) & Postal Details'); ?></span>
+                  </h6>
+                  <span class="badge bg-secondary bg-opacity-10 text-secondary border fs-9">Courier Service</span>
+                </div>
+
+                <!-- Fees and Timeframe Info Note -->
+                <?php
+                $cert_cod_title = get_site_setting('cert_cod_title', 'Cash on Delivery & Courier Details:');
+                $cert_cod_fee_note = get_site_setting('cert_cod_fee_note', 'LKR 1,500 Cash on Delivery fee for embossed certificate printing, security hard-folder, and island-wide registered courier handling (Payable in Cash to the courier delivery rider upon package arrival). The digital e-certificate remains 100% free.');
+                $cert_cod_timeframe_note = get_site_setting('cert_cod_timeframe_note', 'Dispatched within 24–48 hours after application approval. Island-wide doorstep delivery takes 2 to 4 working days.');
+                $cert_cod_custom_notice = get_site_setting('cert_cod_custom_notice', '');
+                ?>
+                <div class="alert alert-info border-info border-opacity-25 bg-info bg-opacity-10 py-2.5 px-3 rounded-3 mb-3 fs-9 text-dark">
+                  <div class="d-flex align-items-start gap-2">
+                    <i class="bi bi-info-circle-fill text-info fs-6 mt-0.5"></i>
+                    <div class="flex-grow-1">
+                      <div class="fw-bold text-dark mb-1"><?php echo htmlspecialchars($cert_cod_title); ?></div>
+                      <ul class="mb-0 ps-3 text-secondary fs-9" style="line-height: 1.5;">
+                        <li><strong>Associated Fee:</strong> <?php echo htmlspecialchars($cert_cod_fee_note); ?></li>
+                        <li><strong>Delivery Timeframe:</strong> <?php echo htmlspecialchars($cert_cod_timeframe_note); ?></li>
+                        <?php if (!empty($cert_cod_custom_notice)): ?>
+                          <li><strong>Important:</strong> <?php echo htmlspecialchars($cert_cod_custom_notice); ?></li>
+                        <?php endif; ?>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+
                 <div class="row g-3">
                   <div class="col-12">
-                    <label class="form-label fs-8 fw-semibold text-dark mb-1"><?php echo __('delivery_address', 'Delivery Address (Street / House)'); ?> <span class="text-danger">*</span></label>
+                    <label class="form-label fs-8 fw-semibold text-dark mb-1"><?php echo __('delivery_address', 'Delivery Address (Street / House / Apartment)'); ?> <span class="text-danger">*</span></label>
                     <textarea id="cert-modal-address" class="form-control form-control-sm" rows="2" placeholder="No, Street Name, Apartment / Floor..."></textarea>
                   </div>
                   <div class="col-md-4">
@@ -1575,9 +1611,13 @@ try {
                     <label class="form-label fs-8 fw-semibold text-dark mb-1"><?php echo __('district', 'District / Province'); ?> <span class="text-danger">*</span></label>
                     <input type="text" id="cert-modal-district" class="form-control form-control-sm" placeholder="e.g. Colombo District">
                   </div>
-                  <div class="col-12">
-                    <label class="form-label fs-8 fw-semibold text-dark mb-1"><?php echo __('delivery_notes', 'Special Delivery Notes (Optional)'); ?></label>
-                    <input type="text" id="cert-modal-notes" class="form-control form-control-sm" placeholder="e.g. Contact before arrival or leave with security">
+                  <div class="col-md-6">
+                    <label class="form-label fs-8 fw-semibold text-dark mb-1"><?php echo __('cod_phone', 'Cash on Delivery Contact Phone'); ?> <span class="text-danger">*</span></label>
+                    <input type="tel" id="cert-modal-cod-phone" class="form-control form-control-sm" placeholder="e.g. +94 77 123 4567 (Phone for courier rider)">
+                  </div>
+                  <div class="col-md-6">
+                    <label class="form-label fs-8 fw-semibold text-dark mb-1"><?php echo __('delivery_notes', 'Special Delivery Instructions / Landmarks (Optional)'); ?></label>
+                    <input type="text" id="cert-modal-notes" class="form-control form-control-sm" placeholder="e.g. Near clock tower, call before delivery">
                   </div>
                 </div>
               </div>
@@ -1601,84 +1641,107 @@ try {
   <!-- Professional Certificate Application Status & Credential Tracker Modal -->
   <div class="modal fade" id="certificateStatusModal" tabindex="-1" aria-labelledby="certificateStatusModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
-      <div class="modal-content border-0 shadow-lg" style="border-radius: 20px; overflow: hidden;">
+      <div class="modal-content border-0 shadow-lg" style="border-radius: 20px; overflow: hidden; background-color: #f8fafc;">
         
-        <!-- Modal Header -->
-        <div class="modal-header py-3 px-4" style="background: linear-gradient(135deg, #0f4c81 0%, #1e3a8a 100%); color: #ffffff;">
-          <div class="d-flex align-items-center gap-2.5">
-            <div class="rounded-circle bg-warning bg-opacity-20 p-2 text-warning d-flex align-items-center justify-content-center" style="width: 40px; height: 40px;">
-              <i class="bi bi-shield-check fs-5"></i>
+        <!-- Modal Header with Enterprise Academic Gradient -->
+        <div class="modal-header py-3.5 px-4 position-relative" style="background: linear-gradient(135deg, #091527 0%, #0f3d6c 50%, #174b85 100%); border-bottom: 1px solid rgba(255,255,255,0.1); color: #ffffff;">
+          <div class="d-flex align-items-center gap-3">
+            <div class="rounded-3 bg-white bg-opacity-10 p-2.5 text-warning border border-white border-opacity-15 shadow-sm d-flex align-items-center justify-content-center" style="width: 44px; height: 44px; backdrop-filter: blur(4px);">
+              <i class="bi bi-patch-check-fill fs-4 text-warning"></i>
             </div>
             <div>
-              <h5 class="modal-title fw-bold text-white mb-0 fs-6" id="certificateStatusModalLabel"><?php echo __('certificate_status_tracker', 'Certificate Application Status & Tracker'); ?></h5>
-              <small class="text-white-50 fs-9">Institutional Academic Credential Verification System</small>
+              <div class="d-flex align-items-center gap-2 flex-wrap">
+                <h5 class="modal-title fw-bold text-white mb-0 fs-6" id="certificateStatusModalLabel"><?php echo __('certificate_status_tracker', 'Certificate Application Status & Tracker'); ?></h5>
+                <span class="badge bg-warning text-dark border border-warning px-2.5 py-0.5 rounded-pill fs-9 fw-bold">Official Credential</span>
+              </div>
+              <small class="text-white text-opacity-75 fs-9 d-flex align-items-center gap-1.5 mt-0.5">
+                <i class="bi bi-building-check"></i> Institutional Academic Verification & Delivery Registry
+              </small>
             </div>
           </div>
           <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
 
-        <div class="modal-body p-4 bg-light">
+        <div class="modal-body p-4">
           
-          <!-- Reference Code Header Bar -->
-          <div class="d-flex flex-wrap justify-content-between align-items-center bg-white p-3 rounded-4 border mb-3 shadow-xs">
-            <div>
-              <small class="text-muted fs-9 text-uppercase fw-bold d-block">Credential Reference Code</small>
-              <span class="font-mono fs-7 fw-bold text-primary" id="tracker-cert-code">CERT-CSLK-00000000</span>
-            </div>
-            <div class="text-end">
-              <small class="text-muted fs-9 text-uppercase fw-bold d-block">Application Date</small>
-              <span class="fs-8 fw-semibold text-dark" id="tracker-submitted-at">Aug 18, 2026</span>
+          <!-- Top Reference Code & Meta Bar -->
+          <div class="bg-white p-3.5 rounded-4 border border-slate-200 shadow-xs mb-3">
+            <div class="row g-2 align-items-center">
+              <div class="col-sm-7 d-flex align-items-center gap-2.5">
+                <div class="p-2 rounded-3 bg-primary bg-opacity-10 text-primary border border-primary border-opacity-20">
+                  <i class="bi bi-upc-scan fs-5"></i>
+                </div>
+                <div>
+                  <small class="text-muted text-uppercase fs-9 fw-bold d-block" style="letter-spacing: 0.06em;">Tracking Reference Code</small>
+                  <div class="d-flex align-items-center gap-2 mt-0.5">
+                    <span class="font-monospace fw-bold fs-7 text-dark bg-light px-2 py-0.5 rounded border" id="tracker-cert-code">CERT-CSLK-00000000</span>
+                    <button type="button" class="btn btn-sm btn-outline-secondary py-0.5 px-2 rounded-pill fs-9 d-inline-flex align-items-center gap-1" onclick="copyTrackerCertCode()" title="Copy Tracking Code">
+                      <i class="bi bi-clipboard"></i><span id="copy-btn-text">Copy</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div class="col-sm-5 text-sm-end">
+                <small class="text-muted text-uppercase fs-9 fw-bold d-block" style="letter-spacing: 0.06em;">Application Registered</small>
+                <span class="fs-8 fw-semibold text-dark mt-0.5 d-inline-flex align-items-center gap-1.5">
+                  <i class="bi bi-calendar-check text-success"></i> <span id="tracker-submitted-at">Aug 18, 2026</span>
+                </span>
+              </div>
             </div>
           </div>
 
-          <!-- Dynamic Status Hero Banner -->
+          <!-- Dynamic Status Hero Alert Card -->
           <div id="tracker-status-hero" class="p-3.5 rounded-4 border mb-3 shadow-xs text-start">
             <!-- Dynamically populated by JS -->
           </div>
 
-          <!-- 4-Stage Visual Progress Stepper -->
-          <div class="bg-white p-4 rounded-4 border mb-3 shadow-xs">
-            <h6 class="fw-bold text-dark fs-8 mb-3 d-flex align-items-center gap-1.5">
-              <i class="bi bi-diagram-3-fill text-primary"></i>
-              <span>Credential Processing Timeline</span>
-            </h6>
+          <!-- 4-Stage Interactive Visual Progress Stepper -->
+          <div class="bg-white p-4 rounded-4 border border-slate-200 mb-3 shadow-xs">
+            <div class="d-flex align-items-center justify-content-between mb-3 pb-2 border-bottom">
+              <h6 class="fw-bold text-dark fs-8 mb-0 d-flex align-items-center gap-1.5">
+                <i class="bi bi-diagram-3-fill text-primary"></i>
+                <span>Credential Processing Pipeline</span>
+              </h6>
+              <span class="badge bg-light text-secondary border fs-9 fw-normal" id="tracker-stage-indicator">Stage 1 of 4</span>
+            </div>
 
-            <div class="d-flex justify-content-between align-items-center position-relative my-2 px-2">
-              <!-- Stepper Connecting Line -->
-              <div class="position-absolute top-50 start-0 translate-y-middle w-100 bg-secondary bg-opacity-20" style="height: 3px; z-index: 1;"></div>
-              <div id="stepper-progress-bar" class="position-absolute top-50 start-0 translate-y-middle bg-success transition-all" style="height: 3px; z-index: 2; width: 33%;"></div>
+            <div class="d-flex justify-content-between align-items-start position-relative my-3 px-2">
+              <!-- Stepper Connecting Line Background -->
+              <div class="position-absolute start-0 w-100 bg-secondary bg-opacity-20" style="top: 18px; height: 3px; z-index: 1;"></div>
+              <!-- Stepper Active Progress Fill Line -->
+              <div id="stepper-progress-bar" class="position-absolute start-0 bg-success transition-all" style="top: 18px; height: 3px; z-index: 2; width: 25%;"></div>
 
-              <!-- Step 1: Request Placed -->
-              <div class="position-relative text-center" style="z-index: 3;">
-                <div id="step-1-circle" class="rounded-circle d-flex align-items-center justify-content-center mx-auto mb-1 border-2 border-white shadow-xs" style="width: 32px; height: 32px; background-color: #28a745; color: #fff;">
-                  <i class="bi bi-check fs-6"></i>
+              <!-- Step 1: Request Lodged -->
+              <div class="position-relative text-center flex-fill" style="z-index: 3;">
+                <div id="step-1-circle" class="rounded-circle d-flex align-items-center justify-content-center mx-auto mb-1.5 border border-2 border-white shadow-sm" style="width: 36px; height: 36px; background-color: #28a745; color: #fff; font-size: 0.85rem;">
+                  <i class="bi bi-check-lg fw-bold"></i>
                 </div>
-                <span class="fs-9 fw-bold text-dark d-block">Request Placed</span>
+                <span class="fs-9 fw-bold text-dark d-block">Request Lodged</span>
                 <small class="text-muted fs-9" id="step-1-date">Submitted</small>
               </div>
 
               <!-- Step 2: Academic Audit -->
-              <div class="position-relative text-center" style="z-index: 3;">
-                <div id="step-2-circle" class="rounded-circle d-flex align-items-center justify-content-center mx-auto mb-1 border-2 border-white shadow-xs" style="width: 32px; height: 32px; background-color: #28a745; color: #fff;">
-                  <i class="bi bi-check fs-6"></i>
+              <div class="position-relative text-center flex-fill" style="z-index: 3;">
+                <div id="step-2-circle" class="rounded-circle d-flex align-items-center justify-content-center mx-auto mb-1.5 border border-2 border-white shadow-sm" style="width: 36px; height: 36px; background-color: #28a745; color: #fff; font-size: 0.85rem;">
+                  <i class="bi bi-check-lg fw-bold"></i>
                 </div>
                 <span class="fs-9 fw-bold text-dark d-block">Academic Review</span>
                 <small class="text-muted fs-9">100% Verified</small>
               </div>
 
-              <!-- Step 3: Printing / Processing -->
-              <div class="position-relative text-center" style="z-index: 3;">
-                <div id="step-3-circle" class="rounded-circle d-flex align-items-center justify-content-center mx-auto mb-1 border-2 border-white shadow-xs" style="width: 32px; height: 32px; background-color: #6c757d; color: #fff;">
-                  <span class="fs-9">3</span>
+              <!-- Step 3: Production / Processing -->
+              <div class="position-relative text-center flex-fill" style="z-index: 3;">
+                <div id="step-3-circle" class="rounded-circle d-flex align-items-center justify-content-center mx-auto mb-1.5 border border-2 border-white shadow-sm" style="width: 36px; height: 36px; background-color: #94a3b8; color: #fff; font-size: 0.85rem;">
+                  <span class="fw-bold">3</span>
                 </div>
-                <span class="fs-9 fw-bold text-dark d-block">Processing</span>
+                <span class="fs-9 fw-bold text-dark d-block">Production</span>
                 <small class="text-muted fs-9">Credential Prep</small>
               </div>
 
               <!-- Step 4: Dispatched / Issued -->
-              <div class="position-relative text-center" style="z-index: 3;">
-                <div id="step-4-circle" class="rounded-circle d-flex align-items-center justify-content-center mx-auto mb-1 border-2 border-white shadow-xs" style="width: 32px; height: 32px; background-color: #6c757d; color: #fff;">
-                  <span class="fs-9">4</span>
+              <div class="position-relative text-center flex-fill" style="z-index: 3;">
+                <div id="step-4-circle" class="rounded-circle d-flex align-items-center justify-content-center mx-auto mb-1.5 border border-2 border-white shadow-sm" style="width: 36px; height: 36px; background-color: #94a3b8; color: #fff; font-size: 0.85rem;">
+                  <span class="fw-bold">4</span>
                 </div>
                 <span class="fs-9 fw-bold text-dark d-block" id="step-4-label">Dispatched / Issued</span>
                 <small class="text-muted fs-9">Ready</small>
@@ -1686,56 +1749,91 @@ try {
             </div>
           </div>
 
-          <!-- Summary Grid -->
+          <!-- Summary Grid with Elevated Cards -->
           <div class="row g-3">
-            <!-- Academic Metrics -->
+            <!-- Academic Evaluation Dossier -->
             <div class="col-md-6">
-              <div class="bg-white p-3.5 rounded-4 border h-100 shadow-xs">
-                <div class="d-flex align-items-center gap-2 pb-2 mb-2.5 border-bottom text-primary fw-bold fs-8">
-                  <i class="bi bi-mortarboard-fill"></i>
-                  <span>Academic Evaluation</span>
-                </div>
-                <div class="mb-2">
-                  <small class="text-muted fs-9 text-uppercase fw-bold d-block">Course Title</small>
-                  <span class="fw-bold text-dark fs-8" id="tracker-course-title">Course Title</span>
-                </div>
-                <div class="mb-2">
-                  <small class="text-muted fs-9 text-uppercase fw-bold d-block">Evaluation Summary</small>
-                  <span class="text-success fw-bold fs-8" id="tracker-progress-score">Progress: 100%</span>
-                </div>
+              <div class="bg-white p-3.5 rounded-4 border border-slate-200 h-100 shadow-xs d-flex flex-column justify-content-between">
                 <div>
-                  <small class="text-muted fs-9 text-uppercase fw-bold d-block">Completion Date</small>
-                  <span class="text-dark fs-8 fw-semibold" id="tracker-completion-date">Aug 18, 2026</span>
+                  <div class="d-flex align-items-center justify-content-between pb-2 mb-2.5 border-bottom">
+                    <span class="fw-bold fs-8 text-primary d-flex align-items-center gap-1.5">
+                      <i class="bi bi-mortarboard-fill"></i> Academic Evaluation
+                    </span>
+                    <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 rounded-pill fs-9 px-2 py-0.5">
+                      <i class="bi bi-check-circle-fill me-1"></i> Passed & Qualified
+                    </span>
+                  </div>
+
+                  <div class="mb-2.5">
+                    <small class="text-muted fs-9 text-uppercase fw-bold d-block" style="letter-spacing: 0.05em;">Enrolled Course</small>
+                    <span class="fw-bold text-dark fs-8 d-block text-truncate" id="tracker-course-title" title="Course Title">Course Title</span>
+                  </div>
+
+                  <div class="p-2.5 bg-light rounded-3 border mb-2.5">
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                      <small class="text-muted fs-9 text-uppercase fw-bold">Performance Summary</small>
+                      <span class="text-success fw-bold fs-9" id="tracker-progress-score">Progress: 100%</span>
+                    </div>
+                    <div class="progress" style="height: 6px;">
+                      <div class="progress-bar bg-success" role="progressbar" style="width: 100%;" aria-valuenow="100" aria-valuemin="0" aria-valuemax="100"></div>
+                    </div>
+                  </div>
+
+                  <div class="d-flex align-items-center justify-content-between text-secondary fs-8">
+                    <span><i class="bi bi-calendar-event me-1 text-primary"></i>Completion Date:</span>
+                    <strong class="text-dark" id="tracker-completion-date">Aug 18, 2026</strong>
+                  </div>
+                </div>
+
+                <div class="mt-3 pt-2 border-top text-muted fs-9 d-flex align-items-center gap-1.5">
+                  <i class="bi bi-shield-lock-fill text-success"></i> Academic clearance verified by Board of Studies
                 </div>
               </div>
             </div>
 
-            <!-- Identity & Fulfillment Mode -->
+            <!-- Recipient & Delivery Fulfillment Dossier -->
             <div class="col-md-6">
-              <div class="bg-white p-3.5 rounded-4 border h-100 shadow-xs">
-                <div class="d-flex align-items-center gap-2 pb-2 mb-2.5 border-bottom text-dark fw-bold fs-8">
-                  <i class="bi bi-person-badge-fill text-primary"></i>
-                  <span>Recipient & Delivery Details</span>
-                </div>
-                <div class="mb-2">
-                  <small class="text-muted fs-9 text-uppercase fw-bold d-block">Full Name on Certificate</small>
-                  <span class="fw-bold text-dark fs-8" id="tracker-recipient-name">Student Full Name</span>
-                </div>
-                <div class="d-flex gap-2 mb-2">
-                  <div class="flex-fill">
-                    <small class="text-muted fs-9 text-uppercase fw-bold d-block">NIC Number</small>
-                    <span class="text-secondary fs-8 font-mono" id="tracker-nic">000000000000</span>
-                  </div>
-                  <div class="flex-fill">
-                    <small class="text-muted fs-9 text-uppercase fw-bold d-block">Contact Phone</small>
-                    <span class="text-secondary fs-8" id="tracker-mobile">+94 77 000 0000</span>
-                  </div>
-                </div>
+              <div class="bg-white p-3.5 rounded-4 border border-slate-200 h-100 shadow-xs d-flex flex-column justify-content-between">
                 <div>
-                  <small class="text-muted fs-9 text-uppercase fw-bold d-block">Fulfillment Mode</small>
-                  <div id="tracker-delivery-display" class="fs-8 mt-1">
-                    <!-- Populated by JS -->
+                  <div class="d-flex align-items-center justify-content-between pb-2 mb-2.5 border-bottom">
+                    <span class="fw-bold fs-8 text-dark d-flex align-items-center gap-1.5">
+                      <i class="bi bi-person-badge-fill text-primary"></i> Recipient & Fulfillment
+                    </span>
+                    <span class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 rounded-pill fs-9 px-2 py-0.5">
+                      Identity Verified
+                    </span>
                   </div>
+
+                  <div class="mb-2">
+                    <small class="text-muted fs-9 text-uppercase fw-bold d-block" style="letter-spacing: 0.05em;">Full Name on Certificate</small>
+                    <span class="fw-bold text-dark fs-8" id="tracker-recipient-name">Student Full Name</span>
+                  </div>
+
+                  <div class="row g-2 mb-2.5">
+                    <div class="col-6">
+                      <div class="p-2 bg-light rounded-2 border">
+                        <small class="text-muted fs-9 text-uppercase fw-bold d-block">NIC / Passport</small>
+                        <span class="text-dark fs-8 font-monospace fw-semibold" id="tracker-nic">000000000000</span>
+                      </div>
+                    </div>
+                    <div class="col-6">
+                      <div class="p-2 bg-light rounded-2 border">
+                        <small class="text-muted fs-9 text-uppercase fw-bold d-block">Primary Contact</small>
+                        <span class="text-dark fs-8 fw-semibold" id="tracker-mobile">+94 77 000 0000</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <small class="text-muted fs-9 text-uppercase fw-bold d-block mb-1" style="letter-spacing: 0.05em;">Fulfillment Method & Destination</small>
+                    <div id="tracker-delivery-display" class="fs-8">
+                      <!-- Populated dynamically by JS -->
+                    </div>
+                  </div>
+                </div>
+
+                <div class="mt-3 pt-2 border-top text-muted fs-9 d-flex align-items-center gap-1.5">
+                  <i class="bi bi-qr-code-scan text-primary"></i> Tamper-proof credential security with institutional QR code
                 </div>
               </div>
             </div>
@@ -1743,8 +1841,8 @@ try {
 
         </div>
 
-        <div class="modal-footer bg-white border-top py-3 px-4 d-flex justify-content-between">
-          <button type="button" class="btn btn-secondary btn-sm px-4 rounded-pill" data-bs-dismiss="modal"><?php echo __('cancel', 'Close'); ?></button>
+        <div class="modal-footer bg-white border-top py-3 px-4 d-flex justify-content-between align-items-center">
+          <button type="button" class="btn btn-light rounded-pill px-4 fs-8 fw-semibold text-secondary border" data-bs-dismiss="modal"><?php echo __('cancel', 'Close'); ?></button>
           <div id="tracker-action-buttons">
             <!-- Populated by JS -->
           </div>
@@ -1896,20 +1994,40 @@ try {
       alertBox.innerHTML = '';
 
       if (data.delivery_method === 'home_delivery') {
-        document.getElementById('delivery-method-home').checked = true;
+        document.getElementById('cert-option-hardcopy').checked = true;
+        document.getElementById('cert-option-digital').checked = true;
         document.getElementById('home-delivery-details').style.display = 'block';
         document.getElementById('cert-modal-address').value = data.delivery_address || '';
         document.getElementById('cert-modal-city').value = data.city || '';
         document.getElementById('cert-modal-postal').value = data.postal_code || '';
         document.getElementById('cert-modal-district').value = data.district || '';
         document.getElementById('cert-modal-notes').value = data.delivery_notes || '';
+        const codPhoneEl = document.getElementById('cert-modal-cod-phone');
+        if (codPhoneEl) {
+          codPhoneEl.value = data.cod_phone || data.mobile_number || '';
+        }
       } else {
-        document.getElementById('delivery-method-digital').checked = true;
+        document.getElementById('cert-option-hardcopy').checked = false;
+        document.getElementById('cert-option-digital').checked = true;
         document.getElementById('home-delivery-details').style.display = 'none';
       }
 
       const modal = new bootstrap.Modal(document.getElementById('certificateRequestModal'));
       modal.show();
+    }
+
+    function copyTrackerCertCode() {
+      const codeEl = document.getElementById('tracker-cert-code');
+      const text = codeEl ? codeEl.textContent.trim() : '';
+      if (text && text !== 'CERT-CSLK-PENDING' && navigator.clipboard) {
+        navigator.clipboard.writeText(text).then(() => {
+          const btnText = document.getElementById('copy-btn-text');
+          if (btnText) {
+            btnText.textContent = 'Copied!';
+            setTimeout(() => { btnText.textContent = 'Copy'; }, 2000);
+          }
+        });
+      }
     }
 
     function openCertificateStatusModal(data) {
@@ -1918,7 +2036,7 @@ try {
 
       document.getElementById('tracker-cert-code').textContent = data.certificate_code || 'CERT-CSLK-PENDING';
       document.getElementById('tracker-submitted-at').textContent = data.created_at ? new Date(data.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : (data.completion_date || '');
-      document.getElementById('step-1-date').textContent = data.created_at ? new Date(data.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Submitted';
+      document.getElementById('step-1-date').textContent = data.created_at ? new Date(data.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Submitted';
 
       document.getElementById('tracker-course-title').textContent = data.course_title || '';
       document.getElementById('tracker-progress-score').textContent = data.progress_score_summary || 'Progress: 100%';
@@ -1932,19 +2050,37 @@ try {
       const deliveryContainer = document.getElementById('tracker-delivery-display');
       if (data.delivery_method === 'home_delivery') {
         deliveryContainer.innerHTML = `
-          <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-35 px-2.5 py-1 rounded-pill fw-bold mb-1 d-inline-flex align-items-center gap-1">
-            <i class="bi bi-truck"></i> Home Delivery (Printed Hard Copy via Courier)
-          </span>
-          <div class="text-dark fs-9 mt-1 fw-medium"><i class="bi bi-geo-alt-fill text-danger me-1"></i>${escapeHtml(data.delivery_address || '')}, ${escapeHtml(data.city || '')}</div>
-          <div class="text-muted fs-9">${escapeHtml(data.district || '')} (${escapeHtml(data.postal_code || '')})</div>
-          ${data.delivery_notes ? `<div class="text-muted fs-9 italic mt-0.5"><i class="bi bi-chat-left-text me-1"></i>Notes: ${escapeHtml(data.delivery_notes)}</div>` : ''}
+          <div class="p-2.5 bg-light rounded-3 border">
+            <div class="d-flex flex-wrap gap-1.5 mb-2">
+              <span class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 px-2 py-0.5 rounded-pill fs-9 fw-semibold d-inline-flex align-items-center gap-1">
+                <i class="bi bi-file-earmark-pdf-fill text-danger"></i> Digital Copy (PDF)
+              </span>
+              <span class="badge bg-warning bg-opacity-20 text-warning-emphasis border border-warning border-opacity-35 px-2 py-0.5 rounded-pill fs-9 fw-bold d-inline-flex align-items-center gap-1">
+                <i class="bi bi-box-seam-fill text-primary"></i> Printed Hard Copy (COD)
+              </span>
+            </div>
+            <div class="text-dark fs-9 fw-medium mb-1">
+              <i class="bi bi-geo-alt-fill text-danger me-1"></i>${escapeHtml(data.delivery_address || '')}, ${escapeHtml(data.city || '')}
+            </div>
+            <div class="text-muted fs-9 mb-1">
+              <i class="bi bi-pin-map text-secondary me-1"></i>${escapeHtml(data.district || '')} (Postal: ${escapeHtml(data.postal_code || 'N/A')})
+            </div>
+            ${data.cod_phone ? `<div class="text-dark fs-9 mb-1"><i class="bi bi-telephone-fill text-success me-1"></i>COD Contact: <strong>${escapeHtml(data.cod_phone)}</strong></div>` : ''}
+            <div class="text-success fs-9 fw-semibold">
+              <i class="bi bi-cash-stack me-1"></i>Cash on Delivery Fee: LKR 1,500 <span class="text-muted fw-normal">(Payable upon delivery)</span>
+            </div>
+            ${data.delivery_notes ? `<div class="text-secondary fs-9 mt-1 pt-1 border-top"><i class="bi bi-chat-left-text me-1 text-primary"></i><strong>Instructions:</strong> ${escapeHtml(data.delivery_notes)}</div>` : ''}
+          </div>
         `;
       } else {
         deliveryContainer.innerHTML = `
-          <span class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-35 px-2.5 py-1 rounded-pill fw-bold mb-1 d-inline-flex align-items-center gap-1">
-            <i class="bi bi-file-earmark-pdf-fill"></i> Digital Copy Only (PDF e-Certificate)
-          </span>
-          <div class="text-muted fs-9 mt-1"><i class="bi bi-envelope me-1"></i>Emailed to: <strong>${escapeHtml(data.registered_email || '')}</strong></div>
+          <div class="p-2.5 bg-light rounded-3 border">
+            <span class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 px-2.5 py-1 rounded-pill fw-bold mb-2 d-inline-flex align-items-center gap-1">
+              <i class="bi bi-file-earmark-pdf-fill text-danger"></i> Digital Copy Only (PDF e-Certificate)
+            </span>
+            <div class="text-dark fs-9 mt-1"><i class="bi bi-envelope-check-fill text-primary me-1"></i>Registered Email: <strong>${escapeHtml(data.registered_email || '')}</strong></div>
+            <div class="text-muted fs-9 mt-1"><i class="bi bi-info-circle me-1"></i>Direct PDF dispatch with verifiable QR verification link upon approval.</div>
+          </div>
         `;
       }
 
@@ -1953,132 +2089,145 @@ try {
       const heroContainer = document.getElementById('tracker-status-hero');
       const actionBtnContainer = document.getElementById('tracker-action-buttons');
       const progressBar = document.getElementById('stepper-progress-bar');
+      const stageIndicator = document.getElementById('tracker-stage-indicator');
+      const step1Circle = document.getElementById('step-1-circle');
+      const step2Circle = document.getElementById('step-2-circle');
       const step3Circle = document.getElementById('step-3-circle');
       const step4Circle = document.getElementById('step-4-circle');
       const step4Label = document.getElementById('step-4-label');
 
-      // Reset Stepper
-      step3Circle.style.backgroundColor = '#6c757d';
-      step3Circle.innerHTML = '<span class="fs-9">3</span>';
-      step4Circle.style.backgroundColor = '#6c757d';
-      step4Circle.innerHTML = '<span class="fs-9">4</span>';
+      // Reset Stepper Styles
+      step1Circle.style.backgroundColor = '#28a745';
+      step1Circle.innerHTML = '<i class="bi bi-check-lg fw-bold"></i>';
+      step2Circle.style.backgroundColor = '#28a745';
+      step2Circle.innerHTML = '<i class="bi bi-check-lg fw-bold"></i>';
+      step3Circle.style.backgroundColor = '#94a3b8';
+      step3Circle.innerHTML = '<span class="fw-bold">3</span>';
+      step4Circle.style.backgroundColor = '#94a3b8';
+      step4Circle.innerHTML = '<span class="fw-bold">4</span>';
       step4Label.textContent = data.delivery_method === 'home_delivery' ? 'Dispatched' : 'Issued';
 
       if (status === 'pending') {
-        progressBar.style.width = '33%';
-        heroContainer.className = 'p-3.5 rounded-4 border border-warning bg-warning bg-opacity-10 mb-3 shadow-xs text-start';
+        progressBar.style.width = '25%';
+        if (stageIndicator) stageIndicator.textContent = 'Stage 1 of 4: Under Review';
+        heroContainer.className = 'p-3.5 rounded-4 border border-warning border-opacity-40 bg-warning bg-opacity-10 mb-3 shadow-xs text-start';
         heroContainer.innerHTML = `
           <div class="d-flex align-items-start gap-3">
-            <div class="p-2.5 rounded-circle bg-warning bg-opacity-20 text-warning d-flex align-items-center justify-content-center" style="width: 44px; height: 44px;">
+            <div class="p-2.5 rounded-circle bg-warning bg-opacity-20 text-warning d-flex align-items-center justify-content-center shadow-xs" style="width: 44px; height: 44px; min-width: 44px;">
               <i class="bi bi-hourglass-split fs-4 text-warning"></i>
             </div>
             <div class="flex-grow-1">
-              <div class="d-flex justify-content-between align-items-center">
-                <h6 class="fw-bold text-dark mb-0 fs-7">Application Received & Under Review</h6>
-                <span class="badge bg-warning text-dark border border-warning px-2.5 py-1 rounded-pill fs-9 fw-bold text-uppercase">Pending Review</span>
+              <div class="d-flex justify-content-between align-items-center flex-wrap gap-1">
+                <h6 class="fw-bold text-dark mb-0 fs-7">Application Received & Academic Audit in Progress</h6>
+                <span class="badge bg-warning text-dark border border-warning border-opacity-40 px-2.5 py-1 rounded-pill fs-9 fw-bold text-uppercase">Under Review</span>
               </div>
-              <p class="text-secondary fs-8 mb-0 mt-1">
-                Your certificate request was received and is currently being audited by the academic board. Your 100% course progress and quiz evaluations are verified. Once confirmed by the administrator, your certificate will be generated and dispatched.
+              <p class="text-secondary fs-8 mb-0 mt-1.5" style="line-height: 1.45;">
+                Your certificate request was received and is currently being audited by the academic department. Your 100% course progress and quiz evaluations are verified. Once confirmed, your credential will proceed to production and delivery dispatch.
               </p>
             </div>
           </div>
         `;
         actionBtnContainer.innerHTML = '';
       } else if (status === 'processing') {
-        progressBar.style.width = '66%';
+        progressBar.style.width = '60%';
+        if (stageIndicator) stageIndicator.textContent = 'Stage 3 of 4: In Production';
         step3Circle.style.backgroundColor = '#0f4c81';
         step3Circle.innerHTML = '<i class="bi bi-gear-fill fs-8"></i>';
 
-        heroContainer.className = 'p-3.5 rounded-4 border border-primary bg-primary bg-opacity-10 mb-3 shadow-xs text-start';
+        heroContainer.className = 'p-3.5 rounded-4 border border-primary border-opacity-40 bg-primary bg-opacity-10 mb-3 shadow-xs text-start';
         heroContainer.innerHTML = `
           <div class="d-flex align-items-start gap-3">
-            <div class="p-2.5 rounded-circle bg-primary bg-opacity-20 text-primary d-flex align-items-center justify-content-center" style="width: 44px; height: 44px;">
+            <div class="p-2.5 rounded-circle bg-primary bg-opacity-20 text-primary d-flex align-items-center justify-content-center shadow-xs" style="width: 44px; height: 44px; min-width: 44px;">
               <i class="bi bi-gear-wide-connected fs-4 text-primary"></i>
             </div>
             <div class="flex-grow-1">
-              <div class="d-flex justify-content-between align-items-center">
-                <h6 class="fw-bold text-dark mb-0 fs-7">Certificate Processing & Printing</h6>
-                <span class="badge bg-primary text-white px-2.5 py-1 rounded-pill fs-9 fw-bold text-uppercase">Processing</span>
+              <div class="d-flex justify-content-between align-items-center flex-wrap gap-1">
+                <h6 class="fw-bold text-dark mb-0 fs-7">Certificate Approved & In Production</h6>
+                <span class="badge bg-primary text-white px-2.5 py-1 rounded-pill fs-9 fw-bold text-uppercase">In Production</span>
               </div>
-              <p class="text-secondary fs-8 mb-0 mt-1">
-                Your certificate request has been approved! The institutional document is currently undergoing formal seal stamping, verification registration, and packaging.
+              <p class="text-secondary fs-8 mb-0 mt-1.5" style="line-height: 1.45;">
+                Your application has passed academic review! The institutional credential is now being generated with security seals, unique QR registration codes, and archival certification.
               </p>
-              ${data.admin_notes ? `<div class="p-2 bg-white rounded border mt-2 fs-9 text-dark"><i class="bi bi-info-circle text-primary me-1"></i><strong>Admin Note:</strong> ${escapeHtml(data.admin_notes)}</div>` : ''}
+              ${data.admin_notes ? `<div class="p-2.5 bg-white rounded-3 border mt-2 fs-9 text-dark"><i class="bi bi-info-circle text-primary me-1"></i><strong>Admin Note:</strong> ${escapeHtml(data.admin_notes)}</div>` : ''}
             </div>
           </div>
         `;
         actionBtnContainer.innerHTML = '';
       } else if (status === 'dispatched') {
         progressBar.style.width = '100%';
+        if (stageIndicator) stageIndicator.textContent = 'Stage 4 of 4: Dispatched';
         step3Circle.style.backgroundColor = '#28a745';
-        step3Circle.innerHTML = '<i class="bi bi-check fs-6"></i>';
-        step4Circle.style.backgroundColor = '#17a2b8';
+        step3Circle.innerHTML = '<i class="bi bi-check-lg fw-bold"></i>';
+        step4Circle.style.backgroundColor = '#0284c7';
         step4Circle.innerHTML = '<i class="bi bi-truck fs-7"></i>';
 
-        heroContainer.className = 'p-3.5 rounded-4 border border-info bg-info bg-opacity-10 mb-3 shadow-xs text-start';
+        heroContainer.className = 'p-3.5 rounded-4 border border-info border-opacity-40 bg-info bg-opacity-10 mb-3 shadow-xs text-start';
         heroContainer.innerHTML = `
           <div class="d-flex align-items-start gap-3">
-            <div class="p-2.5 rounded-circle bg-info bg-opacity-20 text-info d-flex align-items-center justify-content-center" style="width: 44px; height: 44px;">
+            <div class="p-2.5 rounded-circle bg-info bg-opacity-20 text-info d-flex align-items-center justify-content-center shadow-xs" style="width: 44px; height: 44px; min-width: 44px;">
               <i class="bi bi-truck fs-4 text-info"></i>
             </div>
             <div class="flex-grow-1">
-              <div class="d-flex justify-content-between align-items-center">
-                <h6 class="fw-bold text-dark mb-0 fs-7">Dispatched via Courier (Out for Delivery)</h6>
+              <div class="d-flex justify-content-between align-items-center flex-wrap gap-1">
+                <h6 class="fw-bold text-dark mb-0 fs-7">Dispatched via Registered Courier (Out for Delivery)</h6>
                 <span class="badge bg-info text-white px-2.5 py-1 rounded-pill fs-9 fw-bold text-uppercase">Dispatched</span>
               </div>
-              <p class="text-secondary fs-8 mb-0 mt-1">
-                Great news! Your official embossed parchment certificate has been dispatched via courier service to your delivery address.
+              <p class="text-secondary fs-8 mb-0 mt-1.5" style="line-height: 1.45;">
+                Great news! Your official embossed certificate package has been handed over to the courier service and is out for doorstep delivery.
               </p>
-              ${data.admin_notes ? `<div class="p-2 bg-white rounded border border-info mt-2 fs-9 text-dark"><i class="bi bi-box-seam text-info me-1"></i><strong>Courier & Tracking Details:</strong> ${escapeHtml(data.admin_notes)}</div>` : ''}
+              ${data.admin_notes ? `<div class="p-2.5 bg-white rounded-3 border border-info border-opacity-30 mt-2 fs-9 text-dark"><i class="bi bi-box-seam-fill text-info me-1"></i><strong>Courier & Tracking Details:</strong> ${escapeHtml(data.admin_notes)}</div>` : ''}
             </div>
           </div>
         `;
         actionBtnContainer.innerHTML = '';
       } else if (status === 'approved' || status === 'issued') {
         progressBar.style.width = '100%';
+        if (stageIndicator) stageIndicator.textContent = 'Completed & Issued';
         step3Circle.style.backgroundColor = '#28a745';
-        step3Circle.innerHTML = '<i class="bi bi-check fs-6"></i>';
+        step3Circle.innerHTML = '<i class="bi bi-check-lg fw-bold"></i>';
         step4Circle.style.backgroundColor = '#28a745';
         step4Circle.innerHTML = '<i class="bi bi-check-all fs-6"></i>';
 
-        heroContainer.className = 'p-3.5 rounded-4 border border-success bg-success bg-opacity-10 mb-3 shadow-xs text-start';
+        heroContainer.className = 'p-3.5 rounded-4 border border-success border-opacity-40 bg-success bg-opacity-10 mb-3 shadow-xs text-start';
         heroContainer.innerHTML = `
           <div class="d-flex align-items-start gap-3">
-            <div class="p-2.5 rounded-circle bg-success bg-opacity-20 text-success d-flex align-items-center justify-content-center" style="width: 44px; height: 44px;">
+            <div class="p-2.5 rounded-circle bg-success bg-opacity-20 text-success d-flex align-items-center justify-content-center shadow-xs" style="width: 44px; height: 44px; min-width: 44px;">
               <i class="bi bi-patch-check-fill fs-4 text-success"></i>
             </div>
             <div class="flex-grow-1">
-              <div class="d-flex justify-content-between align-items-center">
-                <h6 class="fw-bold text-dark mb-0 fs-7">Certificate Officially Issued & Verified</h6>
+              <div class="d-flex justify-content-between align-items-center flex-wrap gap-1">
+                <h6 class="fw-bold text-dark mb-0 fs-7">Certificate Officially Issued & Digitally Registered</h6>
                 <span class="badge bg-success text-white px-2.5 py-1 rounded-pill fs-9 fw-bold text-uppercase">Issued & Active</span>
               </div>
-              <p class="text-secondary fs-8 mb-0 mt-1">
-                Congratulations! Your official course certificate has been approved, registered on the institutional verification registry, and issued. You may view and print your verified credential at any time.
+              <p class="text-secondary fs-8 mb-0 mt-1.5" style="line-height: 1.45;">
+                Congratulations! Your official credential is fully registered on the Computerscience.lk academic database. You can instantly view, print, or download your high-resolution verified certificate.
               </p>
-              ${data.admin_notes ? `<div class="p-2 bg-white rounded border mt-2 fs-9 text-dark"><i class="bi bi-chat-quote me-1 text-success"></i>${escapeHtml(data.admin_notes)}</div>` : ''}
+              ${data.admin_notes ? `<div class="p-2.5 bg-white rounded-3 border mt-2 fs-9 text-dark"><i class="bi bi-chat-quote-fill me-1 text-success"></i><strong>Academic Note:</strong> ${escapeHtml(data.admin_notes)}</div>` : ''}
             </div>
           </div>
         `;
         actionBtnContainer.innerHTML = `
-          <button type="button" class="btn btn-success btn-sm px-4 rounded-pill fw-bold text-white shadow-sm d-flex align-items-center gap-1.5" onclick="viewOfficialStudentCertificate()">
-            <i class="bi bi-award-fill"></i> View & Print Certificate
+          <button type="button" class="btn btn-success rounded-pill px-4 py-2 fw-bold text-white shadow-sm d-flex align-items-center gap-2" style="background-color: #198754;" onclick="viewOfficialStudentCertificate()">
+            <i class="bi bi-award-fill fs-6"></i>
+            <span>View & Print Certificate</span>
           </button>
         `;
       } else if (status === 'rejected') {
-        progressBar.style.width = '33%';
-        heroContainer.className = 'p-3.5 rounded-4 border border-danger bg-danger bg-opacity-10 mb-3 shadow-xs text-start';
+        progressBar.style.width = '25%';
+        if (stageIndicator) stageIndicator.textContent = 'Action Required';
+        heroContainer.className = 'p-3.5 rounded-4 border border-danger border-opacity-40 bg-danger bg-opacity-10 mb-3 shadow-xs text-start';
         heroContainer.innerHTML = `
           <div class="d-flex align-items-start gap-3">
-            <div class="p-2.5 rounded-circle bg-danger bg-opacity-20 text-danger d-flex align-items-center justify-content-center" style="width: 44px; height: 44px;">
-              <i class="bi bi-x-circle-fill fs-4 text-danger"></i>
+            <div class="p-2.5 rounded-circle bg-danger bg-opacity-20 text-danger d-flex align-items-center justify-content-center shadow-xs" style="width: 44px; height: 44px; min-width: 44px;">
+              <i class="bi bi-exclamation-triangle-fill fs-4 text-danger"></i>
             </div>
             <div class="flex-grow-1">
-              <div class="d-flex justify-content-between align-items-center">
-                <h6 class="fw-bold text-dark mb-0 fs-7">Application Not Approved</h6>
+              <div class="d-flex justify-content-between align-items-center flex-wrap gap-1">
+                <h6 class="fw-bold text-dark mb-0 fs-7">Application Requires Clarification / Declined</h6>
                 <span class="badge bg-danger text-white px-2.5 py-1 rounded-pill fs-9 fw-bold text-uppercase">Declined</span>
               </div>
-              <p class="text-secondary fs-8 mb-0 mt-1">
-                Your certificate request was not approved by administration. ${data.admin_notes ? `<strong>Reason:</strong> ${escapeHtml(data.admin_notes)}` : 'Please reach out to support for more details.'}
+              <p class="text-secondary fs-8 mb-0 mt-1.5" style="line-height: 1.45;">
+                Your certificate request could not be processed at this time. ${data.admin_notes ? `<strong>Reason:</strong> ${escapeHtml(data.admin_notes)}` : 'Please reach out to support for more details.'}
               </p>
             </div>
           </div>
@@ -2197,9 +2346,39 @@ try {
       }
     }
 
+    function handleCertOptionChange(changed) {
+      const digitalCheck = document.getElementById('cert-option-digital');
+      const hardcopyCheck = document.getElementById('cert-option-hardcopy');
+      const deliveryDetails = document.getElementById('home-delivery-details');
+
+      if (hardcopyCheck && hardcopyCheck.checked) {
+        // If hard copy is selected, digital copy is automatically selected
+        if (digitalCheck) digitalCheck.checked = true;
+        if (deliveryDetails) deliveryDetails.style.display = 'block';
+
+        const mobileInput = document.getElementById('cert-modal-mobile');
+        const codPhoneInput = document.getElementById('cert-modal-cod-phone');
+        if (codPhoneInput && !codPhoneInput.value && mobileInput && mobileInput.value) {
+          codPhoneInput.value = mobileInput.value;
+        }
+      } else {
+        // Hard copy unselected: student can select just the digital copy
+        if (deliveryDetails) deliveryDetails.style.display = 'none';
+      }
+
+      // Enforce selection constraint on digital copy
+      if (changed === 'digital') {
+        if (hardcopyCheck && hardcopyCheck.checked) {
+          if (digitalCheck) digitalCheck.checked = true;
+        } else if (digitalCheck && !digitalCheck.checked) {
+          // Keep at least digital copy selected
+          digitalCheck.checked = true;
+        }
+      }
+    }
+
     function toggleDeliveryFields() {
-      const isHome = document.getElementById('delivery-method-home').checked;
-      document.getElementById('home-delivery-details').style.display = isHome ? 'block' : 'none';
+      handleCertOptionChange('hardcopy');
     }
 
     function escapeHtml(text) {
@@ -2220,8 +2399,9 @@ try {
           const fullName = document.getElementById('cert-modal-fullname').value.trim();
           const nic = document.getElementById('cert-modal-nic').value.trim();
           const mobile = document.getElementById('cert-modal-mobile').value.trim();
-          const isHome = document.getElementById('delivery-method-home').checked;
-          const deliveryMethod = isHome ? 'home_delivery' : 'digital_only';
+          const isHardCopy = document.getElementById('cert-option-hardcopy') ? document.getElementById('cert-option-hardcopy').checked : false;
+          const deliveryMethod = isHardCopy ? 'home_delivery' : 'digital_only';
+          const codPhone = document.getElementById('cert-modal-cod-phone') ? document.getElementById('cert-modal-cod-phone').value.trim() : '';
 
           const payload = {
             course_id: courseId,
@@ -2229,16 +2409,17 @@ try {
             nic_number: nic,
             mobile_number: mobile,
             delivery_method: deliveryMethod,
-            delivery_address: isHome ? document.getElementById('cert-modal-address').value.trim() : '',
-            city: isHome ? document.getElementById('cert-modal-city').value.trim() : '',
-            postal_code: isHome ? document.getElementById('cert-modal-postal').value.trim() : '',
-            district: isHome ? document.getElementById('cert-modal-district').value.trim() : '',
-            delivery_notes: isHome ? document.getElementById('cert-modal-notes').value.trim() : ''
+            delivery_address: isHardCopy ? document.getElementById('cert-modal-address').value.trim() : '',
+            city: isHardCopy ? document.getElementById('cert-modal-city').value.trim() : '',
+            postal_code: isHardCopy ? document.getElementById('cert-modal-postal').value.trim() : '',
+            district: isHardCopy ? document.getElementById('cert-modal-district').value.trim() : '',
+            delivery_notes: isHardCopy ? document.getElementById('cert-modal-notes').value.trim() : '',
+            cod_phone: isHardCopy ? (codPhone || mobile) : ''
           };
 
-          if (isHome && (!payload.delivery_address || !payload.city || !payload.postal_code || !payload.district)) {
+          if (isHardCopy && (!payload.delivery_address || !payload.city || !payload.postal_code || !payload.district || !payload.cod_phone)) {
             alertBox.className = 'alert alert-danger mb-3 py-2 px-3 fs-8';
-            alertBox.textContent = 'Please fill in all delivery address details (Address, City, Postal Code, District).';
+            alertBox.textContent = 'Please fill in all Cash on Delivery details (Address, City, Postal Code, District, and COD Contact Phone).';
             return;
           }
 

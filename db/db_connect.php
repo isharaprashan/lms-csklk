@@ -420,6 +420,21 @@ function ensureMigrations($pdo)
 
         $pdo->exec("INSERT IGNORE INTO site_settings (setting_key, setting_value) VALUES ('site_logo', 'assets/logo.png')");
     }
+
+    // Ensure default certificate delivery note settings exist
+    try {
+        $default_settings = [
+            'cert_cod_title' => 'Cash on Delivery & Courier Details:',
+            'cert_cod_fee_note' => 'LKR 1,500 Cash on Delivery fee for embossed certificate printing, security hard-folder, and island-wide registered courier handling (Payable in Cash to the courier delivery rider upon package arrival). The digital e-certificate remains 100% free.',
+            'cert_cod_timeframe_note' => 'Dispatched within 24–48 hours after application approval. Island-wide doorstep delivery takes 2 to 4 working days.',
+            'cert_cod_custom_notice' => ''
+        ];
+        $insertSettingStmt = $pdo->prepare("INSERT IGNORE INTO site_settings (setting_key, setting_value) VALUES (?, ?)");
+        foreach ($default_settings as $k => $v) {
+            $insertSettingStmt->execute([$k, $v]);
+        }
+    } catch (PDOException $ex) {
+    }
     try {
         $pdo->query("SELECT updated_at FROM quiz_results LIMIT 1");
     } catch (PDOException $e) {
@@ -933,6 +948,28 @@ function seedFromMockData($pdo)
     foreach ($studentData['quiz_results'] as $c_id => $score) {
         $scoreStmt->execute([$studentId, $c_id, $score]);
     }
+}
+
+// Global Helper function to retrieve any setting key from site_settings with fallback default
+function get_site_setting($key, $default = '')
+{
+    static $settings_cache = [];
+    if (array_key_exists($key, $settings_cache)) {
+        return $settings_cache[$key];
+    }
+    try {
+        $pdo = getDBConnection();
+        $stmt = $pdo->prepare("SELECT setting_value FROM site_settings WHERE setting_key = ? LIMIT 1");
+        $stmt->execute([$key]);
+        $val = $stmt->fetchColumn();
+        if ($val !== false && $val !== null && $val !== '') {
+            $settings_cache[$key] = $val;
+            return $val;
+        }
+    } catch (Exception $e) {
+    }
+    $settings_cache[$key] = $default;
+    return $default;
 }
 
 // Global Helper function to retrieve current active site logo with cache buster
