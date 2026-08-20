@@ -2808,7 +2808,7 @@ try {
           </div>
 
           <!-- Setup Instructions & Callback URI Box -->
-          <div class="col-lg-5">
+          <!-- <div class="col-lg-5">
             <div class="glass-card p-4 h-100">
               <h5 class="fw-bold text-dark mb-3 d-flex align-items-center gap-2">
                 <i class="bi bi-shield-check text-success"></i>
@@ -2842,7 +2842,7 @@ try {
                 <i class="bi bi-check-circle-fill me-1"></i> Native cURL authentication engine active. No Composer dependencies required.
               </div>
             </div>
-          </div>
+          </div> -->
         </div>
       </div>
 

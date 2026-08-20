@@ -402,7 +402,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
           <!-- Profile Picture File Upload -->
           <div class="mb-4">
-            <label for="avatar_file" class="form-label fw-semibold text-secondary d-block"><?php echo __('upload_slip_file', 'Upload Profile Picture'); ?></label>
+            <label for="avatar_file" class="form-label fw-semibold text-secondary d-block"><?php echo __('', 'Upload Profile Picture'); ?></label>
             <input type="file" name="avatar_file" id="avatar_file" class="form-control bg-light" accept="image/*">
           </div>
 
