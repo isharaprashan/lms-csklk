@@ -3,6 +3,7 @@ session_name('LMS_ADMIN_SESS');
 session_set_cookie_params(['lifetime' => 0, 'path' => '/']);
 session_start();
 require_once __DIR__ . '/../db/db_connect.php';
+require_once __DIR__ . '/../config/google_oauth.php';
 
 if (!isset($_SESSION['user_id'])) {
   $sid = $_GET['sid'] ?? $_POST['sid'] ?? ($_COOKIE['PHPSESSID'] ?? null);
@@ -709,6 +710,24 @@ try {
     }
   }
 
+  // Handle Google OAuth Settings Update
+  if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_google_oauth') {
+    $google_client_id = trim($_POST['google_client_id'] ?? '');
+    $google_client_secret = trim($_POST['google_client_secret'] ?? '');
+    $google_oauth_enabled = isset($_POST['google_oauth_enabled']) ? '1' : '0';
+    $google_redirect_uri = trim($_POST['google_redirect_uri'] ?? '');
+
+    $stmt = $pdo->prepare("INSERT INTO site_settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)");
+    $stmt->execute(['google_client_id', $google_client_id]);
+    $stmt->execute(['google_client_secret', $google_client_secret]);
+    $stmt->execute(['google_oauth_enabled', $google_oauth_enabled]);
+    if (!empty($google_redirect_uri)) {
+      $stmt->execute(['google_redirect_uri', $google_redirect_uri]);
+    }
+
+    $success_message = 'Google Sign-In & OAuth settings updated successfully!';
+  }
+
   // Fetch all teachers
   $stmt = $pdo->query("SELECT u.*, (SELECT COUNT(*) FROM courses c WHERE c.tutor_id = u.id) as teacher_courses_count FROM users u WHERE u.role = 'teacher' ORDER BY CASE WHEN u.status = 'pending' THEN 1 ELSE 2 END, u.created_at DESC");
   $teachers = $stmt->fetchAll();
@@ -1083,6 +1102,14 @@ try {
         <div class="d-flex align-items-center gap-2.5">
           <i class="bi bi-truck text-info"></i>
           <span>Certificate Delivery Note</span>
+        </div>
+      </a>
+
+      <!-- Google OAuth / Sign-In Settings -->
+      <a class="nav-link-item" id="btn-google-auth-tab">
+        <div class="d-flex align-items-center gap-2.5">
+          <i class="bi bi-google text-warning"></i>
+          <span>Google Sign-In</span>
         </div>
       </a>
 
@@ -2728,6 +2755,97 @@ try {
         </div>
       </div>
 
+      <!-- Section: Google OAuth & Sign-In Settings -->
+      <div id="google-auth-section" class="d-none">
+        <div class="mb-4">
+          <h2 class="fw-bold text-dark mb-1">Google Sign-In (OAuth 2.0) Settings</h2>
+          <p class="text-secondary fs-7">Configure Google OAuth 2.0 client credentials to allow one-click "Continue with Google" sign-in for students and teachers.</p>
+        </div>
+
+        <div class="row g-4">
+          <!-- Settings Form Column -->
+          <div class="col-lg-7">
+            <div class="glass-card p-4 h-100">
+              <h5 class="fw-bold text-dark mb-3 d-flex align-items-center gap-2">
+                <i class="bi bi-google text-warning"></i>
+                <span>OAuth 2.0 Credentials</span>
+              </h5>
+
+              <form action="index.php" method="POST">
+                <input type="hidden" name="action" value="update_google_oauth">
+
+                <div class="form-check form-switch mb-3 p-3 bg-light rounded-3 border">
+                  <input class="form-check-input ms-0 me-2" type="checkbox" role="switch" id="google_oauth_enabled" name="google_oauth_enabled" value="1" <?php echo is_google_oauth_enabled() ? 'checked' : ''; ?>>
+                  <label class="form-check-label fw-bold text-dark fs-8" for="google_oauth_enabled">
+                    Enable "Continue with Google" on Login & Registration
+                  </label>
+                  <small class="text-muted d-block fs-9 mt-0.5">When enabled, students and teachers will see the official Google Sign-In button.</small>
+                </div>
+
+                <div class="mb-3">
+                  <label for="google_client_id" class="form-label fw-semibold text-secondary fs-8">Google Client ID <span class="text-danger">*</span></label>
+                  <input type="text" name="google_client_id" id="google_client_id" class="form-control font-monospace fs-8" placeholder="e.g. 1234567890-abcdefg.apps.googleusercontent.com" value="<?php echo htmlspecialchars(get_site_setting('google_client_id', '')); ?>">
+                  <small class="text-muted fs-9">Obtained from Google Cloud Console &rarr; APIs & Services &rarr; Credentials.</small>
+                </div>
+
+                <div class="mb-3">
+                  <label for="google_client_secret" class="form-label fw-semibold text-secondary fs-8">Google Client Secret <span class="text-danger">*</span></label>
+                  <input type="password" name="google_client_secret" id="google_client_secret" class="form-control font-monospace fs-8" placeholder="e.g. GOCSPX-xxxxxxxxxxxxxxxx" value="<?php echo htmlspecialchars(get_site_setting('google_client_secret', '')); ?>">
+                  <small class="text-muted fs-9">Keep your Client Secret private. Never share it publicly.</small>
+                </div>
+
+                <div class="mb-3">
+                  <label for="google_redirect_uri" class="form-label fw-semibold text-secondary fs-8">Custom Redirect URI (Optional Override)</label>
+                  <input type="url" name="google_redirect_uri" id="google_redirect_uri" class="form-control font-monospace fs-8" placeholder="Leave empty for auto-detected URI" value="<?php echo htmlspecialchars(get_site_setting('google_redirect_uri', '')); ?>">
+                  <small class="text-muted fs-9">Leave blank to use the auto-detected URI displayed on the right.</small>
+                </div>
+
+                <button type="submit" class="btn btn-primary px-4 py-2 rounded-pill fw-semibold shadow-xs" style="background-color: <?php echo $is_super_admin ? '#0b4528' : '#0f4c81'; ?>;">
+                  <i class="bi bi-save me-1.5"></i> Save Google OAuth Settings
+                </button>
+              </form>
+            </div>
+          </div>
+
+          <!-- Setup Instructions & Callback URI Box -->
+          <div class="col-lg-5">
+            <div class="glass-card p-4 h-100">
+              <h5 class="fw-bold text-dark mb-3 d-flex align-items-center gap-2">
+                <i class="bi bi-shield-check text-success"></i>
+                <span>Google Cloud Configuration</span>
+              </h5>
+
+              <div class="mb-3">
+                <label class="form-label fw-semibold text-secondary fs-9 text-uppercase">Authorized Redirect URI</label>
+                <div class="input-group mb-1">
+                  <input type="text" class="form-control font-monospace fs-9 bg-light" id="auto-detected-redirect-uri" value="<?php echo htmlspecialchars(get_google_redirect_uri()); ?>" readonly>
+                  <button type="button" class="btn btn-outline-secondary px-3" onclick="copyRedirectUri()">
+                    <i class="bi bi-clipboard me-1"></i> <span id="copy-uri-btn-text">Copy</span>
+                  </button>
+                </div>
+                <small class="text-muted fs-9">Paste this exact URI into Google Cloud Console under <strong>"Authorized redirect URIs"</strong>.</small>
+              </div>
+
+              <div class="p-3 bg-light rounded-3 border mb-3">
+                <h6 class="fw-bold text-dark fs-8 mb-2"><i class="bi bi-info-circle text-primary me-1"></i> Quick Setup Steps:</h6>
+                <ol class="ps-3 mb-0 text-secondary fs-9" style="line-height: 1.6;">
+                  <li>Visit <a href="https://console.cloud.google.com/apis/credentials" target="_blank" class="text-primary fw-semibold">Google Cloud Console</a>.</li>
+                  <li>Create a new Project or select an existing one.</li>
+                  <li>Configure the <strong>OAuth Consent Screen</strong> (User Type: External, Scopes: email, profile, openid).</li>
+                  <li>Create <strong>OAuth Client ID</strong> credentials (Application type: <em>Web application</em>).</li>
+                  <li>Add the <strong>Authorized Redirect URI</strong> above and save.</li>
+                  <li>Copy your Client ID and Client Secret into the form on the left.</li>
+                </ol>
+              </div>
+
+              <div class="p-2.5 bg-success bg-opacity-10 text-success rounded-3 border border-success border-opacity-25 fs-9">
+                <i class="bi bi-check-circle-fill me-1"></i> Native cURL authentication engine active. No Composer dependencies required.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Section: Admin Account Security -->
       <div id="password-section" class="d-none">
         <div class="mb-4">
@@ -3292,6 +3410,7 @@ try {
         const btnAnnouncements = document.getElementById('btn-announcements-tab');
         const btnHero = document.getElementById('btn-hero-tab');
         const btnDeliveryNote = document.getElementById('btn-delivery-note-tab');
+        const btnGoogleAuth = document.getElementById('btn-google-auth-tab');
         const btnLogo = document.getElementById('btn-logo-tab');
         const btnPassword = document.getElementById('btn-password-tab');
 
@@ -3306,6 +3425,7 @@ try {
         const secAnnouncements = document.getElementById('announcements-section');
         const secHero = document.getElementById('hero-section');
         const secDeliveryNote = document.getElementById('delivery-note-section');
+        const secGoogleAuth = document.getElementById('google-auth-section');
         const secLogo = document.getElementById('logo-section');
         const secPassword = document.getElementById('password-section');
 
@@ -3374,6 +3494,7 @@ try {
           case 'announcements': switchToAnnouncements(); break;
           case 'hero': switchToHero(); break;
           case 'delivery_note': switchToDeliveryNote(); break;
+          case 'google_auth': switchToGoogleAuth(); break;
           case 'logo': switchToLogo(); break;
           case 'password': switchToPassword(); break;
           default: switchToTeachers(); break;
@@ -3389,12 +3510,13 @@ try {
         if (btnAnnouncements) btnAnnouncements.addEventListener('click', switchToAnnouncements);
         if (btnHero) btnHero.addEventListener('click', switchToHero);
         if (btnDeliveryNote) btnDeliveryNote.addEventListener('click', switchToDeliveryNote);
+        if (btnGoogleAuth) btnGoogleAuth.addEventListener('click', switchToGoogleAuth);
         if (btnLogo) btnLogo.addEventListener('click', switchToLogo);
         if (btnPassword) btnPassword.addEventListener('click', switchToPassword);
 
         function resetTabStyles() {
-          const allBtns = [btnTeachers, btnStudents, btnCourses, btnBank, btnManageBank, btnOptions, btnAnnouncements, btnHero, btnDeliveryNote, btnLogo, btnPassword];
-          const allSecs = [secTeachers, secStudents, secCourses, secBank, secManageBank, secOptions, secAnnouncements, secHero, secDeliveryNote, secLogo, secPassword];
+          const allBtns = [btnTeachers, btnStudents, btnCourses, btnBank, btnManageBank, btnOptions, btnAnnouncements, btnHero, btnDeliveryNote, btnGoogleAuth, btnLogo, btnPassword];
+          const allSecs = [secTeachers, secStudents, secCourses, secBank, secManageBank, secOptions, secAnnouncements, secHero, secDeliveryNote, secGoogleAuth, secLogo, secPassword];
 
           allBtns.forEach(btn => {
             if (btn) btn.classList.remove('active');
@@ -3425,9 +3547,23 @@ try {
         function switchToAnnouncements() { setActiveTab(btnAnnouncements, secAnnouncements, 'announcements', 'Site Announcements'); }
         function switchToHero() { setActiveTab(btnHero, secHero, 'hero', 'Hero Banner Settings'); }
         function switchToDeliveryNote() { setActiveTab(btnDeliveryNote, secDeliveryNote, 'delivery_note', 'Certificate Delivery Note & COD Settings'); }
+        function switchToGoogleAuth() { setActiveTab(btnGoogleAuth, secGoogleAuth, 'google_auth', 'Google Sign-In & OAuth Settings'); }
         function switchToLogo() { setActiveTab(btnLogo, secLogo, 'logo', 'Site Logo Customization'); }
         function switchToPassword() { setActiveTab(btnPassword, secPassword, 'password', 'Change Admin Password'); }
       });
+
+      function copyRedirectUri() {
+        const uriInput = document.getElementById('auto-detected-redirect-uri');
+        if (uriInput && navigator.clipboard) {
+          navigator.clipboard.writeText(uriInput.value).then(() => {
+            const btnText = document.getElementById('copy-uri-btn-text');
+            if (btnText) {
+              btnText.textContent = 'Copied!';
+              setTimeout(() => { btnText.textContent = 'Copy'; }, 2000);
+            }
+          });
+        }
+      }
 
       function switchLanguage(lang) {
         fetch('../api/set_language.php', {

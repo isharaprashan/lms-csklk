@@ -1,5 +1,7 @@
 <?php
 require_once __DIR__ . '/db/db_connect.php';
+require_once __DIR__ . '/config/mail.php';
+require_once __DIR__ . '/config/google_oauth.php';
 init_lms_session();
 
 // Redirect if already logged in for this specific tab
@@ -10,6 +12,11 @@ if (isset($_SESSION['user_id']) && isset($_GET['sid'])) {
 
 $error = '';
 $success = '';
+
+if (isset($_SESSION['auth_error'])) {
+    $error = $_SESSION['auth_error'];
+    unset($_SESSION['auth_error']);
+}
 
 if (isset($_SESSION['registration_success'])) {
     $success = $_SESSION['registration_success'];
@@ -30,44 +37,60 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $user = $stmt->fetch();
 
             if ($user && password_verify($password, $user['password_hash'])) {
-                // Regenerate session ID for a fresh, tab-isolated session
-                session_regenerate_id(true);
-                $new_sid = session_id();
+                // Check if account email is verified
+                if (isset($user['email_verified']) && $user['email_verified'] == 0) {
+                    // Generate fresh OTP code and update expiry
+                    $otp = sprintf('%06d', random_int(100000, 999999));
+                    $expiresAt = date('Y-m-d H:i:s', strtotime('+10 minutes'));
+                    $upStmt = $pdo->prepare("UPDATE users SET otp_code = ?, otp_expires_at = ? WHERE id = ?");
+                    $upStmt->execute([$otp, $expiresAt, $user['id']]);
 
-                // Set session variables
-                $_SESSION['user_id'] = $user['id'];
-                $_SESSION['user_name'] = $user['name'];
-                $_SESSION['user_email'] = $user['email'];
-                $_SESSION['user_avatar'] = get_user_avatar($user['avatar'], $user['name']);
-                $_SESSION['academic_id'] = $user['academic_id'];
-                $_SESSION['user_role'] = $user['role'] ?? 'student';
-                $_SESSION['sid'] = $new_sid;
+                    send_otp_email($user['email'], $user['name'], $otp);
+                    $_SESSION['pending_otp_email'] = $user['email'];
+                    $_SESSION['pending_otp_user_id'] = $user['id'];
 
-                if ($_SESSION['user_role'] === 'admin' || $_SESSION['user_role'] === 'super_admin') {
-                    // Populate LMS_ADMIN_SESS cookie as well for seamless admin portal access
-                    $admin_uid = $_SESSION['user_id'];
-                    $admin_name = $_SESSION['user_name'];
-                    $admin_email = $_SESSION['user_email'];
-                    $admin_avatar = $_SESSION['user_avatar'];
-                    $admin_academic_id = $_SESSION['academic_id'];
-                    $admin_role = $_SESSION['user_role'];
-
-                    session_write_close();
-                    session_name('LMS_ADMIN_SESS');
-                    session_set_cookie_params(['lifetime' => 0, 'path' => '/']);
-                    session_start();
-                    $_SESSION['user_id'] = $admin_uid;
-                    $_SESSION['user_name'] = $admin_name;
-                    $_SESSION['user_email'] = $admin_email;
-                    $_SESSION['user_avatar'] = $admin_avatar;
-                    $_SESSION['academic_id'] = $admin_academic_id;
-                    $_SESSION['user_role'] = $admin_role;
-
-                    header("Location: admin/index.php");
+                    $verifyUrl = 'verify_otp.php?email=' . urlencode($user['email']);
+                    $error = __('email_unverified_login_warning', 'Your account email is not verified yet. We have dispatched a 6-digit verification code to your email.') . ' <a href="' . $verifyUrl . '" class="fw-bold text-decoration-underline text-danger">' . __('click_here_to_verify', 'Click here to enter your OTP.') . '</a>';
                 } else {
-                    header("Location: dashboard.php?sid=" . urlencode($new_sid));
+                    // Regenerate session ID for a fresh, tab-isolated session
+                    session_regenerate_id(true);
+                    $new_sid = session_id();
+
+                    // Set session variables
+                    $_SESSION['user_id'] = $user['id'];
+                    $_SESSION['user_name'] = $user['name'];
+                    $_SESSION['user_email'] = $user['email'];
+                    $_SESSION['user_avatar'] = get_user_avatar($user['avatar'], $user['name']);
+                    $_SESSION['academic_id'] = $user['academic_id'];
+                    $_SESSION['user_role'] = $user['role'] ?? 'student';
+                    $_SESSION['sid'] = $new_sid;
+
+                    if ($_SESSION['user_role'] === 'admin' || $_SESSION['user_role'] === 'super_admin') {
+                        // Populate LMS_ADMIN_SESS cookie as well for seamless admin portal access
+                        $admin_uid = $_SESSION['user_id'];
+                        $admin_name = $_SESSION['user_name'];
+                        $admin_email = $_SESSION['user_email'];
+                        $admin_avatar = $_SESSION['user_avatar'];
+                        $admin_academic_id = $_SESSION['academic_id'];
+                        $admin_role = $_SESSION['user_role'];
+
+                        session_write_close();
+                        session_name('LMS_ADMIN_SESS');
+                        session_set_cookie_params(['lifetime' => 0, 'path' => '/']);
+                        session_start();
+                        $_SESSION['user_id'] = $admin_uid;
+                        $_SESSION['user_name'] = $admin_name;
+                        $_SESSION['user_email'] = $admin_email;
+                        $_SESSION['user_avatar'] = $admin_avatar;
+                        $_SESSION['academic_id'] = $admin_academic_id;
+                        $_SESSION['user_role'] = $admin_role;
+
+                        header("Location: admin/index.php");
+                    } else {
+                        header("Location: dashboard.php?sid=" . urlencode($new_sid));
+                    }
+                    exit;
                 }
-                exit;
             } else {
                 $error = 'Invalid email or password.';
             }
@@ -204,20 +227,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
       <!-- Alerts -->
       <?php if (!empty($error)): ?>
-        <div class="alert alert-danger alert-dismissible fade show" role="alert">
-          <i class="bi bi-exclamation-triangle-fill me-2"></i>
-          <?php echo htmlspecialchars($error); ?>
+        <div class="alert alert-danger alert-dismissible fade show fs-8 py-2.5 px-3 rounded-3" role="alert">
+          <i class="bi bi-exclamation-triangle-fill me-1.5"></i>
+          <?php echo $error; ?>
           <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
         </div>
       <?php endif; ?>
 
       <?php if (!empty($success)): ?>
-        <div class="alert alert-success alert-dismissible fade show" role="alert">
-          <i class="bi bi-check-circle-fill me-2"></i>
+        <div class="alert alert-success alert-dismissible fade show fs-8 py-2.5 px-3 rounded-3" role="alert">
+          <i class="bi bi-check-circle-fill me-1.5"></i>
           <?php echo htmlspecialchars($success); ?>
           <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
         </div>
       <?php endif; ?>
+
+      <!-- Continue with Google Button -->
+      <a href="google_auth.php?role=student" class="btn btn-outline-dark w-100 py-2.5 fw-semibold d-flex align-items-center justify-content-center gap-2 mb-3 bg-white border shadow-xs rounded-3 hover:shadow-sm transition-all text-dark text-decoration-none" style="font-size: 0.88rem;">
+        <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">
+          <path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.616z" fill="#4285F4"/>
+          <path d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.258c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332C2.438 15.983 5.482 18 9 18z" fill="#34A853"/>
+          <path d="M3.964 10.707c-.18-.54-.282-1.117-.282-1.707s.102-1.167.282-1.707V4.961H.957C.347 6.175 0 7.55 0 9s.347 2.825.957 4.039l3.007-2.332z" fill="#FBBC05"/>
+          <path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0 5.482 0 2.438 2.017.957 4.961L3.964 7.293C4.672 5.166 6.656 3.58 9 3.58z" fill="#EA4335"/>
+        </svg>
+        <span><?php echo __('continue_with_google', 'Continue with Google'); ?></span>
+      </a>
+
+      <!-- Divider -->
+      <div class="d-flex align-items-center my-3">
+        <div class="flex-grow-1 border-top border-secondary border-opacity-20"></div>
+        <span class="px-2.5 text-muted fs-9 text-uppercase fw-semibold" style="letter-spacing: 0.05em;"><?php echo __('or_continue_with_email', 'or continue with email'); ?></span>
+        <div class="flex-grow-1 border-top border-secondary border-opacity-20"></div>
+      </div>
 
       <!-- Login Form -->
       <form action="login.php" method="POST">

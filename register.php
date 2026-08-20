@@ -1,5 +1,7 @@
 <?php
 require_once __DIR__ . '/db/db_connect.php';
+require_once __DIR__ . '/config/mail.php';
+require_once __DIR__ . '/config/google_oauth.php';
 init_lms_session();
 
 // Redirect if already logged in for this specific tab
@@ -11,9 +13,14 @@ if (isset($_SESSION['user_id']) && isset($_GET['sid'])) {
 $error = '';
 $success = '';
 
+if (isset($_SESSION['auth_error'])) {
+    $error = $_SESSION['auth_error'];
+    unset($_SESSION['auth_error']);
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $name = trim($_POST['name'] ?? '');
-    $email = trim($_POST['email'] ?? '');
+    $email = strtolower(trim($_POST['email'] ?? ''));
     $password = $_POST['password'] ?? '';
     $confirm_password = $_POST['confirm_password'] ?? '';
     $role = trim($_POST['role'] ?? 'student');
@@ -34,12 +41,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $pdo = getDBConnection();
             
             // Check if email already exists
-            $stmt = $pdo->prepare("SELECT COUNT(*) FROM users WHERE email = ?");
+            $stmt = $pdo->prepare("SELECT id, email_verified FROM users WHERE email = ?");
             $stmt->execute([$email]);
-            if ($stmt->fetchColumn() > 0) {
-                $error = 'This email is already registered.';
+            $existingUser = $stmt->fetch();
+
+            if ($existingUser) {
+                if ($existingUser['email_verified'] == 0) {
+                    // Account exists but is unverified -> issue fresh OTP and redirect to verification
+                    $otp = sprintf('%06d', random_int(100000, 999999));
+                    $expiresAt = date('Y-m-d H:i:s', strtotime('+10 minutes'));
+                    $upStmt = $pdo->prepare("UPDATE users SET otp_code = ?, otp_expires_at = ? WHERE id = ?");
+                    $upStmt->execute([$otp, $expiresAt, $existingUser['id']]);
+
+                    send_otp_email($email, $name, $otp);
+                    $_SESSION['pending_otp_email'] = $email;
+                    $_SESSION['pending_otp_user_id'] = $existingUser['id'];
+                    $_SESSION['otp_flash_success'] = 'An account with this email was previously registered but not verified. A new verification code has been dispatched to your email.';
+                    header("Location: verify_otp.php?email=" . urlencode($email));
+                    exit;
+                } else {
+                    $error = 'This email is already registered and verified. Please log in.';
+                }
             } else {
-                // Handle profile picture file upload (No auto picture applied)
+                // Handle profile picture file upload
                 $avatar = null;
 
                 if (isset($_FILES['avatar_file']) && $_FILES['avatar_file']['error'] === UPLOAD_ERR_OK) {
@@ -72,7 +96,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
 
                 if (empty($error)) {
-                    // Insert new user
+                    // Generate random 6-digit OTP code and 10-minute expiry
+                    $otp = sprintf('%06d', random_int(100000, 999999));
+                    $otpExpiresAt = date('Y-m-d H:i:s', strtotime('+10 minutes'));
+
                     $password_hash = password_hash($password, PASSWORD_BCRYPT);
                     $academic_id = ($role === 'teacher' ? 'TCHR-' : 'ACAD-') . rand(100000, 999999);
                     
@@ -81,7 +108,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $qualifications = ($role === 'teacher') ? trim($_POST['qualifications'] ?? '') : null;
                     $status = ($role === 'teacher') ? 'pending' : 'active';
 
-                    $stmt = $pdo->prepare("INSERT INTO users (name, email, password_hash, avatar, academic_id, role, status, bio, subject, qualifications) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                    $stmt = $pdo->prepare("INSERT INTO users (name, email, password_hash, avatar, academic_id, role, status, bio, subject, qualifications, auth_provider, email_verified, otp_code, otp_expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'local', 0, ?, ?)");
                     $stmt->execute([
                         $name,
                         $email,
@@ -92,13 +119,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $status,
                         $bio,
                         $subject,
-                        $qualifications
+                        $qualifications,
+                        $otp,
+                        $otpExpiresAt
                     ]);
 
                     $userId = $pdo->lastInsertId();
-                    
-                    // Set success message
-                    $success = 'Account created successfully! You can now log in.';
+
+                    // Dispatch OTP email via PHPMailer
+                    send_otp_email($email, $name, $otp);
+
+                    // Set pending session and redirect to OTP Verification Page
+                    $_SESSION['pending_otp_email'] = $email;
+                    $_SESSION['pending_otp_user_id'] = $userId;
+                    $_SESSION['otp_flash_success'] = 'Account registered successfully! A 6-digit verification code has been dispatched to ' . htmlspecialchars($email) . '.';
+                    header("Location: verify_otp.php?email=" . urlencode($email));
+                    exit;
                 }
             }
         } catch (PDOException $e) {
@@ -290,6 +326,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
           </div>
 
+          <!-- Continue with Google Button -->
+          <a href="google_auth.php?role=student" id="google-signup-btn" class="btn btn-outline-dark w-100 py-2.5 fw-semibold d-flex align-items-center justify-content-center gap-2 mb-3 bg-white border shadow-xs rounded-3 hover:shadow-sm transition-all text-dark text-decoration-none" style="font-size: 0.88rem;">
+            <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">
+              <path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.616z" fill="#4285F4"/>
+              <path d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.258c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332C2.438 15.983 5.482 18 9 18z" fill="#34A853"/>
+              <path d="M3.964 10.707c-.18-.54-.282-1.117-.282-1.707s.102-1.167.282-1.707V4.961H.957C.347 6.175 0 7.55 0 9s.347 2.825.957 4.039l3.007-2.332z" fill="#FBBC05"/>
+              <path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0 5.482 0 2.438 2.017.957 4.961L3.964 7.293C4.672 5.166 6.656 3.58 9 3.58z" fill="#EA4335"/>
+            </svg>
+            <span><?php echo __('continue_with_google', 'Continue with Google'); ?></span>
+          </a>
+
+          <!-- Divider -->
+          <div class="d-flex align-items-center my-3">
+            <div class="flex-grow-1 border-top border-secondary border-opacity-20"></div>
+            <span class="px-2.5 text-muted fs-9 text-uppercase fw-semibold" style="letter-spacing: 0.05em;"><?php echo __('or_continue_with_email', 'or continue with email'); ?></span>
+            <div class="flex-grow-1 border-top border-secondary border-opacity-20"></div>
+          </div>
+
           <div class="mb-3">
             <label for="name" class="form-label fw-semibold text-secondary"><?php echo __('full_name', 'Full Name'); ?></label>
             <div class="input-group">
@@ -404,16 +458,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       const form = document.getElementById('register-form');
 
       function toggleRoleFields() {
+        const googleBtn = document.getElementById('google-signup-btn');
         if (roleTeacher.checked) {
           teacherFields.style.display = 'block';
           bioInput.required = true;
           subjectInput.required = true;
           qualificationsInput.required = true;
+          if (googleBtn) googleBtn.href = 'google_auth.php?role=teacher';
         } else {
           teacherFields.style.display = 'none';
           bioInput.required = false;
           subjectInput.required = false;
           qualificationsInput.required = false;
+          if (googleBtn) googleBtn.href = 'google_auth.php?role=student';
           
           // Clear teacher-only inputs so they don't submit stale data if role is switched back
           bioInput.value = '';

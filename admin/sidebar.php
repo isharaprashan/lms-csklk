@@ -276,6 +276,14 @@ $sidebar_text = $is_super_admin ? '#a3cfbb' : '#94a3b8';
       </div>
     </a>
 
+    <!-- Google OAuth / Sign-In Settings -->
+    <a href="index.php?tab=google_auth" class="nav-link-item <?php echo ($current_page === 'google_auth') ? 'active' : ''; ?>">
+      <div class="d-flex align-items-center gap-2.5">
+        <i class="bi bi-google text-warning"></i>
+        <span>Google Sign-In</span>
+      </div>
+    </a>
+
     <!-- Site Logo Customization -->
     <a href="index.php?tab=logo" class="nav-link-item <?php echo ($current_page === 'logo') ? 'active' : ''; ?>">
       <div class="d-flex align-items-center gap-2.5">

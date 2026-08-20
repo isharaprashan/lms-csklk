@@ -89,6 +89,43 @@ function ensureMigrations($pdo)
         $pdo->exec("ALTER TABLE users ADD COLUMN dob DATE NULL AFTER nic");
     }
 
+    // 3.1.1 Check and add Google OAuth & OTP verification columns to 'users'
+    $isNewEmailVerifiedColumn = false;
+    try {
+        $pdo->query("SELECT google_id FROM users LIMIT 1");
+    } catch (PDOException $e) {
+        $pdo->exec("ALTER TABLE users ADD COLUMN google_id VARCHAR(255) NULL UNIQUE AFTER dob");
+    }
+    try {
+        $pdo->query("SELECT auth_provider FROM users LIMIT 1");
+    } catch (PDOException $e) {
+        $pdo->exec("ALTER TABLE users ADD COLUMN auth_provider ENUM('local', 'google') DEFAULT 'local' AFTER google_id");
+    }
+    try {
+        $pdo->query("SELECT email_verified FROM users LIMIT 1");
+    } catch (PDOException $e) {
+        $pdo->exec("ALTER TABLE users ADD COLUMN email_verified TINYINT(1) DEFAULT 0 AFTER auth_provider");
+        $isNewEmailVerifiedColumn = true;
+    }
+    try {
+        $pdo->query("SELECT otp_code FROM users LIMIT 1");
+    } catch (PDOException $e) {
+        $pdo->exec("ALTER TABLE users ADD COLUMN otp_code VARCHAR(6) NULL AFTER email_verified");
+    }
+    try {
+        $pdo->query("SELECT otp_expires_at FROM users LIMIT 1");
+    } catch (PDOException $e) {
+        $pdo->exec("ALTER TABLE users ADD COLUMN otp_expires_at DATETIME NULL AFTER otp_code");
+    }
+
+    // Auto-verify pre-existing users so existing accounts are never locked out
+    if ($isNewEmailVerifiedColumn) {
+        try {
+            $pdo->exec("UPDATE users SET email_verified = 1 WHERE email_verified = 0 OR email_verified IS NULL");
+        } catch (PDOException $ex) {
+        }
+    }
+
     // 3.2 Check and add 'target_audience', 'price' to 'courses'
     try {
         $pdo->query("SELECT target_audience FROM courses LIMIT 1");
@@ -427,7 +464,10 @@ function ensureMigrations($pdo)
             'cert_cod_title' => 'Cash on Delivery & Courier Details:',
             'cert_cod_fee_note' => 'LKR 1,500 Cash on Delivery fee for embossed certificate printing, security hard-folder, and island-wide registered courier handling (Payable in Cash to the courier delivery rider upon package arrival). The digital e-certificate remains 100% free.',
             'cert_cod_timeframe_note' => 'Dispatched within 24–48 hours after application approval. Island-wide doorstep delivery takes 2 to 4 working days.',
-            'cert_cod_custom_notice' => ''
+            'cert_cod_custom_notice' => '',
+            'google_client_id' => '',
+            'google_client_secret' => '',
+            'google_oauth_enabled' => '1'
         ];
         $insertSettingStmt = $pdo->prepare("INSERT IGNORE INTO site_settings (setting_key, setting_value) VALUES (?, ?)");
         foreach ($default_settings as $k => $v) {
@@ -652,6 +692,11 @@ function initializeDatabase()
                 `qualifications` VARCHAR(255) NULL,
                 `nic` VARCHAR(20) NULL,
                 `dob` DATE NULL,
+                `google_id` VARCHAR(255) NULL UNIQUE,
+                `auth_provider` ENUM('local', 'google') DEFAULT 'local',
+                `email_verified` TINYINT(1) DEFAULT 0,
+                `otp_code` VARCHAR(6) NULL,
+                `otp_expires_at` DATETIME NULL,
                 `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;",
 

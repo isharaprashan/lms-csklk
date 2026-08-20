@@ -160,6 +160,85 @@ if (!function_exists('send_system_email')) {
     }
 }
 
+if (!function_exists('send_otp_email')) {
+    function send_otp_email($toEmail, $toName, $otpCode)
+    {
+        $fromName = 'Computerscience.lk Academy';
+        $subject = "Your Verification Code: {$otpCode} - Computerscience.lk";
+
+        $htmlBody = "
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset='UTF-8'>
+            <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+            <title>Verification Code</title>
+        </head>
+        <body style='margin: 0; padding: 0; background-color: #f4f6f9; font-family: -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif;'>
+            <table width='100%' border='0' cellspacing='0' cellpadding='0' style='background-color: #f4f6f9; padding: 30px 10px;'>
+                <tr>
+                    <td align='center'>
+                        <table width='100%' max-width='560' border='0' cellspacing='0' cellpadding='0' style='max-width: 560px; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.06); border: 1px solid #e2e8f0;'>
+                            <!-- Header -->
+                            <tr>
+                                <td style='background: linear-gradient(135deg, #091527 0%, #0f3d6c 50%, #174b85 100%); padding: 30px 25px; text-align: center;'>
+                                    <h1 style='color: #ffffff; font-size: 22px; font-weight: 700; margin: 0; letter-spacing: 0.5px;'>computerscience.lk</h1>
+                                    <p style='color: rgba(255,255,255,0.75); font-size: 13px; margin: 6px 0 0;'>Academic Identity & Verification Service</p>
+                                </td>
+                            </tr>
+                            <!-- Body -->
+                            <tr>
+                                <td style='padding: 35px 30px;'>
+                                    <h2 style='color: #1e293b; font-size: 20px; font-weight: 700; margin-top: 0; margin-bottom: 12px;'>Email Verification Code</h2>
+                                    <p style='color: #475569; font-size: 14px; line-height: 1.6; margin: 0 0 20px;'>
+                                        Hello " . htmlspecialchars($toName ?: 'Student') . ",<br>
+                                        Thank you for registering on Computerscience.lk. Please use the 6-digit verification code below to verify your email address and activate your account.
+                                    </p>
+
+                                    <!-- OTP Box -->
+                                    <div style='background: #f8fafc; border: 2px dashed #0f4c81; border-radius: 12px; padding: 20px; text-align: center; margin: 25px 0;'>
+                                        <span style='font-family: Consolas, Monaco, \"Courier New\", monospace; font-size: 34px; font-weight: 800; letter-spacing: 10px; color: #0f4c81; display: inline-block;'>
+                                            " . htmlspecialchars($otpCode) . "
+                                        </span>
+                                        <div style='margin-top: 8px; color: #64748b; font-size: 12px;'>
+                                            ⏱ Valid for <strong>10 minutes</strong>
+                                        </div>
+                                    </div>
+
+                                    <p style='color: #64748b; font-size: 13px; line-height: 1.5; margin: 0 0 10px;'>
+                                        Enter this 6-digit code on the verification screen to complete your registration.
+                                    </p>
+                                    
+                                    <div style='background-color: #fffbeb; border-left: 4px solid #f59e0b; padding: 12px 16px; border-radius: 4px; margin-top: 20px;'>
+                                        <p style='color: #92400e; font-size: 12px; margin: 0; line-height: 1.4;'>
+                                            <strong>Security Notice:</strong> Never share this OTP with anyone. Computerscience.lk staff will never ask for your verification code.
+                                        </p>
+                                    </div>
+                                </td>
+                            </tr>
+                            <!-- Footer -->
+                            <tr>
+                                <td style='background-color: #f8fafc; padding: 20px 30px; border-top: 1px solid #e2e8f0; text-align: center;'>
+                                    <p style='color: #94a3b8; font-size: 12px; margin: 0; line-height: 1.5;'>
+                                        This email was sent to " . htmlspecialchars($toEmail) . ". If you did not create an account, you can safely ignore this email.<br>
+                                        &copy; " . date('Y') . " Computerscience.lk Academy. All rights reserved.
+                                    </p>
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+            </table>
+        </body>
+        </html>
+        ";
+
+        $altBody = "Your Computerscience.lk verification code is: {$otpCode}\n\nThis code is valid for 10 minutes. Please do not share this code with anyone.\n\nComputerscience.lk Academy";
+
+        return send_system_email($toEmail, $toName, $subject, $htmlBody, $altBody);
+    }
+}
+
 if (!function_exists('test_smtp_connection')) {
     function test_smtp_connection($testEmail, $customConfig = null)
     {
