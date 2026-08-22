@@ -161,6 +161,50 @@ try {
                 $l_content,
                 $idx
             ]);
+
+            // Save any uploaded lesson attachments
+            $files_input = $_FILES["lesson_files_{$idx}"] ?? null;
+            if ($files_input && !empty($files_input['name'])) {
+                $upload_dir = __DIR__ . '/../uploads/lesson_resources/';
+                if (!is_dir($upload_dir)) {
+                    @mkdir($upload_dir, 0777, true);
+                }
+
+                $allowed_extensions = ['pdf', 'doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx', 'txt', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'zip', 'rar'];
+                $names = is_array($files_input['name']) ? $files_input['name'] : [$files_input['name']];
+                $tmp_names = is_array($files_input['tmp_name']) ? $files_input['tmp_name'] : [$files_input['tmp_name']];
+                $errors = is_array($files_input['error']) ? $files_input['error'] : [$files_input['error']];
+                $sizes = is_array($files_input['size']) ? $files_input['size'] : [$files_input['size']];
+
+                $insertResStmt = $pdo->prepare("INSERT INTO lesson_resources (lesson_id, file_name, file_path, file_type, file_size) VALUES (?, ?, ?, ?, ?)");
+
+                foreach ($names as $f_idx => $orig_name) {
+                    if ($errors[$f_idx] !== UPLOAD_ERR_OK || empty($orig_name)) continue;
+
+                    $tmp_path = $tmp_names[$f_idx];
+                    $file_size = (int)$sizes[$f_idx];
+                    if ($file_size > 52428800) continue;
+
+                    $clean_orig_name = basename($orig_name);
+                    $ext = strtolower(pathinfo($clean_orig_name, PATHINFO_EXTENSION));
+                    if (!in_array($ext, $allowed_extensions)) continue;
+
+                    $safe_filename = 'res_' . preg_replace('/[^a-z0-9]/', '', strtolower($l_id)) . '_' . time() . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
+                    $dest_path = $upload_dir . $safe_filename;
+
+                    $moved = is_uploaded_file($tmp_path) ? move_uploaded_file($tmp_path, $dest_path) : @copy($tmp_path, $dest_path);
+                    if ($moved) {
+                        $db_file_path = 'uploads/lesson_resources/' . $safe_filename;
+                        $insertResStmt->execute([
+                            $l_id,
+                            $clean_orig_name,
+                            $db_file_path,
+                            $ext,
+                            $file_size
+                        ]);
+                    }
+                }
+            }
         }
     }
 

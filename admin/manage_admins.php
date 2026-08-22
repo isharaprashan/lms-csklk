@@ -267,6 +267,8 @@ try {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo __('manage_admins', 'Admin Management'); ?> | <?php echo __('super_admin_panel', 'Super Admin Panel'); ?></title>
+    <link rel="icon" type="image/x-icon" href="../<?php echo function_exists('get_site_favicon') ? get_site_favicon() : 'assets/logo.png'; ?>?v=<?php echo time(); ?>">
+    <link rel="shortcut icon" href="../<?php echo function_exists('get_site_favicon') ? get_site_favicon() : 'assets/logo.png'; ?>?v=<?php echo time(); ?>">
     
     <!-- Local Bootstrap 5 CSS & Icons -->
     <link href="assets/css/bootstrap.min.css" rel="stylesheet">

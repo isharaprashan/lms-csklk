@@ -152,6 +152,18 @@ function ensureMigrations($pdo)
         $pdo->exec("UPDATE courses SET status = 'approved'");
     }
 
+    // 3.3.1 Check and add 'is_archived' and 'deleted_at' to 'courses'
+    try {
+        $pdo->query("SELECT is_archived FROM courses LIMIT 1");
+    } catch (PDOException $e) {
+        $pdo->exec("ALTER TABLE courses ADD COLUMN is_archived TINYINT(1) DEFAULT 0 AFTER status");
+    }
+    try {
+        $pdo->query("SELECT deleted_at FROM courses LIMIT 1");
+    } catch (PDOException $e) {
+        $pdo->exec("ALTER TABLE courses ADD COLUMN deleted_at DATETIME NULL AFTER is_archived");
+    }
+
     // 3.4 Ensure bank_payments table exists
     try {
         $pdo->query("SELECT id FROM bank_payments LIMIT 1");
@@ -169,18 +181,39 @@ function ensureMigrations($pdo)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;");
     }
 
-    // 3.5 Ensure notifications table exists
+    // 3.5 Ensure notifications table exists and has rich metadata columns
     try {
         $pdo->query("SELECT id FROM notifications LIMIT 1");
     } catch (PDOException $e) {
         $pdo->exec("CREATE TABLE IF NOT EXISTS `notifications` (
             `id` INT AUTO_INCREMENT PRIMARY KEY,
             `user_id` INT NOT NULL,
+            `title` VARCHAR(255) NULL,
             `message` TEXT NOT NULL,
+            `type` VARCHAR(50) DEFAULT 'system',
+            `link` VARCHAR(255) NULL,
             `is_read` TINYINT(1) DEFAULT 0,
             `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;");
+    }
+
+    try {
+        $pdo->query("SELECT title FROM notifications LIMIT 1");
+    } catch (PDOException $e) {
+        $pdo->exec("ALTER TABLE notifications ADD COLUMN title VARCHAR(255) NULL AFTER user_id");
+    }
+
+    try {
+        $pdo->query("SELECT type FROM notifications LIMIT 1");
+    } catch (PDOException $e) {
+        $pdo->exec("ALTER TABLE notifications ADD COLUMN type VARCHAR(50) DEFAULT 'system' AFTER message");
+    }
+
+    try {
+        $pdo->query("SELECT link FROM notifications LIMIT 1");
+    } catch (PDOException $e) {
+        $pdo->exec("ALTER TABLE notifications ADD COLUMN link VARCHAR(255) NULL AFTER type");
     }
 
     // 3.6 Ensure bank_accounts table exists and seed defaults if empty
@@ -467,7 +500,8 @@ function ensureMigrations($pdo)
             'cert_cod_custom_notice' => '',
             'google_client_id' => '',
             'google_client_secret' => '',
-            'google_oauth_enabled' => '1'
+            'google_oauth_enabled' => '1',
+            'site_favicon' => 'assets/logo.png'
         ];
         $insertSettingStmt = $pdo->prepare("INSERT IGNORE INTO site_settings (setting_key, setting_value) VALUES (?, ?)");
         foreach ($default_settings as $k => $v) {
@@ -624,6 +658,23 @@ function ensureMigrations($pdo)
     } catch (PDOException $e) {
     }
 
+    // 3.17 Ensure lesson_resources table exists (Lesson supplementary files / attachments)
+    try {
+        $pdo->query("SELECT id FROM lesson_resources LIMIT 1");
+    } catch (PDOException $e) {
+        $pdo->exec("CREATE TABLE IF NOT EXISTS `lesson_resources` (
+            `id` INT AUTO_INCREMENT PRIMARY KEY,
+            `lesson_id` VARCHAR(50) NOT NULL,
+            `file_name` VARCHAR(255) NOT NULL,
+            `file_path` VARCHAR(255) NOT NULL,
+            `file_type` VARCHAR(50) NOT NULL,
+            `file_size` INT NOT NULL,
+            `uploaded_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX (`lesson_id`),
+            FOREIGN KEY (`lesson_id`) REFERENCES `lessons`(`id`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;");
+    }
+
     // 7. Seed primary Super Admin account if not exists
     ensureSuperAdminExists($pdo);
 }
@@ -720,6 +771,8 @@ function initializeDatabase()
                 `long_description` TEXT NOT NULL,
                 `thumbnail` VARCHAR(255) NOT NULL,
                 `status` VARCHAR(20) DEFAULT 'pending',
+                `is_archived` TINYINT(1) DEFAULT 0,
+                `deleted_at` DATETIME NULL,
                 `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (`tutor_id`) REFERENCES `users`(`id`) ON DELETE SET NULL
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;",
@@ -734,6 +787,19 @@ function initializeDatabase()
                 `content` TEXT NOT NULL,
                 `sort_order` INT NOT NULL DEFAULT 0,
                 FOREIGN KEY (`course_id`) REFERENCES `courses`(`id`) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;",
+
+            // Lesson Resources table
+            "CREATE TABLE IF NOT EXISTS `lesson_resources` (
+                `id` INT AUTO_INCREMENT PRIMARY KEY,
+                `lesson_id` VARCHAR(50) NOT NULL,
+                `file_name` VARCHAR(255) NOT NULL,
+                `file_path` VARCHAR(255) NOT NULL,
+                `file_type` VARCHAR(50) NOT NULL,
+                `file_size` INT NOT NULL,
+                `uploaded_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX (`lesson_id`),
+                FOREIGN KEY (`lesson_id`) REFERENCES `lessons`(`id`) ON DELETE CASCADE
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;",
 
             // Quizzes table
@@ -1038,6 +1104,35 @@ function get_site_logo()
 
     $logo_path = 'assets/logo.png';
     return $logo_path;
+}
+
+// Global Helper function to retrieve current active site favicon with cache buster
+function get_site_favicon()
+{
+    static $favicon_path = null;
+    if ($favicon_path !== null) {
+        return $favicon_path;
+    }
+    try {
+        $pdo = getDBConnection();
+        $stmt = $pdo->prepare("SELECT setting_value FROM site_settings WHERE setting_key = 'site_favicon' LIMIT 1");
+        $stmt->execute();
+        $val = $stmt->fetchColumn();
+        if (!empty($val)) {
+            $favicon_path = $val;
+            return $favicon_path;
+        }
+    } catch (Exception $e) {
+    }
+
+    if (file_exists(__DIR__ . '/../assets/favicon.ico')) {
+        $favicon_path = 'assets/favicon.ico';
+    } elseif (file_exists(__DIR__ . '/../assets/favicon.png')) {
+        $favicon_path = 'assets/favicon.png';
+    } else {
+        $favicon_path = get_site_logo();
+    }
+    return $favicon_path;
 }
 
 // Global Helper function to retrieve user profile picture or initial letters default avatar URL

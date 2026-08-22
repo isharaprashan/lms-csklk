@@ -123,6 +123,8 @@ try {
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <title><?php echo __('quiz_locked', 'Quiz Locked'); ?> - <?php echo htmlspecialchars($current_course['title']); ?></title>
+            <link rel="icon" type="image/x-icon" href="<?php echo function_exists('get_site_favicon') ? get_site_favicon() : 'assets/logo.png'; ?>?v=<?php echo time(); ?>">
+            <link rel="shortcut icon" href="<?php echo function_exists('get_site_favicon') ? get_site_favicon() : 'assets/logo.png'; ?>?v=<?php echo time(); ?>">
             <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
             <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
             <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
@@ -175,6 +177,8 @@ try {
             <title><?php echo __('no_quiz_available', 'No Quiz Available'); ?> -
                 <?php echo htmlspecialchars($current_course['title']); ?>
             </title>
+            <link rel="icon" type="image/x-icon" href="<?php echo function_exists('get_site_favicon') ? get_site_favicon() : 'assets/logo.png'; ?>?v=<?php echo time(); ?>">
+            <link rel="shortcut icon" href="<?php echo function_exists('get_site_favicon') ? get_site_favicon() : 'assets/logo.png'; ?>?v=<?php echo time(); ?>">
 
             <!-- Google Fonts & Bootstrap 5 & Icons -->
             <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -334,11 +338,15 @@ try {
     <title><?php echo __('quiz_title', 'Course Knowledge Quiz'); ?> -
         <?php echo htmlspecialchars($current_course['title']); ?>
     </title>
+    <link rel="icon" type="image/x-icon" href="<?php echo function_exists('get_site_favicon') ? get_site_favicon() : 'assets/logo.png'; ?>?v=<?php echo time(); ?>">
+    <link rel="shortcut icon" href="<?php echo function_exists('get_site_favicon') ? get_site_favicon() : 'assets/logo.png'; ?>?v=<?php echo time(); ?>">
 
     <!-- Google Fonts & Bootstrap 5 & Icons -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <link rel="stylesheet" href="assets/css/style.css">
+    <link rel="stylesheet" href="assets/css/notifications.css">
 
     <?php render_i18n_js(); ?>
 
@@ -548,38 +556,27 @@ try {
 
 <body>
 
-    <!-- Header Navbar -->
-    <header class="navbar navbar-expand-lg navbar-light bg-white border-bottom sticky-top py-2.5">
-        <div class="container px-4">
-            <a class="navbar-brand d-flex align-items-center gap-2 fw-bold text-dark fs-5" href="dashboard.php">
-                <i class="bi bi-mortarboard-fill text-primary"></i> Computerscience.lk
-            </a>
-            <div class="d-flex align-items-center gap-3">
-                <?php
-                $userRole = $_SESSION['user_role'] ?? ($student['role'] ?? 'student');
-                $is_admin = in_array($userRole, ['admin', 'super_admin']);
-                $admin_preview_param = ($is_admin || isset($_GET['admin_preview'])) ? '&admin_preview=1' : '';
-                ?>
+    <!-- Unified LMS Top Header Bar -->
+    <?php include __DIR__ . '/includes/navbar.php'; ?>
+
+    <?php
+    $userRole = $_SESSION['user_role'] ?? ($student['role'] ?? 'student');
+    $is_admin = in_array($userRole, ['admin', 'super_admin']);
+    $admin_preview_param = ($is_admin || isset($_GET['admin_preview'])) ? '&admin_preview=1' : '';
+    ?>
+    <div class="bg-white border-bottom py-2 shadow-xs">
+        <div class="container px-4 d-flex align-items-center justify-content-between">
+            <div class="d-flex align-items-center gap-2">
                 <a href="watch_lesson.php?course_id=<?php echo urlencode($course_id); ?><?php echo !empty($lesson_id) ? '&lesson_id=' . urlencode($lesson_id) : ''; ?><?php echo $admin_preview_param; ?>"
-                    class="btn btn-outline-secondary btn-sm">
+                    class="btn btn-outline-secondary btn-sm rounded-pill px-3 py-1">
                     <i class="bi bi-arrow-left me-1"></i> <?php echo __('back', 'Back to Lesson'); ?>
                 </a>
-                <div class="dropdown">
-                    <button class="btn btn-light btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown">
-                        <i class="bi bi-translate me-1"></i> <?php echo strtoupper($_SESSION['lang'] ?? 'en'); ?>
-                    </button>
-                    <ul class="dropdown-menu dropdown-menu-end shadow-sm">
-                        <li><a class="dropdown-item"
-                                href="api/set_language.php?lang=en&redirect=<?php echo urlencode($_SERVER['REQUEST_URI']); ?>">English</a>
-                        </li>
-                        <li><a class="dropdown-item"
-                                href="api/set_language.php?lang=si&redirect=<?php echo urlencode($_SERVER['REQUEST_URI']); ?>">සිංහල</a>
-                        </li>
-                    </ul>
-                </div>
+            </div>
+            <div class="fs-8 text-muted">
+                <i class="bi bi-journal-check me-1 text-primary"></i><?php echo htmlspecialchars($current_course['title']); ?>
             </div>
         </div>
-    </header>
+    </div>
 
     <div class="container py-4 px-3 px-md-4" style="max-width: 900px;">
 
@@ -1262,6 +1259,8 @@ try {
                 .replace(/'/g, '&#039;');
         }
     </script>
+    <!-- Modern Notification System JS Client -->
+    <script src="assets/js/notifications.js"></script>
 </body>
 
 </html>

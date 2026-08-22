@@ -34,13 +34,19 @@ if (in_array($userRole, ['admin', 'super_admin'])) {
 try {
     $pdo = getDBConnection();
     
-    // Check if course exists and fetch price
-    $stmt = $pdo->prepare("SELECT price FROM courses WHERE id = ?");
+    // Check if course exists and fetch status/price
+    $stmt = $pdo->prepare("SELECT price, status, is_archived, deleted_at FROM courses WHERE id = ?");
     $stmt->execute([$course_id]);
     $course = $stmt->fetch();
     
     if (!$course) {
         echo json_encode(['success' => false, 'message' => 'Course not found in database']);
+        exit;
+    }
+
+    // Disallow new enrollments for disabled or archived courses
+    if ($course['status'] === 'disabled' || !empty($course['is_archived']) || !empty($course['deleted_at'])) {
+        echo json_encode(['success' => false, 'message' => 'This course is currently unpublished and not accepting new enrollments.']);
         exit;
     }
 

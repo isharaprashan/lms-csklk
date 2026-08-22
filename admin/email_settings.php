@@ -194,6 +194,8 @@ $is_configured = !empty($current_settings['smtp_host']) && !empty($current_setti
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title><?php echo __('email_smtp_settings', 'Email & SMTP Settings'); ?> - <?php echo __('admin_panel', 'Admin Panel'); ?> | Computerscience.lk</title>
+  <link rel="icon" type="image/x-icon" href="../<?php echo function_exists('get_site_favicon') ? get_site_favicon() : 'assets/logo.png'; ?>?v=<?php echo time(); ?>">
+  <link rel="shortcut icon" href="../<?php echo function_exists('get_site_favicon') ? get_site_favicon() : 'assets/logo.png'; ?>?v=<?php echo time(); ?>">
 
   <!-- Local Bootstrap 5 CSS & Icons -->
   <link href="assets/css/bootstrap.min.css" rel="stylesheet">

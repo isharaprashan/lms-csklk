@@ -36,7 +36,7 @@ try {
         exit;
     }
 
-    if (!$is_admin && (int)$lesson['tutor_id'] !== $user_id) {
+    if (!$is_admin && !empty($lesson['tutor_id']) && (int)$lesson['tutor_id'] !== $user_id) {
         echo json_encode(['success' => false, 'message' => 'You do not have permission to delete this lesson.']);
         exit;
     }

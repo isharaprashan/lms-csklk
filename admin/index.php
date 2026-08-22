@@ -78,6 +78,11 @@ if (empty($raw_avatar)) {
   $current_admin_avatar = '../' . ltrim($raw_avatar, '/');
 }
 
+if (empty($_SESSION['csrf_token'])) {
+  $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+$csrf_token = $_SESSION['csrf_token'];
+
 $success_message = '';
 $error_message = '';
 
@@ -690,6 +695,50 @@ try {
     }
   }
 
+  // Handle Site Favicon Update action
+  if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_site_favicon') {
+    if (isset($_FILES['site_favicon_file']) && $_FILES['site_favicon_file']['error'] === UPLOAD_ERR_OK) {
+      $file = $_FILES['site_favicon_file'];
+      $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+      $allowed = ['ico', 'png', 'svg', 'webp', 'jpg', 'jpeg'];
+
+      if (in_array($ext, $allowed)) {
+        $upload_dir = __DIR__ . '/../uploads/favicon';
+        if (!file_exists($upload_dir)) {
+          mkdir($upload_dir, 0777, true);
+        }
+
+        $filename = 'site_favicon_' . time() . '.' . $ext;
+        $dest_path = $upload_dir . '/' . $filename;
+        $relative_path = 'uploads/favicon/' . $filename;
+
+        if (move_uploaded_file($file['tmp_name'], $dest_path)) {
+          // Update site_settings DB entry
+          $stmt = $pdo->prepare("INSERT INTO site_settings (setting_key, setting_value) VALUES ('site_favicon', ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)");
+          $stmt->execute([$relative_path]);
+
+          // Also synchronize with fallback files for static and native browser requests
+          if ($ext === 'ico') {
+            @copy($dest_path, __DIR__ . '/../assets/favicon.ico');
+            @copy($dest_path, __DIR__ . '/../favicon.ico');
+          } else {
+            @copy($dest_path, __DIR__ . '/../assets/favicon.' . $ext);
+            @copy($dest_path, __DIR__ . '/../assets/favicon.ico');
+            @copy($dest_path, __DIR__ . '/../favicon.ico');
+          }
+
+          $success_message = 'Website Favicon updated successfully and synchronized across all pages!';
+        } else {
+          $error_message = 'Failed to save uploaded favicon file.';
+        }
+      } else {
+        $error_message = 'Only ICO, PNG, SVG, WEBP, JPG, and JPEG image files are allowed for the favicon.';
+      }
+    } else {
+      $error_message = 'Please select a valid icon or image file to upload as website favicon.';
+    }
+  }
+
   // Handle Certificate Delivery Note Update action
   if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_delivery_note') {
     $cert_cod_title = trim($_POST['cert_cod_title'] ?? 'Cash on Delivery & Courier Details:');
@@ -736,8 +785,12 @@ try {
   $stmt = $pdo->query("SELECT u.*, (SELECT COUNT(*) FROM enrollments e WHERE e.user_id = u.id) as enrolled_count FROM users u WHERE u.role = 'student' ORDER BY u.created_at DESC");
   $all_students = $stmt->fetchAll();
 
-  // Fetch all courses (JOIN users to retrieve instructor name & avatar)
-  $stmt = $pdo->query("SELECT c.*, u.name as tutor_name, u.avatar as tutor_avatar FROM courses c LEFT JOIN users u ON c.tutor_id = u.id ORDER BY CASE WHEN c.status = 'pending' THEN 1 WHEN c.status = 'rejected' THEN 2 ELSE 3 END, c.created_at DESC");
+  // Fetch all courses (JOIN users to retrieve instructor name & avatar, plus live enrolled student count)
+  $stmt = $pdo->query("SELECT c.*, u.name as tutor_name, u.avatar as tutor_avatar, 
+                              (SELECT COUNT(*) FROM enrollments e WHERE e.course_id = c.id) as live_enrolled_count 
+                       FROM courses c 
+                       LEFT JOIN users u ON c.tutor_id = u.id 
+                       ORDER BY CASE WHEN c.status = 'pending' THEN 1 WHEN c.status = 'rejected' THEN 2 ELSE 3 END, c.created_at DESC");
   $courses = $stmt->fetchAll();
 
   // Fetch all bank payments
@@ -794,6 +847,10 @@ try {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Admin Portal | Computerscience.lk</title>
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/x-icon" href="../<?php echo function_exists('get_site_favicon') ? get_site_favicon() : 'assets/logo.png'; ?>?v=<?php echo time(); ?>">
+  <link rel="shortcut icon" href="../<?php echo function_exists('get_site_favicon') ? get_site_favicon() : 'assets/logo.png'; ?>?v=<?php echo time(); ?>">
 
   <!-- Local Bootstrap 5 CSS -->
   <link href="assets/css/bootstrap.min.css" rel="stylesheet">
@@ -1113,11 +1170,11 @@ try {
         </div>
       </a>
 
-      <!-- Site Logo Customization -->
+      <!-- Site Logo & Favicon Customization -->
       <a class="nav-link-item" id="btn-logo-tab">
         <div class="d-flex align-items-center gap-2.5">
-          <i class="bi bi-image-fill text-danger"></i>
-          <span>Site Logo</span>
+          <i class="bi bi-palette-fill text-danger"></i>
+          <span>Site Logo & Favicon</span>
         </div>
       </a>
 
@@ -1988,7 +2045,7 @@ try {
                     $thumb_src = empty($raw_thumb) ? '../assets/images/course-1.jpg' : ((preg_match('~^https?://~i', $raw_thumb) || strpos($raw_thumb, 'data:') === 0) ? $raw_thumb : '../' . ltrim($raw_thumb, '/'));
                     $avatar_src = empty($raw_avatar) ? 'https://ui-avatars.com/api/?name=' . urlencode($tutor_name) . '&background=0f4c81&color=fff' : ((preg_match('~^https?://~i', $raw_avatar) || strpos($raw_avatar, 'data:') === 0) ? $raw_avatar : '../' . ltrim($raw_avatar, '/'));
                     ?>
-                    <tr>
+                    <tr id="course-row-<?php echo htmlspecialchars($course['id']); ?>">
                       <td class="py-3">
                         <div class="d-flex align-items-center gap-3">
                           <img src="<?php echo htmlspecialchars($thumb_src); ?>"
@@ -2000,6 +2057,11 @@ try {
                             <div class="fs-8 text-muted"><i
                                 class="bi bi-clock me-1"></i><?php echo htmlspecialchars($course['duration']); ?> Weeks |
                               Slug: <?php echo htmlspecialchars($course['id']); ?></div>
+                            <div class="mt-1">
+                              <span class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 px-2 py-0.5 rounded-pill fs-9">
+                                <i class="bi bi-people-fill me-1"></i><?php echo (int)($course['live_enrolled_count'] ?? 0); ?> <?php echo __('enrolled_students', 'Students'); ?>
+                              </span>
+                            </div>
                           </div>
                         </div>
                       </td>
@@ -2021,10 +2083,15 @@ try {
                       <td class="py-3 fw-bold text-dark fs-7">
                         <?php echo floatval($course['price']) > 0 ? 'Rs. ' . number_format($course['price'], 2) : 'Free'; ?>
                       </td>
-                      <td class="py-3">
+                      <td class="py-3" id="course-status-badge-<?php echo htmlspecialchars($course['id']); ?>">
                         <?php if (($course['status'] ?? 'approved') === 'pending'): ?>
                           <span class="status-badge-pending"><i class="bi bi-clock me-1"></i> Pending Review</span>
-                        <?php elseif (($course['status'] ?? 'approved') === 'approved'): ?>
+                        <?php elseif ($course['status'] === 'disabled' || !empty($course['is_archived'])): 
+                          $d_time = !empty($course['deleted_at']) ? strtotime($course['deleted_at']) : time();
+                          $d_left = max(0, 14 - floor((time() - $d_time) / 86400));
+                        ?>
+                          <span class="badge bg-warning bg-opacity-10 text-dark border border-warning px-2 py-1 fs-9 rounded-pill"><i class="bi bi-clock-history me-1 text-danger"></i> Disabled (<?php echo $d_left; ?>d left)</span>
+                        <?php elseif (($course['status'] ?? 'approved') === 'approved' || ($course['status'] ?? '') === 'active'): ?>
                           <span class="status-badge-active"><i class="bi bi-check-circle me-1"></i> Approved</span>
                         <?php else: ?>
                           <span
@@ -2033,24 +2100,56 @@ try {
                         <?php endif; ?>
                       </td>
                       <td class="py-3 text-end">
-                        <div class="d-flex justify-content-end gap-2">
+                        <div class="d-flex justify-content-end align-items-center gap-1.5 flex-wrap">
+                          <!-- Course Preview in Admin Preview Mode -->
                           <a href="../classroom.php?course_id=<?php echo htmlspecialchars($course['id']); ?>&admin_preview=1"
-                            target="_blank" class="btn btn-sm btn-outline-primary rounded-pill px-2.5">
+                            target="_blank" class="btn btn-sm btn-outline-primary rounded-pill px-2.5 shadow-sm"
+                            title="Preview Course in Admin Mode">
                             <i class="bi bi-eye"></i> Preview
                           </a>
+
+                          <!-- Quick Disable / Enable Toggle Button -->
+                          <?php if (($course['status'] ?? 'approved') === 'disabled' || !empty($course['is_archived'])): ?>
+                            <button type="button" class="btn btn-sm btn-outline-success rounded-pill px-2.5 btn-toggle-course-status shadow-sm"
+                              id="toggle-btn-<?php echo htmlspecialchars($course['id']); ?>"
+                              data-course-id="<?php echo htmlspecialchars($course['id']); ?>"
+                              data-current-status="disabled"
+                              data-course-title="<?php echo htmlspecialchars($course['title']); ?>"
+                              title="<?php echo __('quick_enable', 'Quick Enable'); ?>">
+                              <i class="bi bi-play-circle-fill me-1"></i> <?php echo __('quick_enable', 'Enable'); ?>
+                            </button>
+                          <?php else: ?>
+                            <button type="button" class="btn btn-sm btn-outline-warning rounded-pill px-2.5 btn-toggle-course-status shadow-sm"
+                              id="toggle-btn-<?php echo htmlspecialchars($course['id']); ?>"
+                              data-course-id="<?php echo htmlspecialchars($course['id']); ?>"
+                              data-current-status="<?php echo htmlspecialchars($course['status'] ?? 'approved'); ?>"
+                              data-course-title="<?php echo htmlspecialchars($course['title']); ?>"
+                              title="<?php echo __('quick_disable', 'Quick Disable'); ?>">
+                              <i class="bi bi-pause-circle-fill me-1"></i> <?php echo __('quick_disable', 'Disable'); ?>
+                            </button>
+                          <?php endif; ?>
+
+                          <!-- Secure Hard Delete Course Button (Red Trash Icon) -->
+                          <button type="button" class="btn btn-sm btn-outline-danger rounded-pill px-2.5 btn-admin-delete-course shadow-sm"
+                            data-course-id="<?php echo htmlspecialchars($course['id']); ?>"
+                            data-course-title="<?php echo htmlspecialchars($course['title']); ?>"
+                            data-enrolled-count="<?php echo (int)($course['live_enrolled_count'] ?? 0); ?>"
+                            title="<?php echo __('secure_delete_course', 'Delete Course'); ?>">
+                            <i class="bi bi-trash3-fill"></i>
+                          </button>
 
                           <?php if (($course['status'] ?? 'approved') === 'pending'): ?>
                             <form action="index.php" method="POST" class="d-inline">
                               <input type="hidden" name="action" value="approve_course">
                               <input type="hidden" name="course_id" value="<?php echo htmlspecialchars($course['id']); ?>">
-                              <button type="submit" class="btn btn-sm btn-success rounded-pill px-3 fw-semibold">
+                              <button type="submit" class="btn btn-sm btn-success rounded-pill px-2.5 fw-semibold shadow-sm">
                                 <i class="bi bi-check2"></i> Approve
                               </button>
                             </form>
                             <form action="index.php" method="POST" class="d-inline">
                               <input type="hidden" name="action" value="reject_course">
                               <input type="hidden" name="course_id" value="<?php echo htmlspecialchars($course['id']); ?>">
-                              <button type="submit" class="btn btn-sm btn-danger rounded-pill px-3 fw-semibold">
+                              <button type="submit" class="btn btn-sm btn-danger rounded-pill px-2.5 fw-semibold shadow-sm">
                                 <i class="bi bi-x-lg"></i> Reject
                               </button>
                             </form>
@@ -2614,54 +2713,177 @@ try {
         </div>
       </div>
 
-      <!-- Section: Site Logo Management -->
+      <!-- Section: Site Logo & Favicon Management -->
       <div id="logo-section" class="d-none">
         <div class="mb-4">
-          <h2 class="fw-bold text-dark mb-1">Site Logo Customization</h2>
-          <p class="text-secondary fs-7">Upload and update the official website logo displayed across all student,
-            teacher, and admin pages.</p>
+          <h2 class="fw-bold text-dark mb-1">Site Logo & Favicon Customization</h2>
+          <p class="text-secondary fs-7">Manage your official website branding assets. Update the website's main logo and browser tab favicon synchronized across all student, teacher, and admin portals.</p>
         </div>
 
         <div class="row g-4">
+          <!-- Card 1: Site Logo Customization (Left Column) -->
           <div class="col-lg-6">
-            <div class="glass-card p-4">
-              <h5 class="fw-bold text-dark mb-3"><i class="bi bi-image-fill text-primary me-2"></i>Upload New Logo</h5>
+            <div class="glass-card p-4 h-100 d-flex flex-column justify-content-between">
+              <div>
+                <div class="d-flex align-items-center justify-content-between mb-3 pb-2 border-bottom">
+                  <h5 class="fw-bold text-dark mb-0">
+                    <i class="bi bi-image-fill text-primary me-2"></i>Website Main Logo
+                  </h5>
+                  <span class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 rounded-pill px-2.5 py-1 fs-9 fw-semibold">
+                    <i class="bi bi-layout-sidebar-inset me-1"></i>Navbar & Headers
+                  </span>
+                </div>
 
-              <form action="index.php" method="POST" enctype="multipart/form-data">
-                <input type="hidden" name="action" value="update_site_logo">
+                <p class="text-secondary fs-8 mb-3">
+                  This logo appears in navigation bars, student portals, login/registration screens, and PDF certificates.
+                </p>
 
+                <!-- Current Active Logo Live Preview -->
                 <div class="mb-4">
-                  <label for="site_logo_file" class="form-label fw-semibold text-secondary fs-8">Select Image
-                    File</label>
-                  <input type="file" name="site_logo_file" id="site_logo_file" class="form-control"
-                    accept="image/png, image/jpeg, image/webp, image/svg+xml" required>
-                  <small class="text-muted fs-9 mt-1 d-block">Supported formats: PNG, JPG, JPEG, SVG, WEBP (Recommended
-                    transparent PNG or SVG).</small>
+                  <div class="d-flex justify-content-between align-items-center mb-1">
+                    <label class="form-label fw-semibold text-secondary fs-8 mb-0">Active Logo Preview</label>
+                    <span class="text-muted fs-9" id="logo-status-tag">Current Active</span>
+                  </div>
+                  <div class="p-3 bg-light rounded-3 text-center border d-flex align-items-center justify-content-center"
+                    style="min-height: 100px; background: repeating-conic-gradient(#f1f5f9 0% 25%, #ffffff 0% 50%) 50% / 16px 16px;">
+                    <img id="logo-live-preview" src="../<?php echo get_site_logo(); ?>?v=<?php echo time(); ?>" alt="Active Site Logo"
+                      class="img-fluid mx-auto" style="max-height: 70px; max-width: 100%; object-fit: contain;">
+                  </div>
                 </div>
 
-                <div class="pt-2">
-                  <button type="submit" class="btn btn-primary px-4 py-2 rounded-pill fw-semibold"
-                    style="background-color: <?php echo $is_super_admin ? '#0b4528' : '#0f4c81'; ?>; border: none;">
-                    <i class="bi bi-cloud-upload me-1"></i> Upload & Apply New Logo
-                  </button>
-                </div>
-              </form>
+                <!-- Upload New Logo Form -->
+                <form action="index.php?tab=logo" method="POST" enctype="multipart/form-data" id="logoUploadForm">
+                  <input type="hidden" name="action" value="update_site_logo">
+
+                  <div class="mb-3">
+                    <label for="site_logo_file" class="form-label fw-semibold text-secondary fs-8">Select New Logo Image</label>
+                    <input type="file" name="site_logo_file" id="site_logo_file" class="form-control"
+                      accept="image/png, image/jpeg, image/webp, image/svg+xml" required onchange="previewLogoFile(this)">
+                    <small class="text-muted fs-9 mt-1 d-block">Supported formats: <strong>PNG, JPG, JPEG, SVG, WEBP</strong> (Transparent PNG or SVG recommended).</small>
+                  </div>
+
+                  <div class="pt-2">
+                    <button type="submit" class="btn btn-primary px-4 py-2.5 rounded-pill fw-semibold shadow-sm w-100"
+                      style="background-color: <?php echo $is_super_admin ? '#0b4528' : '#0f4c81'; ?>; border: none;">
+                      <i class="bi bi-cloud-upload me-1"></i> Upload & Apply New Logo
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+              <div class="mt-4 pt-3 border-top">
+                <p class="text-muted fs-9 mb-0">
+                  <i class="bi bi-info-circle text-primary me-1"></i> Changes take effect immediately across all student, teacher, and administrator pages.
+                </p>
+              </div>
             </div>
           </div>
 
+          <!-- Card 2: Website Favicon Customization (Right Column - Placed Right Next to Logo!) -->
           <div class="col-lg-6">
-            <div class="glass-card p-4">
-              <h5 class="fw-bold text-dark mb-3"><i class="bi bi-eye-fill text-success me-2"></i>Current Active Logo
-                Preview</h5>
-              <div class="p-4 bg-light rounded-3 text-center border">
-                <img src="../<?php echo get_site_logo(); ?>?v=<?php echo time(); ?>" alt="Active Site Logo"
-                  class="img-fluid mx-auto" style="max-height: 80px; object-fit: contain;">
+            <div class="glass-card p-4 h-100 d-flex flex-column justify-content-between">
+              <div>
+                <div class="d-flex align-items-center justify-content-between mb-3 pb-2 border-bottom">
+                  <h5 class="fw-bold text-dark mb-0">
+                    <i class="bi bi-globe-americas text-success me-2"></i>Website Favicon
+                  </h5>
+                  <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 rounded-pill px-2.5 py-1 fs-9 fw-semibold">
+                    <i class="bi bi-window me-1"></i>Browser Tab & Bookmarks
+                  </span>
+                </div>
+
+                <p class="text-secondary fs-8 mb-3">
+                  The favicon is the small identity icon displayed in web browser tabs, bookmark bars, and mobile home screen shortcuts.
+                </p>
+
+                <!-- Current Active Favicon & Realistic Browser Tab Mockup -->
+                <div class="mb-4">
+                  <div class="d-flex justify-content-between align-items-center mb-1">
+                    <label class="form-label fw-semibold text-secondary fs-8 mb-0">Browser Tab & Icon Preview</label>
+                    <span class="text-muted fs-9" id="favicon-status-tag">Current Active</span>
+                  </div>
+
+                  <!-- Realistic Browser Tab Mockup -->
+                  <div class="rounded-3 border overflow-hidden shadow-sm mb-3" style="background: #e2e8f0;">
+                    <!-- Browser Window Header -->
+                    <div class="d-flex align-items-center px-3 pt-2 pb-0" style="background: #cbd5e1; gap: 8px;">
+                      <div class="d-flex gap-1.5 me-2">
+                        <span class="rounded-circle d-inline-block" style="width: 10px; height: 10px; background: #ef4444;"></span>
+                        <span class="rounded-circle d-inline-block" style="width: 10px; height: 10px; background: #f59e0b;"></span>
+                        <span class="rounded-circle d-inline-block" style="width: 10px; height: 10px; background: #10b981;"></span>
+                      </div>
+
+                      <!-- Simulated Browser Tab -->
+                      <div class="d-flex align-items-center px-3 py-1.5 bg-white rounded-top text-dark shadow-xs"
+                        style="max-width: 220px; font-size: 11px; font-weight: 600; border-top: 2px solid #0f4c81;">
+                        <img id="favicon-tab-preview" src="../<?php echo function_exists('get_site_favicon') ? get_site_favicon() : 'assets/logo.png'; ?>?v=<?php echo time(); ?>"
+                          alt="Favicon" class="me-2 rounded-1" style="width: 16px; height: 16px; object-fit: contain;">
+                        <span class="text-truncate" style="max-width: 140px;">Computerscience.lk | LMS</span>
+                        <i class="bi bi-x ms-auto text-muted fs-8"></i>
+                      </div>
+                      <i class="bi bi-plus-lg text-secondary fs-9 ms-1"></i>
+                    </div>
+
+                    <!-- Multi-Size Icon Preview Grid -->
+                    <div class="p-3 bg-light text-center d-flex align-items-center justify-content-center gap-3">
+                      <!-- 32x32 Desktop Display -->
+                      <div class="text-center">
+                        <div class="p-2 bg-white rounded-3 border d-inline-flex align-items-center justify-content-center shadow-xs"
+                          style="width: 48px; height: 48px; background: repeating-conic-gradient(#f8fafc 0% 25%, #ffffff 0% 50%) 50% / 12px 12px;">
+                          <img id="favicon-preview-48" src="../<?php echo function_exists('get_site_favicon') ? get_site_favicon() : 'assets/logo.png'; ?>?v=<?php echo time(); ?>"
+                            alt="Favicon 32px" style="max-width: 32px; max-height: 32px; object-fit: contain;">
+                        </div>
+                        <div class="text-muted fs-9 mt-1 fw-semibold">32x32 px</div>
+                      </div>
+
+                      <!-- 16x16 Tab Display -->
+                      <div class="text-center">
+                        <div class="p-2 bg-white rounded-3 border d-inline-flex align-items-center justify-content-center shadow-xs"
+                          style="width: 40px; height: 40px; background: repeating-conic-gradient(#f8fafc 0% 25%, #ffffff 0% 50%) 50% / 12px 12px;">
+                          <img id="favicon-preview-24" src="../<?php echo function_exists('get_site_favicon') ? get_site_favicon() : 'assets/logo.png'; ?>?v=<?php echo time(); ?>"
+                            alt="Favicon 16px" style="max-width: 20px; max-height: 20px; object-fit: contain;">
+                        </div>
+                        <div class="text-muted fs-9 mt-1 fw-semibold">16x16 px</div>
+                      </div>
+
+                      <!-- Dark Mode Display -->
+                      <div class="text-center">
+                        <div class="p-2 rounded-3 border d-inline-flex align-items-center justify-content-center shadow-xs"
+                          style="width: 48px; height: 48px; background: #0f172a; border-color: #334155 !important;">
+                          <img id="favicon-preview-dark" src="../<?php echo function_exists('get_site_favicon') ? get_site_favicon() : 'assets/logo.png'; ?>?v=<?php echo time(); ?>"
+                            alt="Favicon Dark" style="max-width: 30px; max-height: 30px; object-fit: contain;">
+                        </div>
+                        <div class="text-muted fs-9 mt-1 fw-semibold">Dark Mode</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Upload New Favicon Form -->
+                <form action="index.php?tab=logo" method="POST" enctype="multipart/form-data" id="faviconUploadForm">
+                  <input type="hidden" name="action" value="update_site_favicon">
+
+                  <div class="mb-3">
+                    <label for="site_favicon_file" class="form-label fw-semibold text-secondary fs-8">Select New Favicon (.ico, .png, .svg, .webp)</label>
+                    <input type="file" name="site_favicon_file" id="site_favicon_file" class="form-control"
+                      accept=".ico, image/x-icon, image/png, image/svg+xml, image/webp, image/jpeg" required onchange="previewFaviconFile(this)">
+                    <small class="text-muted fs-9 mt-1 d-block">Supported formats: <strong>ICO, PNG, SVG, WEBP</strong> (Square 1:1 ratio recommended e.g. 32x32, 64x64, 128x128).</small>
+                  </div>
+
+                  <div class="pt-2">
+                    <button type="submit" class="btn btn-success px-4 py-2.5 rounded-pill fw-semibold shadow-sm w-100"
+                      style="background-color: <?php echo $is_super_admin ? '#0e6237' : '#198754'; ?>; border: none;">
+                      <i class="bi bi-cloud-arrow-up-fill me-1"></i> Upload & Apply New Favicon
+                    </button>
+                  </div>
+                </form>
               </div>
-              <p class="text-muted fs-8 mt-3 mb-0">
-                <i class="bi bi-info-circle text-primary me-1"></i> Changing the logo here updates the logo displayed in
-                the Header Navigation bar across all pages: Home, Student Dashboard, Classroom, Payment Wall, Login,
-                Register, and Admin Portal.
-              </p>
+
+              <div class="mt-4 pt-3 border-top">
+                <p class="text-muted fs-9 mb-0">
+                  <i class="bi bi-info-circle text-success me-1"></i> Updates immediately for browser tabs, bookmark bars, and mobile home screen icons.
+                </p>
+              </div>
             </div>
           </div>
         </div>
@@ -3548,9 +3770,52 @@ try {
         function switchToHero() { setActiveTab(btnHero, secHero, 'hero', 'Hero Banner Settings'); }
         function switchToDeliveryNote() { setActiveTab(btnDeliveryNote, secDeliveryNote, 'delivery_note', 'Certificate Delivery Note & COD Settings'); }
         function switchToGoogleAuth() { setActiveTab(btnGoogleAuth, secGoogleAuth, 'google_auth', 'Google Sign-In & OAuth Settings'); }
-        function switchToLogo() { setActiveTab(btnLogo, secLogo, 'logo', 'Site Logo Customization'); }
+        function switchToLogo() { setActiveTab(btnLogo, secLogo, 'logo', 'Site Logo & Favicon Customization'); }
         function switchToPassword() { setActiveTab(btnPassword, secPassword, 'password', 'Change Admin Password'); }
       });
+
+      // Live File Previews for Site Logo & Favicon
+      function previewLogoFile(input) {
+        if (input.files && input.files[0]) {
+          const file = input.files[0];
+          const reader = new FileReader();
+          reader.onload = function (e) {
+            const logoPreview = document.getElementById('logo-live-preview');
+            const statusTag = document.getElementById('logo-status-tag');
+            if (logoPreview) {
+              logoPreview.src = e.target.result;
+            }
+            if (statusTag) {
+              statusTag.innerHTML = '<span class="badge bg-warning text-dark"><i class="bi bi-eye me-1"></i>New Preview (Pending Upload)</span>';
+            }
+          };
+          reader.readAsDataURL(file);
+        }
+      }
+
+      function previewFaviconFile(input) {
+        if (input.files && input.files[0]) {
+          const file = input.files[0];
+          const reader = new FileReader();
+          reader.onload = function (e) {
+            const tabPreview = document.getElementById('favicon-tab-preview');
+            const p48 = document.getElementById('favicon-preview-48');
+            const p24 = document.getElementById('favicon-preview-24');
+            const pDark = document.getElementById('favicon-preview-dark');
+            const statusTag = document.getElementById('favicon-status-tag');
+
+            if (tabPreview) tabPreview.src = e.target.result;
+            if (p48) p48.src = e.target.result;
+            if (p24) p24.src = e.target.result;
+            if (pDark) pDark.src = e.target.result;
+
+            if (statusTag) {
+              statusTag.innerHTML = '<span class="badge bg-warning text-dark"><i class="bi bi-eye me-1"></i>New Preview (Pending Upload)</span>';
+            }
+          };
+          reader.readAsDataURL(file);
+        }
+      }
 
       function copyRedirectUri() {
         const uriInput = document.getElementById('auto-detected-redirect-uri');
@@ -3583,6 +3848,300 @@ try {
             window.location.href = '../api/set_language.php?lang=' + lang;
           });
       }
+    </script>
+
+    <!-- Bootstrap 5 Bundle JS -->
+    <script src="assets/js/bootstrap.bundle.min.js"></script>
+
+    <!-- Secure Course Deletion Modal with Admin Password Verification -->
+    <div class="modal fade" id="adminDeleteCourseModal" tabindex="-1" aria-labelledby="adminDeleteCourseModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg" style="border-radius: 16px; overflow: hidden;">
+          <div class="modal-header bg-danger text-white border-0 py-3">
+            <h5 class="modal-title fw-bold d-flex align-items-center gap-2" id="adminDeleteCourseModalLabel">
+              <i class="bi bi-exclamation-triangle-fill fs-5"></i>
+              <?php echo __('delete_course_modal_title', '⚠️ Secure Course Deletion'); ?>
+            </h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body p-4">
+            <!-- Target Course Info Card -->
+            <div class="p-3 bg-light rounded-3 border mb-3">
+              <div class="fw-bold text-dark fs-6 mb-1" id="admin-delete-course-title"></div>
+              <div class="text-muted fs-8">
+                <span class="badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25 px-2.5 py-1 rounded-pill" id="admin-delete-course-students-badge">
+                  <i class="bi bi-people-fill me-1"></i>0 Students
+                </span>
+              </div>
+            </div>
+
+            <!-- Strong Warning Alert Box -->
+            <div class="alert alert-danger d-flex align-items-start gap-2.5 mb-3 py-2.5 px-3 fs-7 border-danger border-opacity-30">
+              <i class="bi bi-shield-slash-fill fs-5 text-danger flex-shrink-0 mt-0.5"></i>
+              <div id="admin-delete-warning-text">
+                <?php echo __('delete_course_modal_warning', '⚠️ Warning: This will permanently delete this course and all associated lessons, quizzes, and progress for enrolled students. This action cannot be undone.'); ?>
+              </div>
+            </div>
+
+            <!-- Password Verification Form -->
+            <form id="admin-delete-course-form" onsubmit="return false;">
+              <input type="hidden" id="admin-delete-course-id" value="">
+              <input type="hidden" id="admin-delete-csrf-token" value="<?php echo htmlspecialchars($csrf_token); ?>">
+
+              <div class="mb-3">
+                <label for="admin-delete-password-input" class="form-label fw-bold text-dark fs-7">
+                  <i class="bi bi-key-fill text-warning me-1"></i>
+                  <?php echo __('admin_password_confirm_label', 'Enter Your Admin Password to Confirm:'); ?>
+                  <span class="text-danger">*</span>
+                </label>
+                <div class="input-group">
+                  <input type="password" id="admin-delete-password-input" class="form-control"
+                    placeholder="Your current admin password"
+                    autocomplete="current-password" required>
+                  <button class="btn btn-outline-secondary" type="button" id="toggle-delete-pwd-vis" title="Toggle password visibility">
+                    <i class="bi bi-eye" id="toggle-pwd-icon"></i>
+                  </button>
+                </div>
+              </div>
+
+              <div id="admin-delete-alert-container" class="mb-3"></div>
+
+              <div class="d-flex justify-content-end gap-2 mt-4 pt-2 border-top">
+                <button type="button" class="btn btn-light rounded-pill px-4 fw-semibold border" data-bs-dismiss="modal">
+                  <?php echo __('cancel', 'Cancel'); ?>
+                </button>
+                <button type="submit" id="confirm-admin-delete-btn" class="btn btn-danger rounded-pill px-4 fw-bold shadow-sm d-inline-flex align-items-center gap-1.5">
+                  <i class="bi bi-trash3-fill"></i>
+                  <span><?php echo __('confirm_permanent_delete', 'Confirm Permanent Delete'); ?></span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Admin Dynamic Notification Toast -->
+    <div class="toast-container position-fixed bottom-0 end-0 p-3" style="z-index: 1090;">
+      <div id="adminActionToast" class="toast align-items-center text-white border-0 shadow-lg" role="alert" aria-live="assertive" aria-atomic="true">
+        <div class="d-flex">
+          <div class="toast-body d-flex align-items-center gap-2" id="adminToastBody">
+            <i class="bi bi-check-circle-fill fs-5"></i>
+            <span id="adminToastMessage">Action completed successfully.</span>
+          </div>
+          <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Course Management AJAX Controller -->
+    <script>
+      document.addEventListener('DOMContentLoaded', function () {
+        const csrfToken = '<?php echo htmlspecialchars($csrf_token); ?>';
+
+        // Toast Helper
+        function showAdminToast(message, isError = false) {
+          const toastEl = document.getElementById('adminActionToast');
+          const toastBody = document.getElementById('adminToastBody');
+          const toastMsg = document.getElementById('adminToastMessage');
+          if (!toastEl) return;
+
+          toastEl.className = 'toast align-items-center text-white border-0 shadow-lg ' + (isError ? 'bg-danger' : 'bg-success');
+          if (toastBody) {
+            toastBody.innerHTML = (isError ? '<i class="bi bi-x-circle-fill fs-5"></i>' : '<i class="bi bi-check-circle-fill fs-5"></i>') + ' <span>' + message + '</span>';
+          }
+          const toast = bootstrap.Toast.getOrCreateInstance(toastEl, { delay: 4000 });
+          toast.show();
+        }
+
+        // Quick Toggle Course Status Handler (Active / Disabled)
+        document.querySelectorAll('.btn-toggle-course-status').forEach(btn => {
+          btn.addEventListener('click', function (e) {
+            e.preventDefault();
+            const courseId = this.getAttribute('data-course-id');
+            const currentStatus = this.getAttribute('data-current-status');
+            const targetStatus = (currentStatus === 'disabled') ? 'approved' : 'disabled';
+            const courseTitle = this.getAttribute('data-course-title') || courseId;
+
+            const originalHtml = this.innerHTML;
+            this.disabled = true;
+            this.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Updating...';
+
+            fetch('admin_toggle_course.php', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': csrfToken
+              },
+              body: JSON.stringify({
+                course_id: courseId,
+                status: targetStatus,
+                csrf_token: csrfToken
+              })
+            })
+              .then(res => res.json())
+              .then(data => {
+                this.disabled = false;
+                if (data.success) {
+                  const newStatus = data.new_status;
+                  this.setAttribute('data-current-status', newStatus);
+
+                  const statusBadgeCell = document.getElementById('course-status-badge-' + courseId);
+
+                  if (newStatus === 'disabled') {
+                    this.className = 'btn btn-sm btn-outline-success rounded-pill px-2.5 btn-toggle-course-status shadow-sm';
+                    this.innerHTML = '<i class="bi bi-play-circle-fill me-1"></i> Enable';
+                    this.title = 'Quick Enable';
+                    if (statusBadgeCell) {
+                      statusBadgeCell.innerHTML = '<span class="badge bg-warning bg-opacity-10 text-dark border border-warning px-2 py-1 fs-9 rounded-pill"><i class="bi bi-clock-history me-1 text-danger"></i> Disabled (14d left)</span>';
+                    }
+                  } else {
+                    this.className = 'btn btn-sm btn-outline-warning rounded-pill px-2.5 btn-toggle-course-status shadow-sm';
+                    this.innerHTML = '<i class="bi bi-pause-circle-fill me-1"></i> Disable';
+                    this.title = 'Quick Disable';
+                    if (statusBadgeCell) {
+                      statusBadgeCell.innerHTML = '<span class="status-badge-active"><i class="bi bi-check-circle me-1"></i> Approved</span>';
+                    }
+                  }
+
+                  showAdminToast(data.message || 'Course status updated successfully.');
+                } else {
+                  this.innerHTML = originalHtml;
+                  alert(data.message || 'Failed to update course status.');
+                }
+              })
+              .catch(err => {
+                this.disabled = false;
+                this.innerHTML = originalHtml;
+                alert('Connection error occurred while updating course status.');
+              });
+          });
+        });
+
+        // Secure Delete Course Modal Controller
+        const deleteModalEl = document.getElementById('adminDeleteCourseModal');
+        const deleteModal = deleteModalEl ? new bootstrap.Modal(deleteModalEl) : null;
+        const deleteForm = document.getElementById('admin-delete-course-form');
+        const deleteCourseIdInput = document.getElementById('admin-delete-course-id');
+        const deleteCourseTitleDisplay = document.getElementById('admin-delete-course-title');
+        const deleteStudentsBadge = document.getElementById('admin-delete-course-students-badge');
+        const deleteWarningText = document.getElementById('admin-delete-warning-text');
+        const deletePasswordInput = document.getElementById('admin-delete-password-input');
+        const deleteAlertContainer = document.getElementById('admin-delete-alert-container');
+        const confirmDeleteBtn = document.getElementById('confirm-admin-delete-btn');
+        const togglePwdVisBtn = document.getElementById('toggle-delete-pwd-vis');
+        const togglePwdIcon = document.getElementById('toggle-pwd-icon');
+
+        // Toggle password visibility
+        if (togglePwdVisBtn && deletePasswordInput) {
+          togglePwdVisBtn.addEventListener('click', function () {
+            const isPassword = (deletePasswordInput.type === 'password');
+            deletePasswordInput.type = isPassword ? 'text' : 'password';
+            if (togglePwdIcon) {
+              togglePwdIcon.className = isPassword ? 'bi bi-eye-slash' : 'bi bi-eye';
+            }
+          });
+        }
+
+        // Open Delete Modal Trigger
+        document.querySelectorAll('.btn-admin-delete-course').forEach(btn => {
+          btn.addEventListener('click', function (e) {
+            e.preventDefault();
+            const courseId = this.getAttribute('data-course-id');
+            const courseTitle = this.getAttribute('data-course-title') || courseId;
+            const enrolledCount = parseInt(this.getAttribute('data-enrolled-count') || '0', 10);
+
+            if (deleteCourseIdInput) deleteCourseIdInput.value = courseId;
+            if (deleteCourseTitleDisplay) deleteCourseTitleDisplay.textContent = courseTitle + ' (Slug: ' + courseId + ')';
+            if (deleteStudentsBadge) {
+              deleteStudentsBadge.innerHTML = '<i class="bi bi-people-fill me-1"></i>' + enrolledCount + ' Enrolled Students';
+            }
+            if (deleteWarningText) {
+              deleteWarningText.textContent = '⚠️ Warning: This will permanently delete this course and all associated lessons, quizzes, and progress for ' + enrolledCount + ' enrolled students. This action cannot be undone.';
+            }
+            if (deletePasswordInput) {
+              deletePasswordInput.value = '';
+              deletePasswordInput.type = 'password';
+            }
+            if (togglePwdIcon) togglePwdIcon.className = 'bi bi-eye';
+            if (deleteAlertContainer) deleteAlertContainer.innerHTML = '';
+
+            if (deleteModal) deleteModal.show();
+          });
+        });
+
+        // Submit Delete Form
+        if (deleteForm) {
+          deleteForm.addEventListener('submit', function (e) {
+            e.preventDefault();
+            const courseId = deleteCourseIdInput.value.trim();
+            const password = deletePasswordInput.value.trim();
+
+            if (!courseId) {
+              alert('Course ID is missing.');
+              return;
+            }
+            if (!password) {
+              if (deleteAlertContainer) {
+                deleteAlertContainer.innerHTML = '<div class="alert alert-danger py-2 px-3 fs-8 mb-0"><i class="bi bi-exclamation-circle me-1"></i> Please enter your admin account password.</div>';
+              }
+              deletePasswordInput.focus();
+              return;
+            }
+
+            confirmDeleteBtn.disabled = true;
+            confirmDeleteBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Deleting...';
+            if (deleteAlertContainer) deleteAlertContainer.innerHTML = '';
+
+            fetch('admin_delete_course.php', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': csrfToken
+              },
+              body: JSON.stringify({
+                course_id: courseId,
+                password: password,
+                csrf_token: csrfToken
+              })
+            })
+              .then(res => res.json())
+              .then(data => {
+                confirmDeleteBtn.disabled = false;
+                confirmDeleteBtn.innerHTML = '<i class="bi bi-trash3-fill"></i> <span>Confirm Permanent Delete</span>';
+
+                if (data.success) {
+                  if (deleteModal) deleteModal.hide();
+
+                  // Remove row from table
+                  const row = document.getElementById('course-row-' + courseId);
+                  if (row) {
+                    row.style.transition = 'all 0.5s ease';
+                    row.style.backgroundColor = '#fee2e2';
+                    row.style.opacity = '0';
+                    setTimeout(() => {
+                      row.remove();
+                    }, 500);
+                  }
+
+                  showAdminToast(data.message || 'Course permanently deleted successfully.');
+                } else {
+                  if (deleteAlertContainer) {
+                    deleteAlertContainer.innerHTML = '<div class="alert alert-danger py-2 px-3 fs-8 mb-0 d-flex align-items-center gap-1.5"><i class="bi bi-x-circle-fill flex-shrink-0"></i> <span>' + (data.message || 'Invalid Admin Password. Deletion aborted.') + '</span></div>';
+                  }
+                  deletePasswordInput.focus();
+                }
+              })
+              .catch(err => {
+                confirmDeleteBtn.disabled = false;
+                confirmDeleteBtn.innerHTML = '<i class="bi bi-trash3-fill"></i> <span>Confirm Permanent Delete</span>';
+                if (deleteAlertContainer) {
+                  deleteAlertContainer.innerHTML = '<div class="alert alert-danger py-2 px-3 fs-8 mb-0"><i class="bi bi-wifi-off me-1"></i> Connection error occurred. Please try again.</div>';
+                }
+              });
+          });
+        }
+      });
     </script>
 </body>
 

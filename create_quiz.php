@@ -45,7 +45,10 @@ try {
     }
 
     if ((int)$course['tutor_id'] !== $user_id) {
-        die("You do not have permission to manage quizzes for this course.");
+        // Allow if tutor_id is NULL (course not yet assigned) and user is a teacher who can manage
+        if (!($user['role'] === 'teacher' && empty($course['tutor_id']))) {
+            die("You do not have permission to manage quizzes for this course.");
+        }
     }
 
     // Fetch global quiz settings for this course
@@ -97,11 +100,15 @@ try {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo __('create_quiz_title', 'Quiz Management System'); ?> - <?php echo htmlspecialchars($course['title']); ?></title>
+    <link rel="icon" type="image/x-icon" href="<?php echo function_exists('get_site_favicon') ? get_site_favicon() : 'assets/logo.png'; ?>?v=<?php echo time(); ?>">
+    <link rel="shortcut icon" href="<?php echo function_exists('get_site_favicon') ? get_site_favicon() : 'assets/logo.png'; ?>?v=<?php echo time(); ?>">
 
     <!-- Google Fonts & Bootstrap 5 & Icons -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <link rel="stylesheet" href="assets/css/style.css">
+    <link rel="stylesheet" href="assets/css/notifications.css">
 
     <?php render_i18n_js(); ?>
 
@@ -116,28 +123,21 @@ try {
 </head>
 <body>
 
-    <!-- Header Navbar -->
-    <header class="navbar navbar-expand-lg navbar-light bg-white border-bottom sticky-top py-2.5">
-        <div class="container px-4">
-            <a class="navbar-brand d-flex align-items-center gap-2 fw-bold text-dark fs-5" href="dashboard.php">
-                <i class="bi bi-mortarboard-fill text-primary"></i> Computerscience.lk Console
-            </a>
-            <div class="d-flex align-items-center gap-3">
-                <a href="classroom.php?course_id=<?php echo urlencode($course_id); ?>" class="btn btn-outline-secondary btn-sm">
+    <!-- Unified LMS Top Header Bar -->
+    <?php include __DIR__ . '/includes/navbar.php'; ?>
+
+    <div class="bg-white border-bottom py-2 shadow-xs">
+        <div class="container px-4 d-flex align-items-center justify-content-between">
+            <div class="d-flex align-items-center gap-2">
+                <a href="classroom.php?course_id=<?php echo urlencode($course_id); ?>&sid=<?php echo urlencode(session_id()); ?>" class="btn btn-outline-secondary btn-sm rounded-pill px-3 py-1">
                     <i class="bi bi-arrow-left me-1"></i> <?php echo __('back', 'Back to Classroom'); ?>
                 </a>
-                <div class="dropdown">
-                    <button class="btn btn-light btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown">
-                        <i class="bi bi-translate me-1"></i> <?php echo strtoupper($_SESSION['lang'] ?? 'en'); ?>
-                    </button>
-                    <ul class="dropdown-menu dropdown-menu-end shadow-sm">
-                        <li><a class="dropdown-item" href="api/set_language.php?lang=en&redirect=<?php echo urlencode($_SERVER['REQUEST_URI']); ?>">English</a></li>
-                        <li><a class="dropdown-item" href="api/set_language.php?lang=si&redirect=<?php echo urlencode($_SERVER['REQUEST_URI']); ?>">සිංහල</a></li>
-                    </ul>
-                </div>
+            </div>
+            <div class="fs-8 text-muted">
+                <i class="bi bi-gear-wide-connected me-1 text-primary"></i>Quiz Management Console
             </div>
         </div>
-    </header>
+    </div>
 
     <div class="container py-4 px-3 px-md-4" style="max-width: 960px;">
 
@@ -186,7 +186,7 @@ try {
                             $is_sel = ($cl['id'] === $lesson_id);
                             $q_count = (int)($lesson_q_counts[$cl['id']] ?? 0);
                         ?>
-                        <a href="create_quiz.php?course_id=<?php echo urlencode($course_id); ?>&lesson_id=<?php echo urlencode($cl['id']); ?>"
+                        <a href="create_quiz.php?course_id=<?php echo urlencode($course_id); ?>&lesson_id=<?php echo urlencode($cl['id']); ?>&sid=<?php echo urlencode(session_id()); ?>"
                             class="btn btn-sm rounded-pill px-3 py-1.5 fs-8 fw-semibold text-nowrap <?php echo $is_sel ? 'btn-primary text-white shadow-sm' : 'btn-outline-secondary border-secondary border-opacity-25'; ?>"
                             style="<?php echo $is_sel ? 'background-color: #0f4c81; border: none;' : ''; ?>">
                             <i class="bi <?php echo $is_sel ? 'bi-pencil-square' : 'bi-journal-text'; ?> me-1"></i>
@@ -524,7 +524,7 @@ try {
 
                 if (data.success) {
                     alert(data.message || 'Quiz saved and published successfully!');
-                    location.href = `classroom.php?course_id=${encodeURIComponent(document.querySelector('input[name="course_id"]').value)}`;
+                    location.href = `classroom.php?course_id=${encodeURIComponent(document.querySelector('input[name="course_id"]').value)}&sid=<?php echo urlencode(session_id()); ?>`;
                 } else {
                     alert('Error saving quiz: ' + data.message);
                     saveBtn.disabled = false;
@@ -548,5 +548,7 @@ try {
                 .replace(/'/g, '&#039;');
         }
     </script>
+    <!-- Modern Notification System JS Client -->
+    <script src="assets/js/notifications.js"></script>
 </body>
 </html>

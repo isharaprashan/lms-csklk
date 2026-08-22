@@ -35,12 +35,27 @@ try {
     $is_admin = in_array($student['role'] ?? 'student', ['admin', 'super_admin']);
 
     if ($is_teacher) {
-        // Fetch courses taught/uploaded by this teacher
-        $stmt = $pdo->prepare("SELECT * FROM courses WHERE tutor_id = ?");
+        // Fetch courses taught/uploaded by this teacher (with real-time enrollment count)
+        $stmt = $pdo->prepare("SELECT c.*, (SELECT COUNT(*) FROM enrollments e WHERE e.course_id = c.id) as live_enrolled_count 
+                               FROM courses c 
+                               WHERE c.tutor_id = ? 
+                               ORDER BY c.created_at DESC");
         $stmt->execute([$user_id]);
-        $courses = $stmt->fetchAll();
+        $all_teacher_courses = $stmt->fetchAll();
+
+        $active_courses = [];
+        $disabled_courses = [];
+        foreach ($all_teacher_courses as $tc) {
+            $is_soft_del = ($tc['status'] === 'disabled' || !empty($tc['is_archived']) || !empty($tc['deleted_at']));
+            if ($is_soft_del) {
+                $disabled_courses[] = $tc;
+            } else {
+                $active_courses[] = $tc;
+            }
+        }
+        $courses = $active_courses; // For compatibility
     } else {
-        // Fetch enrolled courses for the student
+        // Fetch enrolled courses for the student (enrolled students retain full access)
         $stmt = $pdo->prepare("SELECT c.* FROM enrollments e JOIN courses c ON e.course_id = c.id WHERE e.user_id = ?");
         $stmt->execute([$user_id]);
         $courses = $stmt->fetchAll();
@@ -60,7 +75,7 @@ try {
         $stmt = $pdo->query("SELECT * FROM courses");
         $all_courses = $stmt->fetchAll();
     } else {
-        $stmt = $pdo->prepare("SELECT * FROM courses WHERE status = 'approved' OR tutor_id = ?");
+        $stmt = $pdo->prepare("SELECT * FROM courses WHERE ((status = 'approved' OR status = 'active') AND is_archived = 0) OR tutor_id = ?");
         $stmt->execute([$user_id]);
         $all_courses = $stmt->fetchAll();
     }
@@ -92,12 +107,16 @@ try {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title><?php echo $is_teacher ? 'Uploaded Courses' : 'My Courses'; ?> | Computerscience.lk</title>
+  <link rel="icon" type="image/x-icon" href="<?php echo function_exists('get_site_favicon') ? get_site_favicon() : 'assets/logo.png'; ?>?v=<?php echo time(); ?>">
+  <link rel="shortcut icon" href="<?php echo function_exists('get_site_favicon') ? get_site_favicon() : 'assets/logo.png'; ?>?v=<?php echo time(); ?>">
   <script src="assets/js/session_manager.js"></script>
   
   <!-- Local Bootstrap 5 CSS -->
   <link href="assets/css/bootstrap.min.css" rel="stylesheet">
   <!-- Local Bootstrap Icons -->
   <link rel="stylesheet" href="assets/css/bootstrap-icons.min.css">
+  <!-- Modern Notification System Styles -->
+  <link rel="stylesheet" href="assets/css/notifications.css">
   
   <!-- Local Tailwind CSS -->
   <script src="assets/js/tailwind.js"></script>
@@ -130,106 +149,23 @@ try {
 </head>
 <body class="bg-light">
 
-  <!-- Moodle Top Header Bar -->
-  <header class="moodle-header px-3 px-md-4 shadow-sm">
-    <div class="d-flex align-items-center w-100 justify-content-between">
-      
-      <!-- Left: Toggle button + Brand -->
-      <div class="d-flex align-items-center gap-3">
-        <button id="drawer-toggle" class="btn btn-light border-0 rounded-circle p-2 fs-5 d-flex align-items-center justify-content-center" style="width: 42px; height: 42px;">
-          <i class="bi bi-list"></i>
-        </button>
-        <a class="moodle-brand fw-bold text-decoration-none fs-4 d-flex align-items-center" href="index.php" style="color: #0f4c81;">
-          <img src="<?php echo get_site_logo(); ?>?v=<?php echo time(); ?>" alt="Logo" class="me-2" style="height: 32px; width: auto; object-fit: contain;">computerscience.lk
-        </a>
-      </div>
-
-      <!-- Center: Main Navbar links -->
-      <nav class="d-none d-lg-flex align-items-center gap-2">
-        <a href="index.php" class="btn btn-light px-3 text-secondary"><?php echo __('nav_home', 'Site Home'); ?></a>
-        <a href="dashboard.php" class="btn btn-light px-3 text-secondary"><?php echo __('nav_dashboard', 'Dashboard'); ?></a>
-        <a href="my_courses.php" class="btn btn-light text-primary fw-bold px-3"><?php echo $is_teacher ? __('nav_uploaded_courses', 'Uploaded Courses') : __('nav_my_courses', 'My Courses'); ?></a>
-        <?php if (isset($_SESSION['user_id'])): ?>
-          <a href="live_classes.php" class="btn btn-light px-3 text-danger fw-semibold d-inline-flex align-items-center gap-1.5">
-            <i class="bi bi-broadcast text-danger fs-7"></i>
-            <span>Live Classes</span>
-          </a>
-        <?php endif; ?>
-      </nav>
-
-      <!-- Right: Actions, Notifications, Profiles -->
-      <div class="d-flex align-items-center gap-2.5">
-        <!-- Language Switcher Dropdown -->
-        <div class="dropdown">
-          <button class="btn btn-sm btn-light border text-secondary dropdown-toggle d-flex align-items-center gap-1.5 rounded-pill px-2.5 py-1" type="button" id="langDropdown" data-bs-toggle="dropdown" aria-expanded="false">
-            <i class="bi bi-globe text-primary fs-7"></i>
-            <span class="fw-semibold fs-8"><?php echo (($_SESSION['lang'] ?? 'en') === 'si') ? 'සිංහල' : 'English'; ?></span>
-          </button>
-          <ul class="dropdown-menu dropdown-menu-end shadow-sm border-0 py-1" aria-labelledby="langDropdown">
-            <li>
-              <a class="dropdown-item fs-8 d-flex align-items-center justify-content-between <?php echo (($_SESSION['lang'] ?? 'en') === 'en') ? 'active fw-bold' : ''; ?>" href="#" onclick="switchLanguage('en'); return false;">
-                <span>English</span>
-                <?php if (($_SESSION['lang'] ?? 'en') === 'en'): ?><i class="bi bi-check-lg text-primary ms-2"></i><?php endif; ?>
-              </a>
-            </li>
-            <li>
-              <a class="dropdown-item fs-8 d-flex align-items-center justify-content-between <?php echo (($_SESSION['lang'] ?? 'en') === 'si') ? 'active fw-bold' : ''; ?>" href="#" onclick="switchLanguage('si'); return false;">
-                <span>සිංහල</span>
-                <?php if (($_SESSION['lang'] ?? 'en') === 'si'): ?><i class="bi bi-check-lg text-primary ms-2"></i><?php endif; ?>
-              </a>
-            </li>
-          </ul>
-        </div>
-
-        <!-- Notification Dropdown -->
-        <div class="dropdown">
-          <button class="text-secondary fs-5 border-0 bg-transparent p-2 position-relative dropdown-toggle no-caret" type="button" id="notificationDropdown" data-bs-toggle="dropdown" aria-expanded="false" onclick="markNotificationsAsRead()">
-            <i class="bi bi-bell"></i>
-            <?php if ($unread_count > 0): ?>
-              <span class="position-absolute top-1 end-1 translate-middle badge rounded-circle bg-danger" id="notification-badge" style="padding: 4px; font-size: 0.5rem;">
-                <?php echo $unread_count; ?>
-              </span>
-            <?php endif; ?>
-          </button>
-          <ul class="dropdown-menu dropdown-menu-end shadow border-light py-2" aria-labelledby="notificationDropdown" style="width: 320px; max-height: 400px; overflow-y: auto; z-index: 1050;">
-            <li class="dropdown-header fw-bold text-dark border-bottom pb-2 mb-2 d-flex justify-content-between align-items-center">
-              <span><?php echo __('notifications', 'Notifications'); ?></span>
-              <?php if ($unread_count > 0): ?>
-                <span class="badge bg-primary text-white fs-9" id="notification-count"><?php echo $unread_count; ?> new</span>
-              <?php endif; ?>
-            </li>
-            <?php if (empty($notifications)): ?>
-              <li class="px-3 py-4 text-center text-muted fs-8 italic"><?php echo __('no_notifications', 'No notifications yet.'); ?></li>
-            <?php else: ?>
-              <?php foreach ($notifications as $notif): ?>
-                <li class="px-3 py-2 border-bottom last-border-0 <?php echo $notif['is_read'] ? 'opacity-70' : 'bg-light bg-opacity-50 fw-semibold'; ?>">
-                  <div class="fs-8 text-dark mb-1"><?php echo htmlspecialchars($notif['message']); ?></div>
-                  <small class="text-muted fs-9"><i class="bi bi-clock me-1"></i><?php echo date('M d, H:i', strtotime($notif['created_at'])); ?></small>
-                </li>
-              <?php endforeach; ?>
-            <?php endif; ?>
-          </ul>
-        </div>
-        <div class="dropdown">
-          <button class="user-menu-btn dropdown-toggle" type="button" data-bs-toggle="dropdown">
-            <img src="<?php echo htmlspecialchars(get_user_avatar($student['avatar'], $student['name'])); ?>" class="rounded-circle" style="width: 32px; height: 32px; object-fit: cover;" alt="Profile">
-            <span class="d-none d-md-inline text-secondary fw-semibold text-sm"><?php echo htmlspecialchars(explode(' ', $student['name'])[0]); ?></span>
-          </button>
-          <ul class="dropdown-menu dropdown-menu-end shadow border-light">
-            <li><a class="dropdown-item" href="dashboard.php"><i class="bi bi-speedometer2 me-2"></i> <?php echo __('nav_dashboard', 'Dashboard'); ?></a></li>
-            <li><a class="dropdown-item" href="profile.php"><i class="bi bi-person me-2"></i> <?php echo __('nav_profile', 'Profile'); ?></a></li>
-            <li><hr class="dropdown-divider"></li>
-            <li><a class="dropdown-item text-danger" href="logout.php"><i class="bi bi-box-arrow-right me-2"></i> <?php echo __('nav_logout', 'Logout'); ?></a></li>
-          </ul>
-        </div>
-      </div>
-
-    </div>
-  </header>
+  <!-- Unified LMS Top Header Bar -->
+  <?php include __DIR__ . '/includes/navbar.php'; ?>
 
   <!-- Moodle Left Navigation Drawer -->
   <aside id="moodle-drawer" class="moodle-drawer collapsed">
     <div class="d-flex flex-column">
+      <!-- Drawer Header with Prominent Close Button -->
+      <div class="px-3 py-2.5 mb-2 d-flex align-items-center justify-content-between border-bottom bg-light bg-opacity-50">
+        <span class="fs-8 fw-bold text-uppercase tracking-wider text-muted d-flex align-items-center gap-1.5">
+          <i class="bi bi-compass-fill text-primary"></i>
+          <span><?php echo __('navigation', 'Navigation'); ?></span>
+        </span>
+        <button type="button" class="btn btn-sm btn-light border rounded-circle d-flex align-items-center justify-content-center drawer-close-trigger text-secondary" style="width: 32px; height: 32px;" title="<?php echo __('close', 'Close'); ?>">
+          <i class="bi bi-x-lg fs-6"></i>
+        </button>
+      </div>
+
       <a href="index.php" class="drawer-link">
         <i class="bi bi-house-door fs-5"></i> <?php echo __('nav_home', 'Site Home'); ?>
       </a>
@@ -552,6 +488,94 @@ try {
 
           </div>
         </div>
+
+        <?php if ($is_teacher && !empty($disabled_courses)): ?>
+          <!-- Disabled / Pending Deletion Section (14-Day Grace Period) -->
+          <div class="col-12 mt-2">
+            <div class="moodle-card p-4 border border-warning border-opacity-50" style="background: linear-gradient(180deg, #fffdfa 0%, #ffffff 100%);">
+              <div class="d-flex flex-wrap align-items-center justify-content-between border-bottom pb-3 mb-4 gap-2">
+                <div class="d-flex align-items-center gap-2.5">
+                  <div class="rounded-circle bg-warning bg-opacity-20 p-2 text-warning d-flex align-items-center justify-content-center" style="width: 42px; height: 42px;">
+                    <i class="bi bi-clock-history fs-5 text-dark"></i>
+                  </div>
+                  <div>
+                    <h4 class="fw-bold text-dark mb-0 fs-5">Disabled / Pending Deletion (Grace Period)</h4>
+                    <small class="text-muted fs-8">Unpublished from catalog. Enrolled students retain access. 14 days to restore.</small>
+                  </div>
+                </div>
+                <span class="badge bg-warning bg-opacity-25 text-dark border border-warning px-3 py-1.5 rounded-pill fs-8 fw-bold">
+                  <i class="bi bi-hourglass-split me-1 text-danger"></i> <?php echo count($disabled_courses); ?> Course<?php echo count($disabled_courses) > 1 ? 's' : ''; ?> Pending Deletion
+                </span>
+              </div>
+
+              <div class="alert alert-warning border-warning bg-warning bg-opacity-10 d-flex align-items-start gap-3 rounded-3 mb-4">
+                <i class="bi bi-shield-exclamation fs-4 text-warning flex-shrink-0 mt-0.5"></i>
+                <div class="fs-8 text-dark">
+                  <strong>Grace Period Active:</strong> The course(s) below are unpublished from the public catalog because they have active enrolled students. Enrolled students retain full access to continue their studies uninterrupted. You have <strong>14 days from deletion</strong> to restore the course back to the catalog before permanent automated cleanup.
+                </div>
+              </div>
+
+              <div class="row g-4">
+                <?php foreach ($disabled_courses as $dCourse): 
+                  $deleted_time = !empty($dCourse['deleted_at']) ? strtotime($dCourse['deleted_at']) : time();
+                  $days_passed = floor((time() - $deleted_time) / 86400);
+                  $days_remaining = max(0, 14 - $days_passed);
+                  $enrolled_num = intval($dCourse['live_enrolled_count'] ?? $dCourse['enrolled_count'] ?? 0);
+                ?>
+                  <div class="col-md-6 col-lg-6 d-flex mb-2">
+                    <div class="card moodle-card border border-warning border-opacity-40 w-100 d-flex flex-column justify-content-between overflow-hidden shadow-sm h-100 bg-white" style="border-left: 4px solid #f59e0b !important;">
+                      <div class="position-relative">
+                        <img src="<?php echo htmlspecialchars($dCourse['thumbnail']); ?>" class="card-img-top" alt="<?php echo htmlspecialchars($dCourse['title']); ?>" style="height: 160px; object-fit: cover; filter: grayscale(25%);">
+                        <span class="position-absolute top-3 start-3 badge bg-danger text-white px-3 py-1.5 rounded-pill fw-bold shadow-sm">
+                          <i class="bi bi-clock-history me-1"></i> <?php echo $days_remaining; ?> <?php echo $days_remaining === 1 ? 'day' : 'days'; ?> left to restore
+                        </span>
+                        <span class="position-absolute top-3 end-3 badge bg-dark text-white px-3 py-1 rounded-pill">
+                          <i class="bi bi-eye-slash-fill me-1"></i> Disabled
+                        </span>
+                      </div>
+                      <div class="card-body p-4 d-flex flex-column justify-content-between">
+                        <div>
+                          <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span class="text-secondary fs-7 fw-bold"><i class="bi bi-tag-fill me-1"></i><?php echo htmlspecialchars($dCourse['category']); ?></span>
+                            <span class="text-muted fs-7"><i class="bi bi-clock me-1"></i><?php echo htmlspecialchars($dCourse['duration']); ?> Weeks</span>
+                          </div>
+                          <h5 class="card-title fw-bold text-dark mb-2 line-clamp-2" style="font-size: 1.1rem; min-height: 2.8rem; line-height: 1.3;">
+                            <?php echo htmlspecialchars($dCourse['title']); ?>
+                          </h5>
+                          <p class="card-text text-muted text-sm mb-3 line-clamp-2" style="font-size: 0.85rem;">
+                            <?php echo htmlspecialchars($dCourse['short_description']); ?>
+                          </p>
+
+                          <!-- Student Retention Alert Notice -->
+                          <div class="p-2.5 rounded-3 bg-danger bg-opacity-10 border border-danger border-opacity-25 text-danger fs-8 mb-3 d-flex align-items-center justify-content-between">
+                            <span><i class="bi bi-people-fill me-1"></i> <strong><?php echo $enrolled_num; ?> Active Student<?php echo $enrolled_num === 1 ? '' : 's'; ?></strong></span>
+                            <span class="fw-bold"><i class="bi bi-hourglass-split"></i> <?php echo $days_remaining; ?>d left</span>
+                          </div>
+                        </div>
+
+                        <div>
+                          <hr class="my-3">
+                          <div class="d-flex gap-2">
+                            <button type="button" class="btn btn-success rounded-pill flex-fill py-2 d-flex align-items-center justify-content-center gap-1.5 fs-7 fw-bold shadow-sm restore-course-btn" 
+                                    data-course-id="<?php echo htmlspecialchars($dCourse['id']); ?>" 
+                                    data-course-title="<?php echo htmlspecialchars($dCourse['title']); ?>">
+                              <i class="bi bi-arrow-counterclockwise"></i> Restore Course
+                            </button>
+                            <a href="classroom.php?course_id=<?php echo urlencode($dCourse['id']); ?>" class="btn btn-outline-secondary rounded-pill px-3 py-2 d-flex align-items-center justify-content-center gap-1.5 fs-7 fw-semibold" title="View Content">
+                              <i class="bi bi-eye"></i> Content
+                            </a>
+                          </div>
+                        </div>
+
+                      </div>
+                    </div>
+                  </div>
+                <?php endforeach; ?>
+              </div>
+            </div>
+          </div>
+        <?php endif; ?>
+
       </div>
 
     </div>
@@ -591,19 +615,8 @@ try {
       });
     }
   </script>
-  <!-- Navigation Drawer Toggle script -->
-  <script>
-    document.addEventListener('DOMContentLoaded', function() {
-      const toggleBtn = document.getElementById('drawer-toggle');
-      const drawer = document.getElementById('moodle-drawer');
-      const wrapper = document.getElementById('moodle-content-wrapper');
-      
-      toggleBtn.addEventListener('click', function() {
-        drawer.classList.toggle('collapsed');
-        wrapper.classList.toggle('full-width');
-      });
-    });
 
+  <script>
     function markNotificationsAsRead() {
       fetch('api/read_notifications.php')
         .then(res => res.json())
@@ -631,9 +644,15 @@ try {
         </div>
         <div class="modal-body py-3">
           <p class="fs-7 text-secondary mb-2">
-            Are you sure you want to permanently delete course <strong id="delete-course-title-display" class="text-dark"></strong>?
+            Are you sure you want to delete course <strong id="delete-course-title-display" class="text-dark"></strong>?
           </p>
-          <p class="fs-8 text-danger mb-0"><i class="bi bi-info-circle me-1"></i> This action cannot be undone and will permanently remove all associated lessons, quizzes, and enrollments.</p>
+          <div class="bg-light p-3 rounded-3 border fs-8 text-secondary mb-0">
+            <p class="mb-1"><strong><i class="bi bi-info-circle text-primary me-1"></i> Smart Deletion Protection:</strong></p>
+            <ul class="mb-0 ps-3">
+              <li><strong>0 Enrolled Students:</strong> Direct permanent deletion from database.</li>
+              <li><strong>1+ Enrolled Students:</strong> Soft-delete with <strong>14-day grace period</strong>. Unpublished from catalog, but enrolled students retain access.</li>
+            </ul>
+          </div>
         </div>
         <div class="modal-footer border-0 pt-0">
           <button type="button" class="btn btn-light rounded-pill px-4" data-bs-dismiss="modal">Cancel</button>
@@ -645,23 +664,101 @@ try {
     </div>
   </div>
 
+  <!-- Soft Delete Grace Period Warning Modal -->
+  <div class="modal fade text-start" id="softDeleteNoticeModal" tabindex="-1" aria-labelledby="softDeleteNoticeModalLabel" aria-hidden="true" data-bs-backdrop="static">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content border-0 shadow-lg rounded-4">
+        <div class="modal-header border-0 pb-0 bg-warning bg-opacity-10 rounded-top-4 pt-3 px-4">
+          <h5 class="modal-title fw-bold text-dark d-flex align-items-center gap-2" id="softDeleteNoticeModalLabel">
+            <i class="bi bi-shield-exclamation text-warning fs-4"></i> Course Unpublished (Grace Period)
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body p-4">
+          <div class="text-center mb-3">
+            <div class="rounded-circle bg-warning bg-opacity-20 d-inline-flex p-3 text-warning mb-2">
+              <i class="bi bi-people-fill fs-2"></i>
+            </div>
+            <h5 class="fw-bold text-dark mb-1">Unpublished from Catalog</h5>
+            <p class="fs-7 text-muted mb-0" id="soft-delete-course-name"></p>
+          </div>
+          <div class="alert alert-warning border-warning fs-8 text-dark mb-3">
+            <i class="bi bi-info-circle-fill text-warning me-1"></i> <strong>This course has active students. It has been unpublished from the catalog. You have 14 days to restore it.</strong>
+          </div>
+          <div class="bg-light p-3 rounded-3 border fs-8 text-secondary">
+            <p class="mb-1.5"><i class="bi bi-check-circle-fill text-success me-1"></i> <strong>Enrolled Students:</strong> Retain full access to continue their lessons.</p>
+            <p class="mb-0"><i class="bi bi-clock-history text-danger me-1"></i> <strong>14-Day Grace Period:</strong> You can click <strong>"Restore Course"</strong> anytime to republish.</p>
+          </div>
+        </div>
+        <div class="modal-footer border-0 pt-0 px-4 pb-4">
+          <button type="button" class="btn btn-primary rounded-pill w-100 fw-bold shadow-sm" style="background-color: #0f4c81;" data-bs-dismiss="modal" id="soft-delete-ok-btn">
+            <i class="bi bi-check2-circle me-1"></i> Understood
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Restore Course Confirmation Modal -->
+  <div class="modal fade text-start" id="restoreCourseModal" tabindex="-1" aria-labelledby="restoreCourseModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content border-0 shadow-lg rounded-4">
+        <div class="modal-header border-0 pb-0">
+          <h5 class="modal-title fw-bold text-success d-flex align-items-center gap-2" id="restoreCourseModalLabel">
+            <i class="bi bi-arrow-counterclockwise text-success fs-5"></i> Restore Course
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body py-3">
+          <p class="fs-7 text-secondary mb-2">
+            Are you sure you want to restore course <strong id="restore-course-title-display" class="text-dark"></strong>?
+          </p>
+          <div class="alert alert-success bg-success bg-opacity-10 border-success border-opacity-25 fs-8 text-success mb-0">
+            <i class="bi bi-patch-check-fill me-1"></i> This course will be reactivated, republished to the public catalog, and the 14-day deletion grace period will be cleared.
+          </div>
+        </div>
+        <div class="modal-footer border-0 pt-0">
+          <button type="button" class="btn btn-light rounded-pill px-4" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-success rounded-pill px-4 fw-bold shadow-sm" id="confirm-restore-course-btn">
+            <i class="bi bi-arrow-counterclockwise me-1"></i> Yes, Restore Course
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script>
   document.addEventListener('DOMContentLoaded', function() {
     let selectedCourseId = null;
-    const deleteCourseModal = new bootstrap.Modal(document.getElementById('deleteCourseModal'));
+    let selectedCourseTitle = '';
+
+    const deleteCourseModalEl = document.getElementById('deleteCourseModal');
+    const deleteCourseModal = deleteCourseModalEl ? new bootstrap.Modal(deleteCourseModalEl) : null;
     const titleDisplay = document.getElementById('delete-course-title-display');
     const confirmBtn = document.getElementById('confirm-delete-course-btn');
 
+    const softDeleteNoticeModalEl = document.getElementById('softDeleteNoticeModal');
+    const softDeleteNoticeModal = softDeleteNoticeModalEl ? new bootstrap.Modal(softDeleteNoticeModalEl) : null;
+    const softDeleteCourseName = document.getElementById('soft-delete-course-name');
+    const softDeleteOkBtn = document.getElementById('soft-delete-ok-btn');
+
+    const restoreCourseModalEl = document.getElementById('restoreCourseModal');
+    const restoreCourseModal = restoreCourseModalEl ? new bootstrap.Modal(restoreCourseModalEl) : null;
+    const restoreTitleDisplay = document.getElementById('restore-course-title-display');
+    const confirmRestoreBtn = document.getElementById('confirm-restore-course-btn');
+
+    // Trigger Delete Modal
     document.querySelectorAll('.delete-course-btn').forEach(btn => {
       btn.addEventListener('click', function(e) {
         e.preventDefault();
         selectedCourseId = this.getAttribute('data-course-id');
-        const courseTitle = this.getAttribute('data-course-title');
-        titleDisplay.textContent = courseTitle;
-        deleteCourseModal.show();
+        selectedCourseTitle = this.getAttribute('data-course-title');
+        if (titleDisplay) titleDisplay.textContent = selectedCourseTitle;
+        if (deleteCourseModal) deleteCourseModal.show();
       });
     });
 
+    // Confirm Delete Action
     if (confirmBtn) {
       confirmBtn.addEventListener('click', function() {
         if (!selectedCourseId) return;
@@ -676,7 +773,20 @@ try {
         .then(res => res.json())
         .then(data => {
           if (data.success) {
-            window.location.reload();
+            if (deleteCourseModal) deleteCourseModal.hide();
+            if (data.action === 'soft_deleted') {
+              // Show Soft-Delete 14-day warning modal
+              if (softDeleteCourseName) softDeleteCourseName.textContent = selectedCourseTitle;
+              if (softDeleteNoticeModal) {
+                softDeleteNoticeModal.show();
+              } else {
+                alert(data.message);
+                window.location.reload();
+              }
+            } else {
+              alert(data.message || 'Course deleted successfully.');
+              window.location.reload();
+            }
           } else {
             alert(data.message || 'Error deleting course.');
             confirmBtn.disabled = false;
@@ -688,6 +798,55 @@ try {
           alert('An unexpected error occurred while deleting course.');
           confirmBtn.disabled = false;
           confirmBtn.innerHTML = '<i class="bi bi-trash3-fill me-1"></i> Yes, Delete Course';
+        });
+      });
+    }
+
+    if (softDeleteOkBtn) {
+      softDeleteOkBtn.addEventListener('click', function() {
+        window.location.reload();
+      });
+    }
+
+    // Trigger Restore Modal
+    document.querySelectorAll('.restore-course-btn').forEach(btn => {
+      btn.addEventListener('click', function(e) {
+        e.preventDefault();
+        selectedCourseId = this.getAttribute('data-course-id');
+        selectedCourseTitle = this.getAttribute('data-course-title');
+        if (restoreTitleDisplay) restoreTitleDisplay.textContent = selectedCourseTitle;
+        if (restoreCourseModal) restoreCourseModal.show();
+      });
+    });
+
+    // Confirm Restore Action
+    if (confirmRestoreBtn) {
+      confirmRestoreBtn.addEventListener('click', function() {
+        if (!selectedCourseId) return;
+        confirmRestoreBtn.disabled = true;
+        confirmRestoreBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Restoring...';
+
+        fetch('api/restore_course.php', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ course_id: selectedCourseId })
+        })
+        .then(res => res.json())
+        .then(data => {
+          if (data.success) {
+            alert(data.message || 'Course restored successfully!');
+            window.location.reload();
+          } else {
+            alert(data.message || 'Error restoring course.');
+            confirmRestoreBtn.disabled = false;
+            confirmRestoreBtn.innerHTML = '<i class="bi bi-arrow-counterclockwise me-1"></i> Yes, Restore Course';
+          }
+        })
+        .catch(err => {
+          console.error(err);
+          alert('An unexpected error occurred while restoring course.');
+          confirmRestoreBtn.disabled = false;
+          confirmRestoreBtn.innerHTML = '<i class="bi bi-arrow-counterclockwise me-1"></i> Yes, Restore Course';
         });
       });
     }
@@ -1703,7 +1862,8 @@ try {
           });
         });
       }
-    });
   </script>
+  <!-- Modern Notification System JS Client -->
+  <script src="assets/js/notifications.js"></script>
 </body>
 </html>

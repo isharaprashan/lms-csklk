@@ -46,9 +46,22 @@ try {
         die("Course not found. Go back to <a href='dashboard.php'>Dashboard</a>.");
     }
 
-    // Access control for non-approved courses
-    if (($current_course['status'] ?? 'approved') !== 'approved' && !$is_admin && intval($current_course['tutor_id']) !== intval($user_id)) {
-        die("This course is pending review. Go back to <a href='dashboard.php'>Dashboard</a>.");
+    // Check student enrollment status
+    $is_enrolled = false;
+    if (!$is_teacher && !$is_admin) {
+        $enrollCheckStmt = $pdo->prepare("SELECT COUNT(*) FROM enrollments WHERE user_id = ? AND course_id = ?");
+        $enrollCheckStmt->execute([$user_id, $course_id]);
+        $is_enrolled = ($enrollCheckStmt->fetchColumn() > 0);
+    }
+
+    // Access control for non-approved / disabled courses
+    $course_status = $current_course['status'] ?? 'approved';
+    if ($course_status !== 'approved' && $course_status !== 'active' && !$is_admin && intval($current_course['tutor_id']) !== intval($user_id)) {
+        if ($course_status === 'disabled' && $is_enrolled) {
+            // Enrolled students retain access to continue their lessons
+        } else {
+            die("This course is currently unavailable. Go back to <a href='dashboard.php'>Dashboard</a>.");
+        }
     }
 
     // Fetch lessons for this course
@@ -151,6 +164,18 @@ try {
         $yt_id = $m[1];
     }
 
+    // Fetch attached supplementary resources for all lessons in this course
+    $stmt = $pdo->prepare("SELECT lr.* FROM lesson_resources lr INNER JOIN lessons l ON l.id = lr.lesson_id WHERE l.course_id = ? ORDER BY lr.uploaded_at ASC");
+    $stmt->execute([$course_id]);
+    $course_resources_all = $stmt->fetchAll();
+    $resources_by_lesson = [];
+    foreach ($course_resources_all as $res) {
+        $bytes = (int)$res['file_size'];
+        $res['formatted_size'] = ($bytes >= 1048576) ? round($bytes / 1048576, 2) . ' MB' : (($bytes >= 1024) ? round($bytes / 1024, 1) . ' KB' : $bytes . ' B');
+        $resources_by_lesson[$res['lesson_id']][] = $res;
+    }
+    $active_lesson_resources = $resources_by_lesson[$active_lesson['id']] ?? [];
+
     // Fetch unread notifications for header
     $unread_count = 0;
     $notifications = [];
@@ -171,7 +196,7 @@ try {
     $stmt->execute([$user_id]);
     $enrolled_ids = $stmt->fetchAll(PDO::FETCH_COLUMN);
 
-    $stmt = $pdo->query("SELECT id, title, tutor_id FROM courses WHERE status = 'approved' ORDER BY created_at DESC");
+    $stmt = $pdo->query("SELECT id, title, tutor_id FROM courses WHERE (status = 'approved' OR status = 'active') AND (is_archived = 0 OR is_archived IS NULL) AND deleted_at IS NULL ORDER BY created_at DESC");
     $all_courses = $stmt->fetchAll();
 
 } catch (PDOException $e) {
@@ -186,11 +211,15 @@ try {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo htmlspecialchars($active_lesson['title']); ?> -
         <?php echo htmlspecialchars($current_course['title']); ?></title>
+    <link rel="icon" type="image/x-icon" href="<?php echo function_exists('get_site_favicon') ? get_site_favicon() : 'assets/logo.png'; ?>?v=<?php echo time(); ?>">
+    <link rel="shortcut icon" href="<?php echo function_exists('get_site_favicon') ? get_site_favicon() : 'assets/logo.png'; ?>?v=<?php echo time(); ?>">
     <script src="assets/js/session_manager.js"></script>
 
     <!-- Local Bootstrap 5 CSS & Icons -->
     <link href="assets/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="assets/css/bootstrap-icons.min.css">
+    <!-- Modern Notification System Styles -->
+    <link rel="stylesheet" href="assets/css/notifications.css">
 
     <!-- Local Tailwind CSS -->
     <script src="assets/js/tailwind.js"></script>
@@ -394,129 +423,23 @@ try {
         </div>
     <?php endif; ?>
 
-    <!-- Moodle Top Header Bar -->
-    <header class="moodle-header px-3 px-md-4 shadow-sm bg-white">
-        <div class="d-flex align-items-center w-100 justify-content-between">
-
-            <!-- Left: Toggle button + Brand -->
-            <div class="d-flex align-items-center gap-3">
-                <button id="drawer-toggle"
-                    class="btn btn-light border-0 rounded-circle p-2 fs-5 d-flex align-items-center justify-content-center"
-                    style="width: 42px; height: 42px;">
-                    <i class="bi bi-list"></i>
-                </button>
-                <a class="moodle-brand fw-bold text-decoration-none fs-4 d-flex align-items-center" href="index.php"
-                    style="color: #0f4c81;">
-                    <img src="<?php echo get_site_logo(); ?>?v=<?php echo time(); ?>" alt="Logo" class="me-2"
-                        style="height: 32px; width: auto; object-fit: contain;">computerscience.lk
-                </a>
-            </div>
-
-            <!-- Right: Actions, Notifications, Profiles -->
-            <div class="d-flex align-items-center gap-2.5">
-                <!-- Language Switcher Dropdown -->
-                <div class="dropdown">
-                    <button
-                        class="btn btn-sm btn-light border text-secondary dropdown-toggle d-flex align-items-center gap-1.5 rounded-pill px-2.5 py-1"
-                        type="button" id="langDropdown" data-bs-toggle="dropdown" aria-expanded="false">
-                        <i class="bi bi-globe text-primary fs-7"></i>
-                        <span
-                            class="fw-semibold fs-8"><?php echo (($_SESSION['lang'] ?? 'en') === 'si') ? 'සිංහල' : 'English'; ?></span>
-                    </button>
-                    <ul class="dropdown-menu dropdown-menu-end shadow-sm border-0 py-1" aria-labelledby="langDropdown">
-                        <li>
-                            <a class="dropdown-item fs-8 d-flex align-items-center justify-content-between <?php echo (($_SESSION['lang'] ?? 'en') === 'en') ? 'active fw-bold' : ''; ?>"
-                                href="api/set_language.php?lang=en&redirect=<?php echo urlencode($_SERVER['REQUEST_URI']); ?>">
-                                <span>English</span>
-                                <?php if (($_SESSION['lang'] ?? 'en') === 'en'): ?><i
-                                        class="bi bi-check-lg text-primary ms-2"></i><?php endif; ?>
-                            </a>
-                        </li>
-                        <li>
-                            <a class="dropdown-item fs-8 d-flex align-items-center justify-content-between <?php echo (($_SESSION['lang'] ?? 'en') === 'si') ? 'active fw-bold' : ''; ?>"
-                                href="api/set_language.php?lang=si&redirect=<?php echo urlencode($_SERVER['REQUEST_URI']); ?>">
-                                <span>සිංහල</span>
-                                <?php if (($_SESSION['lang'] ?? 'en') === 'si'): ?><i
-                                        class="bi bi-check-lg text-primary ms-2"></i><?php endif; ?>
-                            </a>
-                        </li>
-                    </ul>
-                </div>
-
-                <!-- Notification Dropdown -->
-                <div class="dropdown">
-                    <button
-                        class="text-secondary fs-5 border-0 bg-transparent p-2 position-relative dropdown-toggle no-caret"
-                        type="button" id="notificationDropdown" data-bs-toggle="dropdown" aria-expanded="false">
-                        <i class="bi bi-bell"></i>
-                        <?php if ($unread_count > 0): ?>
-                            <span class="position-absolute top-1 end-1 translate-middle badge rounded-circle bg-danger"
-                                id="notification-badge" style="padding: 4px; font-size: 0.5rem;">
-                                <?php echo $unread_count; ?>
-                            </span>
-                        <?php endif; ?>
-                    </button>
-                    <ul class="dropdown-menu dropdown-menu-end shadow border-light py-2"
-                        aria-labelledby="notificationDropdown"
-                        style="width: 320px; max-height: 400px; overflow-y: auto; z-index: 1050;">
-                        <li
-                            class="dropdown-header fw-bold text-dark border-bottom pb-2 mb-2 d-flex justify-content-between align-items-center">
-                            <span><?php echo __('notifications', 'Notifications'); ?></span>
-                            <?php if ($unread_count > 0): ?>
-                                <span class="badge bg-primary text-white fs-9"
-                                    id="notification-count"><?php echo $unread_count; ?> new</span>
-                            <?php endif; ?>
-                        </li>
-                        <?php if (empty($notifications)): ?>
-                            <li class="px-3 py-4 text-center text-muted fs-8 italic">
-                                <?php echo __('no_notifications', 'No notifications yet.'); ?>
-                            </li>
-                        <?php else: ?>
-                            <?php foreach ($notifications as $notif): ?>
-                                <li
-                                    class="px-3 py-2 border-bottom last-border-0 <?php echo $notif['is_read'] ? 'opacity-70' : 'bg-light bg-opacity-50 fw-semibold'; ?>">
-                                    <div class="fs-8 text-dark mb-1"><?php echo htmlspecialchars($notif['message']); ?></div>
-                                    <small class="text-muted fs-9"><i
-                                            class="bi bi-clock me-1"></i><?php echo date('M d, H:i', strtotime($notif['created_at'])); ?></small>
-                                </li>
-                            <?php endforeach; ?>
-                        <?php endif; ?>
-                    </ul>
-                </div>
-
-                <!-- Profile Dropdown -->
-                <div class="dropdown">
-                    <button class="user-menu-btn dropdown-toggle" type="button" data-bs-toggle="dropdown">
-                        <img src="<?php echo htmlspecialchars(get_user_avatar($student['avatar'], $student['name'])); ?>"
-                            class="rounded-circle" style="width: 32px; height: 32px; object-fit: cover;" alt="Profile">
-                        <span
-                            class="d-none d-md-inline text-secondary fw-semibold text-sm"><?php echo htmlspecialchars(explode(' ', $student['name'])[0]); ?></span>
-                    </button>
-                    <ul class="dropdown-menu dropdown-menu-end shadow border-light">
-                        <?php if ($is_admin): ?>
-                            <li><a class="dropdown-item fw-semibold text-success" href="admin/index.php"><i
-                                        class="bi bi-shield-lock me-2"></i> Admin Panel</a></li>
-                        <?php else: ?>
-                            <li><a class="dropdown-item" href="dashboard.php"><i class="bi bi-speedometer2 me-2"></i>
-                                    <?php echo __('nav_dashboard', 'Dashboard'); ?></a></li>
-                            <li><a class="dropdown-item" href="profile.php"><i class="bi bi-person me-2"></i>
-                                    <?php echo __('nav_profile', 'Profile'); ?></a></li>
-                        <?php endif; ?>
-                        <li>
-                            <hr class="dropdown-divider">
-                        </li>
-                        <li><a class="dropdown-item text-danger" href="logout.php"><i
-                                    class="bi bi-box-arrow-right me-2"></i>
-                                <?php echo __('nav_logout', 'Logout'); ?></a></li>
-                    </ul>
-                </div>
-            </div>
-        </div>
-    </header>
+    <!-- Unified LMS Top Header Bar -->
+    <?php include __DIR__ . '/includes/navbar.php'; ?>
 
     <!-- Moodle Left Navigation Drawer -->
     <aside id="moodle-drawer" class="moodle-drawer bg-white collapsed">
         <div class="d-flex flex-column">
+            <!-- Drawer Header with Prominent Close Button -->
+            <div class="px-3 py-2.5 mb-2 d-flex align-items-center justify-content-between border-bottom bg-light bg-opacity-50">
+                <span class="fs-8 fw-bold text-uppercase tracking-wider text-muted d-flex align-items-center gap-1.5">
+                    <i class="bi bi-compass-fill text-primary"></i>
+                    <span><?php echo __('navigation', 'Navigation'); ?></span>
+                </span>
+                <button type="button" class="btn btn-sm btn-light border rounded-circle d-flex align-items-center justify-content-center drawer-close-trigger text-secondary" style="width: 32px; height: 32px;" title="<?php echo __('close', 'Close'); ?>">
+                    <i class="bi bi-x-lg fs-6"></i>
+                </button>
+            </div>
+
             <a href="index.php" class="drawer-link">
                 <i class="bi bi-house-door fs-5"></i> Site Home
             </a>
@@ -718,7 +641,7 @@ try {
                         </div>
 
                         <!-- Lesson Content & Topic Notes -->
-                        <div class="border rounded-3 p-4 bg-light">
+                        <div class="border rounded-3 p-4 bg-light mb-3">
                             <h6 class="fw-bold text-dark mb-2.5 d-flex align-items-center gap-2">
                                 <i class="bi bi-file-earmark-text-fill text-primary fs-5"></i>
                                 <span><?php echo __('topic_resources_notes', 'Topic Resources & Notes'); ?></span>
@@ -726,6 +649,67 @@ try {
                             <p class="text-secondary fs-7 mb-0 leading-relaxed">
                                 <?php echo nl2br(htmlspecialchars($active_lesson['content'])); ?>
                             </p>
+                        </div>
+
+                        <!-- Supplementary Lesson Resources & Files -->
+                        <div class="border rounded-3 p-4 bg-white shadow-sm" id="watch-lesson-resources-card">
+                            <div class="d-flex align-items-center justify-content-between mb-3 border-bottom pb-2">
+                                <h6 class="fw-bold text-dark mb-0 d-flex align-items-center gap-2">
+                                    <i class="bi bi-paperclip text-primary fs-5"></i>
+                                    <span><?php echo __('lesson_resources', 'Lesson Resources & Attachments'); ?></span>
+                                </h6>
+                                <span class="badge bg-light text-primary border border-primary border-opacity-25 rounded-pill px-3 py-1 fs-9 fw-bold">
+                                    <?php echo count($active_lesson_resources); ?> <?php echo (count($active_lesson_resources) === 1) ? 'File' : 'Files'; ?>
+                                </span>
+                            </div>
+
+                            <?php if (empty($active_lesson_resources)): ?>
+                                <div class="text-muted fs-8 py-2 text-center fst-italic">
+                                    <i class="bi bi-info-circle me-1"></i><?php echo __('no_resources_attached', 'No supplementary files attached to this lesson.'); ?>
+                                </div>
+                            <?php else: ?>
+                                <div class="d-flex flex-column gap-2">
+                                    <?php foreach ($active_lesson_resources as $res): 
+                                        $ext = strtolower($res['file_type']);
+                                        $icon_cls = 'bi-file-earmark-arrow-down-fill text-primary';
+                                        if ($ext === 'pdf') $icon_cls = 'bi-file-earmark-pdf-fill text-danger';
+                                        elseif (in_array($ext, ['doc', 'docx'])) $icon_cls = 'bi-file-earmark-word-fill text-primary';
+                                        elseif (in_array($ext, ['ppt', 'pptx'])) $icon_cls = 'bi-file-earmark-slides-fill text-warning';
+                                        elseif (in_array($ext, ['xls', 'xlsx'])) $icon_cls = 'bi-file-earmark-excel-fill text-success';
+                                        elseif (in_array($ext, ['png', 'jpg', 'jpeg', 'webp', 'gif'])) $icon_cls = 'bi-file-earmark-image-fill text-info';
+                                        elseif (in_array($ext, ['zip', 'rar', '7z'])) $icon_cls = 'bi-file-earmark-zip-fill text-secondary';
+                                        $is_viewable = in_array($ext, ['pdf', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'txt']);
+                                    ?>
+                                        <div class="d-flex align-items-center justify-content-between p-3 bg-light rounded-3 border transition-all hover-shadow-sm">
+                                            <div class="d-flex align-items-center gap-3 text-truncate me-2">
+                                                <i class="bi <?php echo $icon_cls; ?> fs-2 flex-shrink-0"></i>
+                                                <div class="d-flex flex-column text-truncate">
+                                                    <span class="fw-semibold text-dark fs-7 text-truncate" title="<?php echo htmlspecialchars($res['file_name']); ?>">
+                                                        <?php echo htmlspecialchars($res['file_name']); ?>
+                                                    </span>
+                                                    <small class="text-muted fs-8">
+                                                        <?php echo $res['formatted_size']; ?> &bull; <span class="text-uppercase fw-semibold"><?php echo htmlspecialchars($res['file_type']); ?></span>
+                                                    </small>
+                                                </div>
+                                            </div>
+                                            <div class="d-flex align-items-center gap-2 flex-shrink-0">
+                                                <?php if ($is_viewable): ?>
+                                                    <a href="download_resource.php?id=<?php echo urlencode($res['id']); ?>&view=1<?php echo $admin_preview_param; ?>"
+                                                        target="_blank"
+                                                        class="btn btn-sm btn-outline-primary rounded-pill px-3 py-1.5 fs-8 fw-semibold">
+                                                        <i class="bi bi-eye me-1"></i><?php echo __('view_file', 'View'); ?>
+                                                    </a>
+                                                <?php endif; ?>
+                                                <a href="download_resource.php?id=<?php echo urlencode($res['id']); ?>&download=1<?php echo $admin_preview_param; ?>"
+                                                    class="btn btn-sm btn-primary rounded-pill px-3 py-1.5 fs-8 fw-bold text-white shadow-sm"
+                                                    style="background-color: #0f4c81;">
+                                                    <i class="bi bi-cloud-arrow-down-fill me-1"></i><?php echo __('download_file', 'Download'); ?>
+                                                </a>
+                                            </div>
+                                        </div>
+                                    <?php endforeach; ?>
+                                </div>
+                            <?php endif; ?>
                         </div>
                     </div>
                 </div>
@@ -739,10 +723,18 @@ try {
                                 <h5 class="fw-bold text-dark mb-0 d-flex align-items-center gap-2">
                                     <i class="bi bi-collection-play-fill text-primary"></i> Course Syllabus
                                 </h5>
-                                <span
-                                    class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 rounded-pill px-2.5 py-1 fs-9 fw-bold">
-                                    <?php echo $total_lessons_count; ?> <?php echo __('lessons', 'Lessons'); ?>
-                                </span>
+                                <div class="d-flex align-items-center gap-1.5">
+                                    <?php if ($is_teacher || $is_admin): ?>
+                                        <a href="classroom.php?course_id=<?php echo urlencode($course_id); ?>"
+                                            class="btn btn-sm btn-outline-primary rounded-pill px-2 py-0.5 fs-9 fw-bold">
+                                            <i class="bi bi-pencil-square me-1"></i>Edit
+                                        </a>
+                                    <?php endif; ?>
+                                    <span
+                                        class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 rounded-pill px-2.5 py-1 fs-9 fw-bold">
+                                        <?php echo $total_lessons_count; ?> <?php echo __('lessons', 'Lessons'); ?>
+                                    </span>
+                                </div>
                             </div>
                             <div class="d-flex align-items-center justify-content-between text-muted fs-8 mb-2">
                                 <span>Progress: <?php echo $completed_count; ?> of <?php echo $total_lessons_count; ?>
@@ -790,9 +782,17 @@ try {
                                                         <?php endif; ?>
                                                         <?php echo htmlspecialchars($l['title']); ?>
                                                     </div>
-                                                    <div class="d-flex align-items-center gap-2 mt-0.5">
+                                                    <div class="d-flex align-items-center gap-2 mt-0.5 flex-wrap">
                                                         <small class="text-muted fs-8"><i
                                                                 class="bi bi-clock me-1"></i><?php echo htmlspecialchars($l['duration']); ?></small>
+                                                        <?php 
+                                                        $l_res_count = count($resources_by_lesson[$l['id']] ?? []);
+                                                        if ($l_res_count > 0): 
+                                                        ?>
+                                                            <span class="badge bg-light text-primary border border-primary border-opacity-25 py-0.5 px-1.5 rounded-pill" style="font-size: 0.65rem;" title="<?php echo $l_res_count; ?> Resources attached">
+                                                                <i class="bi bi-paperclip"></i> <?php echo $l_res_count; ?>
+                                                            </span>
+                                                        <?php endif; ?>
                                                         <?php if ($is_current): ?>
                                                             <span class="now-playing-pill">NOW PLAYING</span>
                                                         <?php endif; ?>
@@ -889,18 +889,6 @@ try {
         let progressInterval = null;
 
         document.addEventListener('DOMContentLoaded', () => {
-            // Moodle Left Drawer Toggle
-            const toggleBtn = document.getElementById('drawer-toggle');
-            const drawer = document.getElementById('moodle-drawer');
-            const wrapper = document.getElementById('moodle-content-wrapper');
-
-            if (toggleBtn && drawer && wrapper) {
-                toggleBtn.addEventListener('click', function () {
-                    drawer.classList.toggle('collapsed');
-                    wrapper.classList.toggle('full-width');
-                });
-            }
-
             // Enable Bootstrap tooltips
             const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
             tooltipTriggerList.map(function (tooltipTriggerEl) {
@@ -1124,6 +1112,8 @@ try {
                 .replace(/'/g, '&#039;');
         }
     </script>
+    <!-- Modern Notification System JS Client -->
+    <script src="assets/js/notifications.js"></script>
 </body>
 
 </html>

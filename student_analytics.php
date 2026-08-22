@@ -424,6 +424,8 @@ try {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title><?php echo __('analytics_title', 'Student Progress & Performance Analytics'); ?> | Computerscience.lk</title>
+  <link rel="icon" type="image/x-icon" href="<?php echo function_exists('get_site_favicon') ? get_site_favicon() : 'assets/logo.png'; ?>?v=<?php echo time(); ?>">
+  <link rel="shortcut icon" href="<?php echo function_exists('get_site_favicon') ? get_site_favicon() : 'assets/logo.png'; ?>?v=<?php echo time(); ?>">
   <script src="assets/js/session_manager.js"></script>
   
   <!-- Google Fonts Inter -->
@@ -432,6 +434,9 @@ try {
   <link href="assets/css/bootstrap.min.css" rel="stylesheet">
   <!-- Local Bootstrap Icons -->
   <link rel="stylesheet" href="assets/css/bootstrap-icons.min.css">
+  <!-- Custom Style & Modern Notification System Styles -->
+  <link rel="stylesheet" href="assets/css/style.css">
+  <link rel="stylesheet" href="assets/css/notifications.css">
   
   <!-- Local Tailwind CSS -->
   <script src="assets/js/tailwind.js"></script>
@@ -526,54 +531,8 @@ try {
 </head>
 <body>
 
-  <!-- Header Navigation -->
-  <header class="navbar navbar-expand-lg navbar-dark sticky-top shadow-sm" style="background-color: #0f4c81;">
-    <div class="container-fluid px-3 px-md-4">
-      <a class="navbar-brand d-flex align-items-center gap-2 fw-bold text-white fs-5" href="dashboard.php">
-        <i class="bi bi-mortarboard-fill text-warning fs-4"></i>
-        <span>Computerscience.lk LMS</span>
-      </a>
-
-      <div class="d-flex align-items-center gap-2.5 ms-auto">
-        <!-- Language Switcher Dropdown -->
-        <div class="dropdown">
-          <button class="btn btn-sm btn-light bg-white bg-opacity-20 text-white border-0 dropdown-toggle d-flex align-items-center gap-1.5 rounded-pill px-2.5 py-1" type="button" id="langDropdown" data-bs-toggle="dropdown" aria-expanded="false">
-            <i class="bi bi-globe text-warning fs-7"></i>
-            <span class="fw-semibold fs-8"><?php echo (($_SESSION['lang'] ?? 'en') === 'si') ? 'සිංහල' : 'English'; ?></span>
-          </button>
-          <ul class="dropdown-menu dropdown-menu-end shadow border-0 py-1" aria-labelledby="langDropdown">
-            <li>
-              <a class="dropdown-item fs-8 d-flex align-items-center justify-content-between <?php echo (($_SESSION['lang'] ?? 'en') === 'en') ? 'active fw-bold' : ''; ?>" href="#" onclick="switchLanguage('en'); return false;">
-                <span>English</span>
-                <?php if (($_SESSION['lang'] ?? 'en') === 'en'): ?><i class="bi bi-check-lg text-primary ms-2"></i><?php endif; ?>
-              </a>
-            </li>
-            <li>
-              <a class="dropdown-item fs-8 d-flex align-items-center justify-content-between <?php echo (($_SESSION['lang'] ?? 'en') === 'si') ? 'active fw-bold' : ''; ?>" href="#" onclick="switchLanguage('si'); return false;">
-                <span>සිංහල</span>
-                <?php if (($_SESSION['lang'] ?? 'en') === 'si'): ?><i class="bi bi-check-lg text-primary ms-2"></i><?php endif; ?>
-              </a>
-            </li>
-          </ul>
-        </div>
-
-        <a href="dashboard.php" class="btn btn-outline-light btn-sm px-3 rounded-pill">
-          <i class="bi bi-speedometer2 me-1"></i> <?php echo __('nav_dashboard', 'Dashboard'); ?>
-        </a>
-        <div class="dropdown">
-          <button class="btn btn-link text-white text-decoration-none p-0 d-flex align-items-center gap-2" data-bs-toggle="dropdown">
-            <img src="<?php echo htmlspecialchars(get_user_avatar($current_user['avatar'], $current_user['name'])); ?>" class="rounded-circle border border-white" style="width: 32px; height: 32px; object-fit: cover;" alt="User">
-            <span class="fw-medium fs-8 d-none d-md-inline-block"><?php echo htmlspecialchars($current_user['name']); ?></span>
-          </button>
-          <ul class="dropdown-menu dropdown-menu-end shadow">
-            <li><a class="dropdown-item fs-8" href="profile.php"><i class="bi bi-person me-2"></i>Profile</a></li>
-            <li><hr class="dropdown-divider"></li>
-            <li><a class="dropdown-item fs-8 text-danger" href="logout.php"><i class="bi bi-box-arrow-right me-2"></i>Logout</a></li>
-          </ul>
-        </div>
-      </div>
-    </div>
-  </header>
+  <!-- Unified LMS Top Header Bar -->
+  <?php include __DIR__ . '/includes/navbar.php'; ?>
 
   <!-- Main Container -->
   <main class="py-4">
@@ -1151,6 +1110,8 @@ try {
 
   <!-- Local Bootstrap JS -->
   <script src="assets/js/bootstrap.bundle.min.js"></script>
+  <!-- Modern Notification System JS Client -->
+  <script src="assets/js/notifications.js"></script>
 
   <!-- Data Payload for Client-Side Interactivity -->
   <script>

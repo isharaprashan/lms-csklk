@@ -284,11 +284,11 @@ $sidebar_text = $is_super_admin ? '#a3cfbb' : '#94a3b8';
       </div>
     </a>
 
-    <!-- Site Logo Customization -->
+    <!-- Site Logo & Favicon Customization -->
     <a href="index.php?tab=logo" class="nav-link-item <?php echo ($current_page === 'logo') ? 'active' : ''; ?>">
       <div class="d-flex align-items-center gap-2.5">
-        <i class="bi bi-image-fill text-danger"></i>
-        <span>Site Logo</span>
+        <i class="bi bi-palette-fill text-danger"></i>
+        <span>Site Logo & Favicon</span>
       </div>
     </a>
 

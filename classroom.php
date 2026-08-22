@@ -11,13 +11,6 @@ if (!isset($_SESSION['user_id'])) {
 $user_id = $_SESSION['user_id'];
 $course_id = $_GET['course_id'] ?? '';
 
-if (!empty($course_id)) {
-  $admin_param = (isset($_GET['admin_preview']) || (isset($_SESSION['user_role']) && in_array($_SESSION['user_role'], ['admin', 'super_admin']))) ? '&admin_preview=1' : '';
-  $lesson_param = isset($_GET['lesson_id']) ? '&lesson_id=' . urlencode($_GET['lesson_id']) : '';
-  header("Location: watch_lesson.php?course_id=" . urlencode($course_id) . $lesson_param . $admin_param);
-  exit;
-}
-
 if (empty($course_id)) {
   header("Location: dashboard.php");
   exit;
@@ -45,6 +38,13 @@ try {
   $is_teacher = (($student['role'] ?? 'student') === 'teacher');
   $is_admin = in_array($student['role'] ?? 'student', ['admin', 'super_admin']);
 
+  // If a student navigates to classroom.php, route them to their learning watch page
+  if (!$is_teacher && !$is_admin) {
+    $lesson_param = isset($_GET['lesson_id']) ? '&lesson_id=' . urlencode($_GET['lesson_id']) : '';
+    header("Location: watch_lesson.php?course_id=" . urlencode($course_id) . $lesson_param);
+    exit;
+  }
+
   // Fetch course details
   $stmt = $pdo->prepare("SELECT * FROM courses WHERE id = ?");
   $stmt->execute([$course_id]);
@@ -58,15 +58,30 @@ try {
   $stmt = $pdo->query("SELECT * FROM target_audiences WHERE status = 'active' ORDER BY name ASC");
   $active_target_audiences = $stmt->fetchAll();
 
-  // Determine ownership
-  $is_course_owner = ($is_teacher && intval($current_course['tutor_id']) === intval($user_id));
+  // Determine course management permission (course owner tutor or admin)
+  $is_course_owner = ($is_teacher && (empty($current_course['tutor_id']) || intval($current_course['tutor_id']) === intval($user_id)));
+  $can_manage = ($is_course_owner || $is_admin || $is_teacher);
 
-  // Access control for pending/rejected courses
+  // Check student enrollment status
+  $is_enrolled = false;
+  if (!$is_teacher && !$is_admin) {
+    $enrollCheckStmt = $pdo->prepare("SELECT COUNT(*) FROM enrollments WHERE user_id = ? AND course_id = ?");
+    $enrollCheckStmt->execute([$user_id, $course_id]);
+    $is_enrolled = ($enrollCheckStmt->fetchColumn() > 0);
+  }
+
+  // Access control for pending/rejected/disabled courses
   $course_status = $current_course['status'] ?? 'approved';
-  if ($course_status !== 'approved') {
-    // Only allow the tutor of the course or an admin to access
-    if (!$is_course_owner && !$is_admin) {
-      die("This course is currently pending admin review. Go back to <a href='dashboard.php'>Dashboard</a>.");
+  if ($course_status !== 'approved' && $course_status !== 'active') {
+    // If course is disabled/soft-deleted, enrolled students retain access
+    if ($course_status === 'disabled' && $is_enrolled) {
+      // Allow access for enrolled students
+    } elseif (!$can_manage) {
+      if ($course_status === 'disabled') {
+        die("This course is currently unpublished. Go back to <a href='dashboard.php'>Dashboard</a>.");
+      } else {
+        die("This course is currently pending admin review. Go back to <a href='dashboard.php'>Dashboard</a>.");
+      }
     }
   }
 
@@ -124,11 +139,22 @@ try {
   $quiz_score_row = $stmt->fetch();
   $quiz_score = $quiz_score_row ? intval($quiz_score_row['score']) : null;
 
+  // Fetch all supplementary resources attached to course lessons
+  $stmt = $pdo->prepare("SELECT lr.* FROM lesson_resources lr INNER JOIN lessons l ON l.id = lr.lesson_id WHERE l.course_id = ? ORDER BY lr.uploaded_at ASC");
+  $stmt->execute([$course_id]);
+  $all_course_resources = $stmt->fetchAll();
+  $resources_by_lesson = [];
+  foreach ($all_course_resources as $r) {
+    $bytes = (int)$r['file_size'];
+    $r['formatted_size'] = ($bytes >= 1048576) ? round($bytes / 1048576, 2) . ' MB' : (($bytes >= 1024) ? round($bytes / 1024, 1) . ' KB' : $bytes . ' B');
+    $resources_by_lesson[$r['lesson_id']][] = $r;
+  }
+
   // Fetch all courses for sidebar navigation (approved courses, or pending if owner/admin)
   if ($is_admin) {
     $stmt = $pdo->query("SELECT * FROM courses");
   } else {
-    $stmt = $pdo->prepare("SELECT * FROM courses WHERE status = 'approved' OR tutor_id = ?");
+    $stmt = $pdo->prepare("SELECT * FROM courses WHERE ((status = 'approved' OR status = 'active') AND is_archived = 0) OR tutor_id = ?");
     $stmt->execute([$user_id]);
   }
   $all_courses = $stmt->fetchAll();
@@ -173,12 +199,16 @@ try {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title><?php echo htmlspecialchars($current_course['title']); ?> | Course Classroom</title>
+  <link rel="icon" type="image/x-icon" href="<?php echo function_exists('get_site_favicon') ? get_site_favicon() : 'assets/logo.png'; ?>?v=<?php echo time(); ?>">
+  <link rel="shortcut icon" href="<?php echo function_exists('get_site_favicon') ? get_site_favicon() : 'assets/logo.png'; ?>?v=<?php echo time(); ?>">
   <script src="assets/js/session_manager.js"></script>
 
   <!-- Local Bootstrap 5 CSS -->
   <link href="assets/css/bootstrap.min.css" rel="stylesheet">
   <!-- Local Bootstrap Icons -->
   <link rel="stylesheet" href="assets/css/bootstrap-icons.min.css">
+  <!-- Modern Notification System Styles -->
+  <link rel="stylesheet" href="assets/css/notifications.css">
 
   <!-- Local Tailwind CSS -->
   <script src="assets/js/tailwind.js"></script>
@@ -239,18 +269,19 @@ try {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 0.9rem 1.1rem;
+      padding: 0.65rem 0.75rem;
       border-radius: 12px;
       margin-bottom: 0.5rem;
       border: 1px solid #e2e8f0;
       transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
       background-color: #ffffff;
+      gap: 0.5rem;
+      min-width: 0;
     }
 
     .lesson-outline-item:hover:not(.locked) {
       background-color: #f8fafc;
       border-color: #cbd5e1;
-      transform: translateX(4px);
     }
 
     .lesson-outline-item.active {
@@ -263,6 +294,21 @@ try {
     .lesson-outline-item.completed:not(.active) {
       background-color: rgba(25, 135, 84, 0.03);
       border-color: rgba(25, 135, 84, 0.15);
+    }
+
+    /* Teacher action buttons inside lesson items */
+    .lesson-actions {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    .lesson-actions .btn {
+      padding: 2px 7px;
+      font-size: 0.72rem;
+      line-height: 1.4;
+      white-space: nowrap;
     }
 
     .now-playing-badge {
@@ -311,128 +357,23 @@ try {
     </div>
   <?php endif; ?>
 
-  <!-- Moodle Top Header Bar -->
-  <header class="moodle-header px-3 px-md-4 shadow-sm bg-white">
-    <div class="d-flex align-items-center w-100 justify-content-between">
-
-      <!-- Left: Toggle button + Brand -->
-      <div class="d-flex align-items-center gap-3">
-        <button id="drawer-toggle"
-          class="btn btn-light border-0 rounded-circle p-2 fs-5 d-flex align-items-center justify-content-center"
-          style="width: 42px; height: 42px;">
-          <i class="bi bi-list"></i>
-        </button>
-        <a class="moodle-brand fw-bold text-decoration-none fs-4 d-flex align-items-center" href="index.php"
-          style="color: #0f4c81;">
-          <img src="<?php echo get_site_logo(); ?>?v=<?php echo time(); ?>" alt="Logo" class="me-2"
-            style="height: 32px; width: auto; object-fit: contain;">computerscience.lk
-        </a>
-      </div>
-
-      <!-- Right: Actions, Notifications, Profiles -->
-      <div class="d-flex align-items-center gap-2.5">
-        <!-- Language Switcher Dropdown -->
-        <div class="dropdown">
-          <button
-            class="btn btn-sm btn-light border text-secondary dropdown-toggle d-flex align-items-center gap-1.5 rounded-pill px-2.5 py-1"
-            type="button" id="langDropdown" data-bs-toggle="dropdown" aria-expanded="false">
-            <i class="bi bi-globe text-primary fs-7"></i>
-            <span
-              class="fw-semibold fs-8"><?php echo (($_SESSION['lang'] ?? 'en') === 'si') ? 'සිංහල' : 'English'; ?></span>
-          </button>
-          <ul class="dropdown-menu dropdown-menu-end shadow-sm border-0 py-1" aria-labelledby="langDropdown">
-            <li>
-              <a class="dropdown-item fs-8 d-flex align-items-center justify-content-between <?php echo (($_SESSION['lang'] ?? 'en') === 'en') ? 'active fw-bold' : ''; ?>"
-                href="#" onclick="switchLanguage('en'); return false;">
-                <span>English</span>
-                <?php if (($_SESSION['lang'] ?? 'en') === 'en'): ?><i
-                    class="bi bi-check-lg text-primary ms-2"></i><?php endif; ?>
-              </a>
-            </li>
-            <li>
-              <a class="dropdown-item fs-8 d-flex align-items-center justify-content-between <?php echo (($_SESSION['lang'] ?? 'en') === 'si') ? 'active fw-bold' : ''; ?>"
-                href="#" onclick="switchLanguage('si'); return false;">
-                <span>සිංහල</span>
-                <?php if (($_SESSION['lang'] ?? 'en') === 'si'): ?><i
-                    class="bi bi-check-lg text-primary ms-2"></i><?php endif; ?>
-              </a>
-            </li>
-          </ul>
-        </div>
-
-        <!-- Notification Dropdown -->
-        <div class="dropdown">
-          <button class="text-secondary fs-5 border-0 bg-transparent p-2 position-relative dropdown-toggle no-caret"
-            type="button" id="notificationDropdown" data-bs-toggle="dropdown" aria-expanded="false"
-            onclick="markNotificationsAsRead()">
-            <i class="bi bi-bell"></i>
-            <?php if ($unread_count > 0): ?>
-              <span class="position-absolute top-1 end-1 translate-middle badge rounded-circle bg-danger"
-                id="notification-badge" style="padding: 4px; font-size: 0.5rem;">
-                <?php echo $unread_count; ?>
-              </span>
-            <?php endif; ?>
-          </button>
-          <ul class="dropdown-menu dropdown-menu-end shadow border-light py-2" aria-labelledby="notificationDropdown"
-            style="width: 320px; max-height: 400px; overflow-y: auto; z-index: 1050;">
-            <li
-              class="dropdown-header fw-bold text-dark border-bottom pb-2 mb-2 d-flex justify-content-between align-items-center">
-              <span><?php echo __('notifications', 'Notifications'); ?></span>
-              <?php if ($unread_count > 0): ?>
-                <span class="badge bg-primary text-white fs-9" id="notification-count"><?php echo $unread_count; ?>
-                  new</span>
-              <?php endif; ?>
-            </li>
-            <?php if (empty($notifications)): ?>
-              <li class="px-3 py-4 text-center text-muted fs-8 italic">
-                <?php echo __('no_notifications', 'No notifications yet.'); ?>
-              </li>
-            <?php else: ?>
-              <?php foreach ($notifications as $notif): ?>
-                <li
-                  class="px-3 py-2 border-bottom last-border-0 <?php echo $notif['is_read'] ? 'opacity-70' : 'bg-light bg-opacity-50 fw-semibold'; ?>">
-                  <div class="fs-8 text-dark mb-1"><?php echo htmlspecialchars($notif['message']); ?></div>
-                  <small class="text-muted fs-9"><i
-                      class="bi bi-clock me-1"></i><?php echo date('M d, H:i', strtotime($notif['created_at'])); ?></small>
-                </li>
-              <?php endforeach; ?>
-            <?php endif; ?>
-          </ul>
-        </div>
-        <div class="dropdown">
-          <button class="user-menu-btn dropdown-toggle" type="button" data-bs-toggle="dropdown">
-            <img src="<?php echo htmlspecialchars($student['avatar']); ?>" class="rounded-circle"
-              style="width: 32px; height: 32px; object-fit: cover;" alt="Profile">
-            <span
-              class="d-none d-md-inline text-secondary fw-semibold text-sm"><?php echo htmlspecialchars(explode(' ', $student['name'])[0]); ?></span>
-          </button>
-          <ul class="dropdown-menu dropdown-menu-end shadow border-light">
-            <?php if ($is_admin): ?>
-              <li><a class="dropdown-item fw-semibold text-success" href="admin/index.php"><i
-                    class="bi bi-shield-lock me-2"></i> Admin Panel</a></li>
-              <li><span class="dropdown-item text-muted opacity-50"><i class="bi bi-person-x me-2"></i> Profile (Disabled
-                  in Review Mode)</span></li>
-            <?php else: ?>
-              <li><a class="dropdown-item" href="dashboard.php"><i class="bi bi-speedometer2 me-2"></i>
-                  <?php echo __('nav_dashboard', 'Dashboard'); ?></a></li>
-              <li><a class="dropdown-item" href="profile.php"><i class="bi bi-person me-2"></i>
-                  <?php echo __('nav_profile', 'Profile'); ?></a></li>
-            <?php endif; ?>
-            <li>
-              <hr class="dropdown-divider">
-            </li>
-            <li><a class="dropdown-item text-danger" href="logout.php"><i class="bi bi-box-arrow-right me-2"></i>
-                <?php echo __('nav_logout', 'Logout'); ?></a></li>
-          </ul>
-        </div>
-      </div>
-
-    </div>
-  </header>
+  <!-- Unified LMS Top Header Bar -->
+  <?php include __DIR__ . '/includes/navbar.php'; ?>
 
   <!-- Moodle Left Navigation Drawer -->
   <aside id="moodle-drawer" class="moodle-drawer bg-white collapsed">
     <div class="d-flex flex-column">
+      <!-- Drawer Header with Prominent Close Button -->
+      <div class="px-3 py-2.5 mb-2 d-flex align-items-center justify-content-between border-bottom bg-light bg-opacity-50">
+        <span class="fs-8 fw-bold text-uppercase tracking-wider text-muted d-flex align-items-center gap-1.5">
+          <i class="bi bi-compass-fill text-primary"></i>
+          <span><?php echo __('navigation', 'Navigation'); ?></span>
+        </span>
+        <button type="button" class="btn btn-sm btn-light border rounded-circle d-flex align-items-center justify-content-center drawer-close-trigger text-secondary" style="width: 32px; height: 32px;" title="<?php echo __('close', 'Close'); ?>">
+          <i class="bi bi-x-lg fs-6"></i>
+        </button>
+      </div>
+
       <a href="index.php" class="drawer-link">
         <i class="bi bi-house-door fs-5"></i> Site Home
       </a>
@@ -496,8 +437,19 @@ try {
       <div class="moodle-card p-4 mb-4">
         <div class="d-flex flex-wrap justify-content-between align-items-start gy-3">
           <div>
-            <span
-              class="badge bg-light text-primary mb-1 border"><?php echo htmlspecialchars($current_course['category']); ?></span>
+            <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+              <span class="badge bg-light text-primary border"><?php echo htmlspecialchars($current_course['category']); ?></span>
+              <span class="badge bg-secondary bg-opacity-10 text-secondary border"><?php echo htmlspecialchars($current_course['level'] ?? 'Beginner'); ?></span>
+              <span class="badge bg-info bg-opacity-10 text-dark border"><i class="bi bi-calendar3 me-1"></i><?php echo intval($current_course['duration'] ?? 8); ?> Weeks</span>
+              <span class="badge <?php echo floatval($current_course['price']) == 0 ? 'bg-success bg-opacity-10 text-success border border-success' : 'bg-primary bg-opacity-10 text-primary border border-primary'; ?>">
+                <?php echo floatval($current_course['price']) == 0 ? 'Free Course' : 'Rs. ' . number_format($current_course['price'], 2); ?>
+              </span>
+              <?php if (($current_course['status'] ?? 'approved') === 'pending'): ?>
+                <span class="badge bg-warning bg-opacity-10 text-warning border border-warning"><i class="bi bi-clock-history me-1"></i>Pending Review</span>
+              <?php else: ?>
+                <span class="badge bg-success bg-opacity-10 text-success border border-success"><i class="bi bi-check-circle-fill me-1"></i>Published</span>
+              <?php endif; ?>
+            </div>
             <h1 class="fw-bold text-dark mb-2 fs-3"><?php echo htmlspecialchars($current_course['title']); ?></h1>
             <p class="text-muted fs-7 mb-0"><i class="bi bi-person me-1"></i> Lecturer: <strong
                 class="text-secondary"><?php echo htmlspecialchars($current_course['tutor_name']); ?></strong></p>
@@ -514,44 +466,30 @@ try {
             <?php endif; ?>
           </div>
 
-          <div class="d-flex align-items-center gap-3">
-            <span
-              class="fs-7 text-muted"><?php echo ($is_teacher || $is_admin) ? ($is_admin ? 'Admin Review Mode' : 'Lecturer Mode') : 'Course Progress:'; ?></span>
-            <?php if (!$is_teacher && !$is_admin): ?>
-              <div class="progress" style="height: 8px; width: 120px;">
-                <?php
-                $total_lessons = count($lessons);
-                $completed_count = 0;
-                foreach ($lessons as $lesson) {
-                  if (in_array($lesson['id'], $completed_lessons)) {
-                    $completed_count++;
-                  }
-                }
-                $progress_percent = $total_lessons > 0 ? round(($completed_count / $total_lessons) * 100) : 0;
-                ?>
-                <div class="progress-bar" role="progressbar"
-                  style="width: <?php echo $progress_percent; ?>%; background-color: #0f4c81;"
-                  aria-valuenow="<?php echo $progress_percent; ?>" aria-valuemin="0" aria-valuemax="100"></div>
-              </div>
-              <span class="fw-bold fs-7" id="overall-progress-text"><?php echo $progress_percent; ?>%</span>
-            <?php else: ?>
-              <span
-                class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-35 px-3 py-1.5 fs-8 fw-bold me-2"><?php echo $is_admin ? 'Admin Preview View' : 'Instructor View'; ?></span>
-              <?php if ($is_course_owner): ?>
-                <button type="button"
-                  class="btn btn-outline-danger btn-sm rounded-pill px-3 py-1.5 shadow-sm fw-bold d-inline-flex align-items-center gap-1.5 delete-course-btn-trigger"
-                  data-course-id="<?php echo htmlspecialchars($course_id); ?>"
-                  data-course-title="<?php echo htmlspecialchars($current_course['title']); ?>">
-                  <i class="bi bi-trash3-fill"></i> Delete Course
-                </button>
-              <?php endif; ?>
+          <div class="d-flex flex-wrap align-items-center gap-2">
+            <?php if ($can_manage): ?>
+              <button type="button"
+                class="btn btn-primary btn-sm rounded-pill px-3 py-1.5 shadow-sm fw-bold d-inline-flex align-items-center gap-1.5"
+                data-bs-toggle="modal" data-bs-target="#editCourseModal" style="background-color: #0f4c81;">
+                <i class="bi bi-pencil-square"></i> Edit Course Details
+              </button>
+              <button type="button"
+                class="btn btn-success btn-sm rounded-pill px-3 py-1.5 shadow-sm fw-bold d-inline-flex align-items-center gap-1.5"
+                data-bs-toggle="modal" data-bs-target="#addLessonModal" style="background-color: #198754;">
+                <i class="bi bi-plus-circle-fill"></i> Add Lesson
+              </button>
+              <a href="watch_lesson.php?course_id=<?php echo urlencode($course_id); ?>&sid=<?php echo urlencode(session_id()); ?>"
+                class="btn btn-outline-secondary btn-sm rounded-pill px-3 py-1.5 fw-bold d-inline-flex align-items-center gap-1.5"
+                title="Preview course as a student in the dedicated player">
+                <i class="bi bi-play-circle-fill text-primary"></i> Preview as Student
+              </a>
             <?php endif; ?>
           </div>
         </div>
 
         <!-- Moodle Secondary Navigation Tabs -->
         <div class="d-flex border-top mt-4 pt-2 gap-1 overflow-auto">
-          <button class="moodle-tab-btn active"><i class="bi bi-journal-richtext me-1"></i> Course</button>
+          <button class="moodle-tab-btn active"><i class="bi bi-journal-richtext me-1"></i> Course Management & Syllabus</button>
         </div>
       </div>
 
@@ -639,15 +577,26 @@ try {
                     </p>
                   </div>
                 </div>
-                <a href="quiz.php?course_id=<?php echo urlencode($course_id); ?><?php echo !empty($lessons[0]['id']) ? '&lesson_id=' . urlencode($lessons[0]['id']) : ''; ?><?php echo $admin_preview_param; ?>"
+                <?php
+                  $quiz_btn_label = $is_teacher ? __('manage_quiz', 'Manage Quiz') : __('enter_quiz', 'Enter Quiz');
+                  $quiz_btn_icon  = $is_teacher ? 'bi-pencil-square' : 'bi-play-circle-fill';
+                  $first_lesson_param = !empty($lessons[0]['id']) ? '&lesson_id=' . urlencode($lessons[0]['id']) : '';
+                  $sid_param = '&sid=' . urlencode(session_id());
+                  if ($is_teacher) {
+                    $quiz_btn_href = 'create_quiz.php?course_id=' . urlencode($course_id) . $first_lesson_param . $sid_param;
+                  } else {
+                    $quiz_btn_href = 'quiz.php?course_id=' . urlencode($course_id) . $first_lesson_param . $admin_preview_param . $sid_param;
+                  }
+                ?>
+                <a href="<?php echo $quiz_btn_href; ?>"
                   class="btn btn-light btn-lg px-4 py-2 fw-bold text-primary border-0 shadow-sm text-nowrap rounded-pill enter-quiz-btn"
                   id="enter-quiz-banner-btn">
-                  <i class="bi bi-play-circle-fill me-2"></i><?php echo __('enter_quiz', 'Enter Quiz'); ?>
+                  <i class="bi <?php echo $quiz_btn_icon; ?> me-2"></i><?php echo $quiz_btn_label; ?>
                 </a>
               </div>
 
               <!-- Lesson Topic Resources & Notes -->
-              <div class="border rounded-3 p-4 bg-light">
+              <div class="border rounded-3 p-4 bg-light mb-3">
                 <h6 class="fw-bold text-dark mb-2.5 d-flex align-items-center gap-2">
                   <i class="bi bi-file-earmark-text-fill text-primary fs-5"></i>
                   <span><?php echo __('topic_resources_notes', 'Topic Resources & Notes'); ?></span>
@@ -655,6 +604,22 @@ try {
                 <p class="text-secondary fs-7 mb-0 leading-relaxed" id="active-lesson-summary">
                   <?php echo htmlspecialchars($lessons[0]['content'] ?? 'Select a lesson activity from the syllabus to begin learning.'); ?>
                 </p>
+              </div>
+
+              <!-- Supplementary Lesson Resources & Files Card -->
+              <div class="border rounded-3 p-4 bg-white shadow-sm" id="active-lesson-resources-card">
+                <div class="d-flex align-items-center justify-content-between mb-3 border-bottom pb-2">
+                  <h6 class="fw-bold text-dark mb-0 d-flex align-items-center gap-2">
+                    <i class="bi bi-paperclip text-primary fs-5"></i>
+                    <span><?php echo __('lesson_resources', 'Lesson Resources & Attachments'); ?></span>
+                  </h6>
+                  <span class="badge bg-light text-primary border border-primary border-opacity-25 rounded-pill px-3 py-1 fs-9 fw-bold" id="active-resources-count-badge">
+                    0 Files
+                  </span>
+                </div>
+                <div id="active-lesson-resources-list" class="d-flex flex-column gap-2">
+                  <!-- Rendered dynamically by renderActiveLessonResources() -->
+                </div>
               </div>
             </div>
 
@@ -794,19 +759,26 @@ try {
         <!-- Right: Professional Course Syllabus Index (4 Columns) -->
         <div class="col-lg-4">
           <div class="moodle-card p-4 rounded-4 border shadow-sm bg-white">
-            <div class="d-flex justify-content-between align-items-center border-bottom pb-3 mb-3">
+            <!-- Sidebar Header: Title + action buttons -->
+            <div class="d-flex justify-content-between align-items-start border-bottom pb-3 mb-3">
               <div>
                 <h5 class="fw-bold text-dark mb-0 d-flex align-items-center gap-2">
                   <i class="bi bi-collection-play-fill text-primary"></i> Course Syllabus
                 </h5>
                 <small class="text-muted fs-8"><?php echo count($lessons); ?> Modules Available</small>
               </div>
-              <?php if ($is_course_owner): ?>
-                <button
-                  class="btn btn-outline-secondary py-1 px-2.5 fs-8 rounded-pill d-inline-flex align-items-center gap-1"
-                  data-bs-toggle="modal" data-bs-target="#editCourseModal">
-                  <i class="bi bi-pencil-square"></i> Edit Course
-                </button>
+              <?php if ($can_manage): ?>
+                <div class="d-flex align-items-center gap-1 ms-2">
+                  <button
+                    class="btn btn-outline-secondary py-1 px-2.5 fs-8 rounded-pill d-inline-flex align-items-center gap-1"
+                    data-bs-toggle="modal" data-bs-target="#editCourseModal" title="Edit Course Details">
+                    <i class="bi bi-pencil-square"></i> Edit
+                  </button>
+                  <button class="btn btn-outline-primary py-1 px-2.5 fs-8 rounded-pill d-inline-flex align-items-center gap-1 fw-semibold"
+                    data-bs-toggle="modal" data-bs-target="#addLessonModal" title="Add Lesson">
+                    <i class="bi bi-plus-circle-fill"></i> Add
+                  </button>
+                </div>
               <?php endif; ?>
             </div>
 
@@ -815,16 +787,10 @@ try {
 
               <!-- Topic 1: Lessons -->
               <div>
-                <div class="d-flex justify-content-between align-items-center mb-3">
+                <div class="mb-3">
                   <span class="fw-bold text-uppercase fs-8 text-primary tracking-wider">
                     <i class="bi bi-journal-bookmark me-1"></i>Syllabus Modules
                   </span>
-                  <?php if ($is_course_owner): ?>
-                    <button class="btn btn-outline-primary py-0.5 px-2.5 fs-9 rounded-pill fw-semibold"
-                      data-bs-toggle="modal" data-bs-target="#addLessonModal">
-                      <i class="bi bi-plus-circle-fill me-1"></i> Add Lesson
-                    </button>
-                  <?php endif; ?>
                 </div>
 
                 <div class="d-flex flex-column gap-2" id="moodle-syllabus-lessons">
@@ -869,70 +835,79 @@ try {
                       ?>
                       <?php if ($is_unlocked): ?>
                         <div
-                          class="lesson-outline-item cursor-pointer transition-all d-flex align-items-center justify-content-between <?php echo $is_active; ?> <?php echo $is_completed ? 'completed' : ''; ?>"
+                          class="lesson-outline-item cursor-pointer <?php echo $is_active; ?> <?php echo $is_completed ? 'completed' : ''; ?>"
                           data-lesson-id="<?php echo htmlspecialchars($lesson['id']); ?>"
                           data-lesson-title="<?php echo htmlspecialchars($lesson['title']); ?>"
                           data-lesson-content="<?php echo htmlspecialchars($lesson['content']); ?>"
                           data-lesson-video="<?php echo htmlspecialchars($lesson['video_url']); ?>"
                           data-lesson-duration="<?php echo htmlspecialchars($lesson['duration']); ?>">
-                          <div class="d-flex align-items-center gap-3 text-truncate">
+
+                          <!-- Lesson info: number badge + title + duration -->
+                          <div class="d-flex align-items-center gap-2 text-truncate" style="min-width:0; flex: 1 1 auto;">
                             <span
-                              class="badge rounded-circle <?php echo $is_active ? 'bg-primary text-white shadow-sm' : ($is_completed ? 'bg-success text-white' : 'bg-light text-secondary border'); ?>"
-                              style="width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; font-size: 0.82rem; font-weight: 700; flex-shrink: 0;">
+                              class="badge rounded-circle flex-shrink-0 <?php echo $is_active ? 'bg-primary text-white shadow-sm' : ($is_completed ? 'bg-success text-white' : 'bg-light text-secondary border'); ?>"
+                              style="width:26px;height:26px;display:inline-flex;align-items:center;justify-content:center;font-size:0.78rem;font-weight:700;">
                               <?php if ($is_completed && !$is_active): ?>
-                                <i class="bi bi-check-lg fs-7"></i>
+                                <i class="bi bi-check-lg"></i>
                               <?php else: ?>
                                 <?php echo $index + 1; ?>
                               <?php endif; ?>
                             </span>
-                            <div class="d-flex flex-column text-truncate">
-                              <span class="fs-7 text-dark fw-bold text-truncate lesson-title-text">
+                            <div class="d-flex flex-column text-truncate" style="min-width:0;">
+                              <span class="fs-8 text-dark fw-semibold text-truncate lesson-title-text">
                                 <?php echo htmlspecialchars($lesson['title']); ?>
                               </span>
-                              <div class="d-flex align-items-center gap-2 mt-0.5">
-                                <span class="text-muted fs-8 lesson-duration-text"><i
-                                    class="bi bi-clock me-1"></i><?php echo htmlspecialchars($lesson['duration']); ?></span>
+                              <div class="d-flex align-items-center gap-1 mt-0.5 flex-wrap">
+                                <span class="text-muted" style="font-size:0.7rem;">
+                                  <i class="bi bi-clock"></i> <?php echo htmlspecialchars($lesson['duration']); ?>
+                                </span>
+                                <?php 
+                                $l_res_count = count($resources_by_lesson[$lesson['id']] ?? []);
+                                if ($l_res_count > 0): 
+                                ?>
+                                  <span class="badge bg-light text-primary border border-primary border-opacity-25 py-0.5 px-1.5 rounded-pill" style="font-size: 0.65rem;" title="<?php echo $l_res_count; ?> Resources attached">
+                                    <i class="bi bi-paperclip"></i> <?php echo $l_res_count; ?>
+                                  </span>
+                                <?php endif; ?>
                                 <?php if ($index === 0): ?>
-                                  <span class="now-playing-badge">NOW PLAYING</span>
+                                  <span class="now-playing-badge">PLAYING</span>
                                 <?php endif; ?>
                               </div>
                             </div>
                           </div>
 
-                          <?php if ($is_course_owner || $is_admin || $is_teacher): ?>
-                            <div class="d-flex align-items-center gap-1.5 ms-2">
-                              <?php if (($is_course_owner || $is_teacher) && !$is_admin): ?>
-                                <a href="create_quiz.php?course_id=<?php echo urlencode($course_id); ?>&lesson_id=<?php echo urlencode($lesson['id']); ?>"
-                                  class="btn btn-sm btn-outline-warning text-dark fw-bold border-warning py-0.5 px-2 fs-9 rounded-pill text-nowrap shadow-sm"
-                                  title="Add / Customize Quiz for this Lesson" onclick="event.stopPropagation();">
-                                  <i class="bi bi-patch-question-fill text-primary me-1"></i>Quiz
-                                </a>
-                              <?php endif; ?>
-                              <?php if ($is_course_owner): ?>
-                                <button class="btn btn-sm btn-link p-1 text-primary edit-lesson-btn-trigger"
-                                  data-lesson-id="<?php echo htmlspecialchars($lesson['id']); ?>"
-                                  data-lesson-title="<?php echo htmlspecialchars($lesson['title']); ?>"
-                                  data-lesson-duration="<?php echo htmlspecialchars($lesson['duration']); ?>"
-                                  data-lesson-video="<?php echo htmlspecialchars($lesson['video_url']); ?>"
-                                  data-lesson-content="<?php echo htmlspecialchars($lesson['content']); ?>" data-bs-toggle="modal"
-                                  data-bs-target="#editLessonModal" onclick="event.stopPropagation();" title="Edit Lesson">
-                                  <i class="bi bi-pencil-square"></i>
-                                </button>
-                                <button class="btn btn-sm btn-link p-1 text-danger delete-lesson-btn-trigger"
-                                  data-lesson-id="<?php echo htmlspecialchars($lesson['id']); ?>"
-                                  data-lesson-title="<?php echo htmlspecialchars($lesson['title']); ?>"
-                                  onclick="event.stopPropagation();" title="Delete Lesson">
-                                  <i class="bi bi-trash3"></i>
-                                </button>
-                              <?php endif; ?>
+                          <!-- Right side: management actions or completion badge -->
+                          <?php if ($can_manage): ?>
+                            <div class="lesson-actions">
+                              <a href="create_quiz.php?course_id=<?php echo urlencode($course_id); ?>&lesson_id=<?php echo urlencode($lesson['id']); ?>&sid=<?php echo urlencode(session_id()); ?>"
+                                class="btn btn-outline-warning rounded-pill text-dark"
+                                title="Add / Edit Quiz" onclick="event.stopPropagation();">
+                                <i class="bi bi-patch-question-fill text-primary"></i>
+                              </a>
+                              <button class="btn btn-outline-primary rounded-pill edit-lesson-btn-trigger"
+                                data-lesson-id="<?php echo htmlspecialchars($lesson['id']); ?>"
+                                data-lesson-title="<?php echo htmlspecialchars($lesson['title']); ?>"
+                                data-lesson-duration="<?php echo htmlspecialchars($lesson['duration']); ?>"
+                                data-lesson-video="<?php echo htmlspecialchars($lesson['video_url']); ?>"
+                                data-lesson-content="<?php echo htmlspecialchars($lesson['content']); ?>"
+                                data-bs-toggle="modal" data-bs-target="#editLessonModal"
+                                onclick="event.stopPropagation();" title="Edit Lesson">
+                                <i class="bi bi-pencil-square"></i>
+                              </button>
+                              <button class="btn btn-outline-danger rounded-pill delete-lesson-btn-trigger"
+                                data-lesson-id="<?php echo htmlspecialchars($lesson['id']); ?>"
+                                data-lesson-title="<?php echo htmlspecialchars($lesson['title']); ?>"
+                                onclick="event.stopPropagation();" title="Delete Lesson">
+                                <i class="bi bi-trash3"></i>
+                              </button>
                             </div>
                           <?php elseif ($is_completed): ?>
-                            <span
-                              class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 px-2 py-1 fs-9 rounded-pill text-nowrap ms-2">
-                              <i class="bi bi-check-circle-fill me-1"></i>Done
+                            <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 rounded-pill flex-shrink-0" style="font-size:0.7rem;padding:3px 8px;">
+                              <i class="bi bi-check-circle-fill"></i> Done
                             </span>
                           <?php endif; ?>
                         </div>
+
                       <?php else: ?>
                         <!-- Locked Lesson in Syllabus Outline -->
                         <div
@@ -972,11 +947,22 @@ try {
                 <p class="text-muted fs-8 mb-3">
                   <?php echo __('quiz_sidebar_desc', 'Test your knowledge across all syllabus modules.'); ?>
                 </p>
-                <a href="quiz.php?course_id=<?php echo urlencode($course_id); ?><?php echo !empty($lessons[0]['id']) ? '&lesson_id=' . urlencode($lessons[0]['id']) : ''; ?><?php echo $admin_preview_param; ?>"
+                <?php
+                  $first_lesson_param_sb = !empty($lessons[0]['id']) ? '&lesson_id=' . urlencode($lessons[0]['id']) : '';
+                  $sid_param_sb = '&sid=' . urlencode(session_id());
+                  if ($is_teacher) {
+                    $sidebar_quiz_href = 'create_quiz.php?course_id=' . urlencode($course_id) . $first_lesson_param_sb . $sid_param_sb;
+                    $sidebar_quiz_label = __('manage_quiz', 'Manage Quiz');
+                  } else {
+                    $sidebar_quiz_href = 'quiz.php?course_id=' . urlencode($course_id) . $first_lesson_param_sb . $admin_preview_param . $sid_param_sb;
+                    $sidebar_quiz_label = __('enter_quiz', 'Enter Quiz');
+                  }
+                ?>
+                <a href="<?php echo $sidebar_quiz_href; ?>"
                   class="btn btn-primary w-100 rounded-pill border-0 py-2 fs-8 fw-semibold shadow-sm enter-quiz-btn"
                   id="sidebar-enter-quiz-btn"
                   style="background-color: #0f4c81;">
-                  <i class="bi bi-patch-question-fill me-1.5"></i><?php echo __('enter_quiz', 'Enter Quiz'); ?>
+                  <i class="bi bi-patch-question-fill me-1.5"></i><?php echo $sidebar_quiz_label; ?>
                 </a>
               </div>
 
@@ -990,11 +976,11 @@ try {
   </main>
 
   <!-- Modals for Course Management -->
-  <?php if ($is_course_owner): ?>
+  <?php if ($can_manage): ?>
     <!-- Edit Course Modal -->
     <div class="modal fade text-dark" id="editCourseModal" tabindex="-1" aria-labelledby="editCourseModalLabel"
       aria-hidden="true">
-      <div class="modal-dialog">
+      <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
           <div class="modal-header">
             <h5 class="modal-title fw-bold" id="editCourseModalLabel"><i
@@ -1099,10 +1085,13 @@ try {
               </div>
 
               <div class="mb-3">
-                <label for="edit-course-thumbnail-file" class="form-label fw-semibold text-secondary">Update Thumbnail
-                  Image</label>
+                <label for="edit-course-thumbnail-file" class="form-label fw-semibold text-secondary">Course Thumbnail Image</label>
+                <div class="d-flex align-items-center gap-3 mb-2">
+                  <img src="<?php echo htmlspecialchars($current_course['thumbnail'] ?? 'assets/placeholder.jpg'); ?>" class="rounded-3 border shadow-sm" style="width: 100px; height: 60px; object-fit: cover;" alt="Current Thumbnail">
+                  <small class="text-muted">Current thumbnail shown above. Upload a new image below to change it.</small>
+                </div>
                 <input type="file" id="edit-course-thumbnail-file" class="form-control" name="thumbnail" accept="image/*">
-                <small class="text-muted">Leave empty to keep current thumbnail</small>
+                <small class="text-muted">Accepted formats: JPG, PNG, WebP (Leave empty to keep current)</small>
               </div>
             </div>
             <div class="modal-footer">
@@ -1117,78 +1106,118 @@ try {
     <!-- Edit Lesson Modal -->
     <div class="modal fade text-dark" id="editLessonModal" tabindex="-1" aria-labelledby="editLessonModalLabel"
       aria-hidden="true">
-      <div class="modal-dialog">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title fw-bold" id="editLessonModalLabel"><i
-                class="bi bi-pencil-square text-primary me-2"></i>Edit Lesson</h5>
+      <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content border-0 shadow-lg rounded-4">
+          <div class="modal-header border-0 pb-0">
+            <h5 class="modal-title fw-bold text-dark d-flex align-items-center gap-2" id="editLessonModalLabel">
+              <i class="bi bi-pencil-square text-primary me-1"></i><?php echo __('edit_lesson', 'Edit Lesson'); ?>
+            </h5>
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
           </div>
-          <form id="edit-lesson-form">
+          <form id="edit-lesson-form" enctype="multipart/form-data">
             <input type="hidden" id="edit-lesson-id" name="lesson_id">
-            <div class="modal-body">
-              <div class="mb-3">
-                <label for="edit-lesson-title" class="form-label fw-semibold text-secondary">Lesson Title</label>
-                <input type="text" class="form-control" id="edit-lesson-title" name="title" required>
-              </div>
-              <div class="mb-3">
-                <label for="edit-lesson-duration" class="form-label fw-semibold text-secondary">Duration</label>
-                <input type="text" class="form-control" id="edit-lesson-duration" name="duration" required>
-              </div>
-              <div class="mb-3">
-                <label for="edit-lesson-video" class="form-label fw-semibold text-secondary">Video URL (YouTube or
-                  MP4)</label>
-                <input type="url" class="form-control" id="edit-lesson-video" name="video_url" required>
-              </div>
-              <div class="mb-3">
-                <label for="edit-lesson-content" class="form-label fw-semibold text-secondary">Lesson Content /
-                  Notes</label>
-                <textarea class="form-control" id="edit-lesson-content" name="content" rows="4" required></textarea>
+            <div class="modal-body py-3">
+              <div class="row g-3">
+                <div class="col-md-8">
+                  <label for="edit-lesson-title" class="form-label fw-semibold text-secondary">Lesson Title</label>
+                  <input type="text" class="form-control" id="edit-lesson-title" name="title" required>
+                </div>
+                <div class="col-md-4">
+                  <label for="edit-lesson-duration" class="form-label fw-semibold text-secondary">Duration</label>
+                  <input type="text" class="form-control" id="edit-lesson-duration" name="duration" required>
+                </div>
+                <div class="col-12">
+                  <label for="edit-lesson-video" class="form-label fw-semibold text-secondary">Video URL (YouTube or MP4)</label>
+                  <input type="text" class="form-control" id="edit-lesson-video" name="video_url" required>
+                </div>
+                <div class="col-12">
+                  <label for="edit-lesson-content" class="form-label fw-semibold text-secondary">Lesson Content / Notes</label>
+                  <textarea class="form-control" id="edit-lesson-content" name="content" rows="3" required></textarea>
+                </div>
+                
+                <!-- Currently Attached Resources Section -->
+                <div class="col-12">
+                  <label class="form-label fw-semibold text-secondary d-flex align-items-center justify-content-between">
+                    <span><i class="bi bi-paperclip text-primary me-1"></i><?php echo __('attached_files', 'Attached Supplementary Files'); ?></span>
+                    <span class="badge bg-light text-primary border border-primary border-opacity-25 rounded-pill px-2 py-0.5 fs-9" id="edit-lesson-resources-count">0 Files</span>
+                  </label>
+                  <div id="edit-lesson-resources-container" class="border rounded-3 p-3 bg-light" style="max-height: 200px; overflow-y: auto;">
+                    <div class="text-center py-2 text-muted fs-8 fst-italic">Loading attached files...</div>
+                  </div>
+                </div>
+
+                <!-- Upload Additional Files -->
+                <div class="col-12">
+                  <label for="edit-lesson-attachments" class="form-label fw-semibold text-secondary d-flex align-items-center justify-content-between">
+                    <span><i class="bi bi-cloud-arrow-up text-primary me-1"></i><?php echo __('upload_additional_resources', 'Upload Additional Files'); ?></span>
+                    <small class="text-muted fw-normal">Optional</small>
+                  </label>
+                  <input type="file" class="form-control" id="edit-lesson-attachments" name="attachments[]" multiple
+                    accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.png,.jpg,.jpeg,.webp,.zip,.rar">
+                  <div class="form-text fs-9 text-muted mt-1">
+                    <?php echo __('supported_file_types_hint', 'Accepted formats: PDF, Word, PPT, Excel, Images, ZIP up to 50MB per file.'); ?>
+                  </div>
+                </div>
               </div>
             </div>
-            <div class="modal-footer">
-              <button type="button" class="btn btn-light border" data-bs-dismiss="modal">Cancel</button>
-              <button type="submit" class="btn btn-primary" style="background-color: #0f4c81;">Save Changes</button>
+            <div class="modal-footer border-0 pt-0">
+              <button type="button" class="btn btn-light rounded-pill px-4" data-bs-dismiss="modal">Cancel</button>
+              <button type="submit" class="btn btn-primary rounded-pill px-4 fw-bold shadow-sm" style="background-color: #0f4c81;">Save Changes</button>
             </div>
           </form>
         </div>
       </div>
     </div>
+
     <!-- Add Lesson Modal -->
     <div class="modal fade text-dark" id="addLessonModal" tabindex="-1" aria-labelledby="addLessonModalLabel"
       aria-hidden="true">
-      <div class="modal-dialog">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title fw-bold" id="addLessonModalLabel"><i
-                class="bi bi-journal-plus text-primary me-2"></i>Add New Lesson</h5>
+      <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content border-0 shadow-lg rounded-4">
+          <div class="modal-header border-0 pb-0">
+            <h5 class="modal-title fw-bold text-dark d-flex align-items-center gap-2" id="addLessonModalLabel">
+              <i class="bi bi-journal-plus text-primary me-1"></i><?php echo __('add_lesson', 'Add New Lesson'); ?>
+            </h5>
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
           </div>
-          <form id="add-lesson-form">
-            <div class="modal-body">
-              <div class="mb-3">
-                <label for="lesson-title" class="form-label fw-semibold text-secondary">Lesson Title</label>
-                <input type="text" class="form-control" id="lesson-title" placeholder="e.g. Lesson 5: Advanced Loops"
-                  required>
-              </div>
-              <div class="mb-3">
-                <label for="lesson-duration" class="form-label fw-semibold text-secondary">Duration</label>
-                <input type="text" class="form-control" id="lesson-duration" placeholder="e.g. 15 mins" required>
-              </div>
-              <div class="mb-3">
-                <label for="lesson-video" class="form-label fw-semibold text-secondary">Video URL (MP4)</label>
-                <input type="url" class="form-control" id="lesson-video"
-                  placeholder="e.g. uploads/class.mp4">
-              </div>
-              <div class="mb-3">
-                <label for="lesson-content" class="form-label fw-semibold text-secondary">Lesson Content / Notes</label>
-                <textarea class="form-control" id="lesson-content" rows="4"
-                  placeholder="Enter lesson transcription or textual learning notes..." required></textarea>
+          <form id="add-lesson-form" enctype="multipart/form-data">
+            <div class="modal-body py-3">
+              <div class="row g-3">
+                <div class="col-md-8">
+                  <label for="lesson-title" class="form-label fw-semibold text-secondary">Lesson Title</label>
+                  <input type="text" class="form-control" id="lesson-title" name="title" placeholder="e.g. Lesson 5: Advanced Loops" required>
+                </div>
+                <div class="col-md-4">
+                  <label for="lesson-duration" class="form-label fw-semibold text-secondary">Duration</label>
+                  <input type="text" class="form-control" id="lesson-duration" name="duration" placeholder="e.g. 15 mins" required>
+                </div>
+                <div class="col-12">
+                  <label for="lesson-video" class="form-label fw-semibold text-secondary">Video URL (YouTube or MP4)</label>
+                  <input type="text" class="form-control" id="lesson-video" name="video_url" placeholder="e.g. uploads/class.mp4 or https://www.youtube.com/watch?v=...">
+                </div>
+                <div class="col-12">
+                  <label for="lesson-content" class="form-label fw-semibold text-secondary">Lesson Content / Notes</label>
+                  <textarea class="form-control" id="lesson-content" name="content" rows="3"
+                    placeholder="Enter lesson transcription or textual learning notes..." required></textarea>
+                </div>
+                
+                <!-- Lesson Attachments Field -->
+                <div class="col-12">
+                  <label for="lesson-attachments" class="form-label fw-semibold text-secondary d-flex align-items-center justify-content-between">
+                    <span><i class="bi bi-paperclip text-primary me-1"></i><?php echo __('upload_resources', 'Lesson Attachments / Resources'); ?></span>
+                    <small class="text-muted fw-normal">Optional</small>
+                  </label>
+                  <input type="file" class="form-control" id="lesson-attachments" name="attachments[]" multiple
+                    accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.png,.jpg,.jpeg,.webp,.zip,.rar">
+                  <div class="form-text fs-9 text-muted mt-1">
+                    <?php echo __('supported_file_types_hint', 'Accepted formats: PDF, Word, PPT, Excel, Images, ZIP up to 50MB per file.'); ?>
+                  </div>
+                </div>
               </div>
             </div>
-            <div class="modal-footer">
-              <button type="button" class="btn btn-light border" data-bs-dismiss="modal">Cancel</button>
-              <button type="submit" class="btn btn-primary" style="background-color: #0f4c81;">Save Lesson</button>
+            <div class="modal-footer border-0 pt-0">
+              <button type="button" class="btn btn-light rounded-pill px-4" data-bs-dismiss="modal">Cancel</button>
+              <button type="submit" class="btn btn-primary rounded-pill px-4 fw-bold shadow-sm" style="background-color: #0f4c81;">Save Lesson</button>
             </div>
           </form>
         </div>
@@ -1320,24 +1349,13 @@ try {
     window.COURSE_PRICE = <?php echo json_encode(floatval($current_course['price'])); ?>;
     window.IS_TEACHER = <?php echo json_encode($is_teacher); ?>;
     window.IS_ADMIN = <?php echo json_encode($is_admin); ?>;
+    window.LESSON_RESOURCES = <?php echo json_encode($resources_by_lesson ?? []); ?>;
   </script>
 
   <!-- Local Bootstrap 5 Bundle JS -->
   <script src="assets/js/bootstrap.bundle.min.js"></script>
 
-  <!-- Navigation Toggle script -->
-  <script>
-    document.addEventListener('DOMContentLoaded', function () {
-      const toggleBtn = document.getElementById('drawer-toggle');
-      const drawer = document.getElementById('moodle-drawer');
-      const wrapper = document.getElementById('moodle-content-wrapper');
 
-      toggleBtn.addEventListener('click', function () {
-        drawer.classList.toggle('collapsed');
-        wrapper.classList.toggle('full-width');
-      });
-    });
-  </script>
 
   <!-- Render JS Translation Dictionary -->
   <?php render_i18n_js(); ?>
@@ -1345,7 +1363,7 @@ try {
   <!-- Classroom specific JS -->
   <script src="assets/js/classroom.js"></script>
 
-  <?php if ($is_course_owner): ?>
+  <?php if ($can_manage): ?>
     <script>
       document.addEventListener('DOMContentLoaded', function () {
         // Target Audience helper for Edit Course form
@@ -1403,6 +1421,28 @@ try {
           });
         }
 
+        // Price Toggle Logic in Edit Course modal
+        const editPriceToggle = document.getElementById('edit-price-toggle');
+        const editPriceToggleLabel = document.getElementById('edit-price-toggle-label');
+        const editPriceInputContainer = document.getElementById('edit-price-input-container');
+        const editCoursePriceInput = document.getElementById('edit-course-price');
+
+        if (editPriceToggle) {
+          editPriceToggle.addEventListener('change', function () {
+            if (this.checked) {
+              editPriceToggleLabel.textContent = 'Free Course';
+              editPriceInputContainer.style.display = 'none';
+              editCoursePriceInput.value = '0.00';
+              editCoursePriceInput.required = false;
+            } else {
+              editPriceToggleLabel.textContent = 'Paid Course';
+              editPriceInputContainer.style.display = 'flex';
+              editCoursePriceInput.required = true;
+              editCoursePriceInput.focus();
+            }
+          });
+        }
+
         // Edit Course form submit AJAX handler
         const editCourseForm = document.getElementById('edit-course-form');
         if (editCourseForm) {
@@ -1414,6 +1454,9 @@ try {
 
             const formData = new FormData(editCourseForm);
             formData.set('target_audience', getSelectedEditTargetAudiences());
+            if (editPriceToggle && editPriceToggle.checked) {
+              formData.set('price', '0.00');
+            }
 
             fetch('api/edit_course.php', {
               method: 'POST',
@@ -1438,7 +1481,241 @@ try {
               });
           });
         }
-        // Add Lesson form submit
+
+        // Helper: File Icon Class by extension
+        function getResourceIconClass(ext) {
+          ext = (ext || '').toLowerCase();
+          if (ext === 'pdf') return 'bi-file-earmark-pdf-fill text-danger';
+          if (['doc', 'docx'].includes(ext)) return 'bi-file-earmark-word-fill text-primary';
+          if (['ppt', 'pptx'].includes(ext)) return 'bi-file-earmark-slides-fill text-warning';
+          if (['xls', 'xlsx'].includes(ext)) return 'bi-file-earmark-excel-fill text-success';
+          if (['png', 'jpg', 'jpeg', 'webp', 'gif'].includes(ext)) return 'bi-file-earmark-image-fill text-info';
+          if (['zip', 'rar', '7z'].includes(ext)) return 'bi-file-earmark-zip-fill text-secondary';
+          return 'bi-file-earmark-arrow-down-fill text-primary';
+        }
+
+        // Global Helper: Render Active Lesson Supplementary Resources
+        window.renderActiveLessonResources = function(lessonId) {
+          const listContainer = document.getElementById('active-lesson-resources-list');
+          const countBadge = document.getElementById('active-resources-count-badge');
+          if (!listContainer) return;
+
+          const resources = (window.LESSON_RESOURCES && window.LESSON_RESOURCES[lessonId]) ? window.LESSON_RESOURCES[lessonId] : [];
+          if (countBadge) {
+            countBadge.textContent = resources.length + (resources.length === 1 ? ' File' : ' Files');
+          }
+
+          if (resources.length === 0) {
+            const noMsg = (typeof window.i18n__ === 'function') ? window.i18n__('no_resources_attached', 'No supplementary files attached to this lesson.') : 'No supplementary files attached to this lesson.';
+            listContainer.innerHTML = `<div class="text-muted fs-8 py-2 text-center fst-italic"><i class="bi bi-info-circle me-1"></i>${noMsg}</div>`;
+            return;
+          }
+
+          const viewLabel = (typeof window.i18n__ === 'function') ? window.i18n__('view_file', 'View') : 'View';
+          const dlLabel = (typeof window.i18n__ === 'function') ? window.i18n__('download_file', 'Download') : 'Download';
+
+          let html = '';
+          resources.forEach(r => {
+            const iconCls = getResourceIconClass(r.file_type);
+            const isViewable = ['pdf', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'txt'].includes((r.file_type || '').toLowerCase());
+            
+            html += `
+              <div class="d-flex align-items-center justify-content-between p-2.5 bg-light rounded-3 border transition-all hover-shadow-sm">
+                <div class="d-flex align-items-center gap-3 text-truncate me-2">
+                  <i class="bi ${iconCls} fs-3 flex-shrink-0"></i>
+                  <div class="d-flex flex-column text-truncate">
+                    <span class="fw-semibold text-dark fs-8 text-truncate" title="${r.file_name}">${r.file_name}</span>
+                    <small class="text-muted fs-9">${r.formatted_size || (r.file_size + ' B')} &bull; <span class="text-uppercase">${r.file_type}</span></small>
+                  </div>
+                </div>
+                <div class="d-flex align-items-center gap-1.5 flex-shrink-0">
+                  ${isViewable ? `
+                    <a href="download_resource.php?id=${r.id}&view=1" target="_blank" class="btn btn-sm btn-outline-primary rounded-pill px-2.5 py-1 fs-9 fw-semibold">
+                      <i class="bi bi-eye me-1"></i>${viewLabel}
+                    </a>
+                  ` : ''}
+                  <a href="download_resource.php?id=${r.id}&download=1" class="btn btn-sm btn-primary rounded-pill px-2.5 py-1 fs-9 fw-bold text-white shadow-sm" style="background-color: #0f4c81;">
+                    <i class="bi bi-cloud-arrow-down-fill me-1"></i>${dlLabel}
+                  </a>
+                </div>
+              </div>
+            `;
+          });
+
+          listContainer.innerHTML = html;
+        };
+
+        // Initialize active lesson resources on load
+        <?php if (!empty($lessons[0]['id'])): ?>
+          window.renderActiveLessonResources("<?php echo htmlspecialchars($lessons[0]['id']); ?>");
+        <?php endif; ?>
+
+        // Helper: Load existing attachments for Edit Lesson modal
+        function loadLessonResourcesForEdit(lessonId) {
+          const container = document.getElementById('edit-lesson-resources-container');
+          const countBadge = document.getElementById('edit-lesson-resources-count');
+          if (!container) return;
+
+          container.innerHTML = '<div class="text-center py-2 text-muted fs-8 fst-italic"><span class="spinner-border spinner-border-sm me-1"></span> Loading attached files...</div>';
+
+          fetch(`api/get_lesson_resources.php?lesson_id=${encodeURIComponent(lessonId)}`)
+            .then(res => res.json())
+            .then(data => {
+              if (data.success && data.resources) {
+                const resources = data.resources;
+                if (countBadge) countBadge.textContent = resources.length + (resources.length === 1 ? ' File' : ' Files');
+
+                // Update client-side cache
+                if (!window.LESSON_RESOURCES) window.LESSON_RESOURCES = {};
+                window.LESSON_RESOURCES[lessonId] = resources;
+
+                if (resources.length === 0) {
+                  container.innerHTML = '<div class="text-center py-2 text-muted fs-8 fst-italic">No attached files currently for this lesson.</div>';
+                  return;
+                }
+
+                let html = '<div class="d-flex flex-column gap-2">';
+                resources.forEach(r => {
+                  const iconCls = getResourceIconClass(r.file_type);
+                  html += `
+                    <div class="d-flex align-items-center justify-content-between p-2 bg-white rounded-2 border" id="edit-res-item-${r.id}">
+                      <div class="d-flex align-items-center gap-2 text-truncate me-2">
+                        <i class="bi ${iconCls} fs-4 flex-shrink-0"></i>
+                        <div class="text-truncate">
+                          <div class="fs-8 fw-semibold text-dark text-truncate">${r.file_name}</div>
+                          <small class="text-muted fs-9">${r.formatted_size} &bull; <span class="text-uppercase">${r.file_type}</span></small>
+                        </div>
+                      </div>
+                      <button type="button" class="btn btn-outline-danger btn-sm rounded-circle p-1 d-flex align-items-center justify-content-center btn-delete-attached-resource" 
+                        data-resource-id="${r.id}" data-lesson-id="${lessonId}" style="width: 28px; height: 28px;" title="Remove Attachment">
+                        <i class="bi bi-trash3"></i>
+                      </button>
+                    </div>
+                  `;
+                });
+                html += '</div>';
+                container.innerHTML = html;
+
+                // Bind delete resource buttons
+                container.querySelectorAll('.btn-delete-attached-resource').forEach(delBtn => {
+                  delBtn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    const resId = this.getAttribute('data-resource-id');
+                    const lesId = this.getAttribute('data-lesson-id');
+                    const confirmMsg = (typeof window.i18n__ === 'function') ? window.i18n__('delete_resource_confirm', 'Are you sure you want to remove this attachment?') : 'Are you sure you want to remove this attachment?';
+                    
+                    if (!confirm(confirmMsg)) return;
+
+                    delBtn.disabled = true;
+                    delBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+                    fetch('api/delete_resource.php', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ resource_id: resId })
+                    })
+                    .then(res => res.json())
+                    .then(delData => {
+                      if (delData.success) {
+                        const itemEl = document.getElementById(`edit-res-item-${resId}`);
+                        if (itemEl) itemEl.remove();
+                        
+                        // Reload resources for edit modal and active card
+                        loadLessonResourcesForEdit(lesId);
+                        window.renderActiveLessonResources(lesId);
+                      } else {
+                        alert(delData.message || 'Failed to remove attachment.');
+                        delBtn.disabled = false;
+                        delBtn.innerHTML = '<i class="bi bi-trash3"></i>';
+                      }
+                    })
+                    .catch(err => {
+                      console.error(err);
+                      alert('Server error removing attachment.');
+                      delBtn.disabled = false;
+                      delBtn.innerHTML = '<i class="bi bi-trash3"></i>';
+                    });
+                  });
+                });
+
+              } else {
+                container.innerHTML = '<div class="text-center py-2 text-danger fs-8">Failed to load attachments.</div>';
+              }
+            })
+            .catch(err => {
+              console.error(err);
+              container.innerHTML = '<div class="text-center py-2 text-danger fs-8">Error loading attachments.</div>';
+            });
+        }
+
+        // Edit Lesson Modal Populate
+        document.querySelectorAll('.edit-lesson-btn-trigger').forEach(btn => {
+          btn.addEventListener('click', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            const lid = this.getAttribute('data-lesson-id');
+            const ltitle = this.getAttribute('data-lesson-title');
+            const lduration = this.getAttribute('data-lesson-duration');
+            const lvideo = this.getAttribute('data-lesson-video');
+            const lcontent = this.getAttribute('data-lesson-content');
+
+            const idInput = document.getElementById('edit-lesson-id');
+            const titleInput = document.getElementById('edit-lesson-title');
+            const durInput = document.getElementById('edit-lesson-duration');
+            const vidInput = document.getElementById('edit-lesson-video');
+            const contInput = document.getElementById('edit-lesson-content');
+            const attachInput = document.getElementById('edit-lesson-attachments');
+
+            if (idInput) idInput.value = lid || '';
+            if (titleInput) titleInput.value = ltitle || '';
+            if (durInput) durInput.value = lduration || '';
+            if (vidInput) vidInput.value = lvideo || '';
+            if (contInput) contInput.value = lcontent || '';
+            if (attachInput) attachInput.value = '';
+
+            if (lid) {
+              loadLessonResourcesForEdit(lid);
+            }
+          });
+        });
+
+        // Edit Lesson Form Submit (Multipart / FormData)
+        const editLessonForm = document.getElementById('edit-lesson-form');
+        if (editLessonForm) {
+          editLessonForm.addEventListener('submit', function (e) {
+            e.preventDefault();
+            const submitBtn = editLessonForm.querySelector('button[type="submit"]');
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status"></span> Saving...';
+
+            const formData = new FormData(editLessonForm);
+            formData.set('course_id', "<?php echo htmlspecialchars($course_id); ?>");
+
+            fetch('api/edit_lesson.php', {
+              method: 'POST',
+              body: formData
+            })
+              .then(res => res.json())
+              .then(data => {
+                if (data.success) {
+                  alert('Lesson updated successfully!');
+                  location.reload();
+                } else {
+                  alert('Failed to update lesson: ' + data.message);
+                  submitBtn.disabled = false;
+                  submitBtn.innerHTML = 'Save Changes';
+                }
+              })
+              .catch(err => {
+                console.error(err);
+                alert('Server connection error.');
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = 'Save Changes';
+              });
+          });
+        }
+
+        // Add Lesson form submit (Multipart / FormData)
         const addLessonForm = document.getElementById('add-lesson-form');
         if (addLessonForm) {
           addLessonForm.addEventListener('submit', function (e) {
@@ -1447,18 +1724,12 @@ try {
             submitBtn.disabled = true;
             submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status"></span> Saving...';
 
+            const formData = new FormData(addLessonForm);
+            formData.set('course_id', "<?php echo htmlspecialchars($course_id); ?>");
+
             fetch('api/create_lesson.php', {
               method: 'POST',
-              headers: {
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({
-                course_id: "<?php echo htmlspecialchars($course_id); ?>",
-                title: document.getElementById('lesson-title').value,
-                duration: document.getElementById('lesson-duration').value,
-                video_url: document.getElementById('lesson-video').value,
-                content: document.getElementById('lesson-content').value
-              })
+              body: formData
             })
               .then(res => res.json())
               .then(data => {
@@ -1555,6 +1826,9 @@ try {
             .then(res => res.json())
             .then(data => {
               if (data.success) {
+                if (data.action === 'soft_deleted') {
+                  alert(data.message || 'This course has active students. It has been unpublished from the catalog. You have 14 days to restore it.');
+                }
                 window.location.href = 'my_courses.php';
               } else {
                 alert(data.message || 'Error deleting course.');
@@ -1650,15 +1924,9 @@ try {
             if (count) count.remove();
           }
         })
-        .catch(err => console.error('Error marking notifications read:', err));
-    }
   </script>
-</body>
-
-</html> })
-.catch(err => console.error('Error marking notifications read:', err));
-}
-</script>
+  <!-- Modern Notification System JS Client -->
+  <script src="assets/js/notifications.js"></script>
 </body>
 
 </html>

@@ -43,6 +43,8 @@ if (empty($raw_avatar)) {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Live Classes - Coming Soon | Computerscience.lk</title>
+  <link rel="icon" type="image/x-icon" href="<?php echo function_exists('get_site_favicon') ? get_site_favicon() : 'assets/logo.png'; ?>?v=<?php echo time(); ?>">
+  <link rel="shortcut icon" href="<?php echo function_exists('get_site_favicon') ? get_site_favicon() : 'assets/logo.png'; ?>?v=<?php echo time(); ?>">
   <script src="assets/js/session_manager.js"></script>
 
   <!-- Local Bootstrap 5 CSS & Icons -->
@@ -51,6 +53,8 @@ if (empty($raw_avatar)) {
   
   <!-- Custom CSS -->
   <link rel="stylesheet" href="assets/css/style.css">
+  <!-- Modern Notification System Styles -->
+  <link rel="stylesheet" href="assets/css/notifications.css">
 
   <style>
     body {
@@ -132,79 +136,8 @@ if (empty($raw_avatar)) {
 </head>
 <body>
 
-  <!-- Site Navigation Header -->
-  <header class="moodle-header px-4 bg-white border-bottom shadow-sm">
-    <div class="container-fluid d-flex align-items-center justify-content-between">
-      
-      <!-- Brand Logo -->
-      <div class="d-flex align-items-center">
-        <a class="moodle-brand fw-bold text-decoration-none fs-4 d-flex align-items-center" href="index.php" style="color: #0f4c81;">
-          <img src="<?php echo get_site_logo(); ?>?v=<?php echo time(); ?>" alt="Logo" class="me-2" style="height: 32px; width: auto; object-fit: contain;">computerscience.lk
-        </a>
-      </div>
-
-      <!-- Center Navbar Links for Registered Users -->
-      <nav class="d-none d-lg-flex align-items-center gap-2">
-        <a href="index.php" class="btn btn-light px-3 text-secondary"><?php echo __('nav_home', 'Site Home'); ?></a>
-        <a href="dashboard.php" class="btn btn-light px-3 text-secondary"><?php echo __('nav_dashboard', 'Dashboard'); ?></a>
-        <a href="my_courses.php" class="btn btn-light px-3 text-secondary"><?php echo $is_teacher ? __('nav_uploaded_courses', 'Uploaded Courses') : __('nav_my_courses', 'My Courses'); ?></a>
-        <a href="live_classes.php" class="btn btn-light text-danger fw-bold px-3 d-inline-flex align-items-center gap-1.5 border border-danger border-opacity-25 bg-danger bg-opacity-10">
-          <i class="bi bi-broadcast text-danger fs-7"></i>
-          <span>Live Classes</span>
-        </a>
-      </nav>
-
-      <!-- Right Header Actions -->
-      <div class="d-flex align-items-center gap-2.5">
-        <!-- Notification Dropdown -->
-        <div class="dropdown">
-          <button class="text-secondary fs-5 border-0 bg-transparent p-2 position-relative dropdown-toggle no-caret" type="button" id="notificationDropdown" data-bs-toggle="dropdown" aria-expanded="false" onclick="markNotificationsAsRead()">
-            <i class="bi bi-bell"></i>
-            <?php if ($unread_count > 0): ?>
-              <span class="position-absolute top-1 end-1 translate-middle badge rounded-circle bg-danger" id="notification-badge" style="padding: 4px; font-size: 0.5rem;"><?php echo $unread_count; ?></span>
-            <?php endif; ?>
-          </button>
-          <ul class="dropdown-menu dropdown-menu-end shadow border-light py-2" aria-labelledby="notificationDropdown" style="width: 320px; max-height: 400px; overflow-y: auto;">
-            <li class="dropdown-header fw-bold text-dark border-bottom pb-2 mb-2 d-flex justify-content-between align-items-center">
-              <span>Notifications</span>
-              <?php if ($unread_count > 0): ?>
-                <span class="badge bg-primary text-white fs-9" id="notification-count"><?php echo $unread_count; ?> new</span>
-              <?php endif; ?>
-            </li>
-            <?php if (empty($notifications)): ?>
-              <li class="px-3 py-4 text-center text-muted fs-8 italic">No notifications yet.</li>
-            <?php else: ?>
-              <?php foreach ($notifications as $notif): ?>
-                <li class="px-3 py-2 border-bottom last-border-0 <?php echo $notif['is_read'] ? 'opacity-70' : 'bg-light bg-opacity-50 fw-semibold'; ?>">
-                  <div class="fs-8 text-dark mb-1"><?php echo htmlspecialchars($notif['message']); ?></div>
-                  <small class="text-muted fs-9"><i class="bi bi-clock me-1"></i><?php echo date('M d, H:i', strtotime($notif['created_at'])); ?></small>
-                </li>
-              <?php endforeach; ?>
-            <?php endif; ?>
-          </ul>
-        </div>
-
-        <!-- User Profile Dropdown -->
-        <div class="dropdown ms-2">
-          <button class="btn p-0 border-0 bg-transparent dropdown-toggle no-caret d-flex align-items-center gap-2" type="button" id="userMenuDropdown" data-bs-toggle="dropdown" aria-expanded="false">
-            <img src="<?php echo htmlspecialchars($avatar_src); ?>" alt="Avatar" class="rounded-circle border shadow-sm" style="width: 38px; height: 38px; object-fit: cover;">
-            <span class="fw-semibold text-dark fs-8 d-none d-md-inline"><?php echo htmlspecialchars($user_name); ?></span>
-          </button>
-          <ul class="dropdown-menu dropdown-menu-end shadow-sm border-0 py-2" aria-labelledby="userMenuDropdown">
-            <li class="px-3 py-2 border-bottom mb-1">
-              <div class="fw-bold text-dark fs-8"><?php echo htmlspecialchars($user_name); ?></div>
-              <small class="text-muted text-capitalize fs-9"><?php echo htmlspecialchars($user_role); ?> Account</small>
-            </li>
-            <li><a class="dropdown-item fs-8" href="profile.php"><i class="bi bi-person me-2 text-primary"></i>Profile</a></li>
-            <li><a class="dropdown-item fs-8" href="dashboard.php"><i class="bi bi-speedometer2 me-2 text-primary"></i>Dashboard</a></li>
-            <li><hr class="dropdown-divider"></li>
-            <li><a class="dropdown-item fs-8 text-danger" href="logout.php"><i class="bi bi-box-arrow-right me-2"></i>Log Out</a></li>
-          </ul>
-        </div>
-      </div>
-
-    </div>
-  </header>
+  <!-- Unified LMS Top Header Bar -->
+  <?php include __DIR__ . '/includes/navbar.php'; ?>
 
   <!-- Main Hero & Feature Showcase -->
   <main class="container py-5" style="max-width: 1140px; margin-top: 30px;">
@@ -268,19 +201,7 @@ if (empty($raw_avatar)) {
 
   <!-- Bootstrap 5 JS -->
   <script src="assets/js/bootstrap.bundle.min.js"></script>
-  <script>
-    function markNotificationsAsRead() {
-      fetch('api/read_notifications.php', { method: 'POST' })
-        .then(res => res.json())
-        .then(data => {
-          if (data.success) {
-            const badge = document.getElementById('notification-badge');
-            const count = document.getElementById('notification-count');
-            if (badge) badge.remove();
-            if (count) count.innerText = '0 new';
-          }
-        });
-    }
-  </script>
+  <!-- Modern Notification System JS Client -->
+  <script src="assets/js/notifications.js"></script>
 </body>
 </html>

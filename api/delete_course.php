@@ -14,7 +14,7 @@ $user_id = (int)$_SESSION['user_id'];
 $user_role = $_SESSION['user_role'] ?? 'student';
 $is_admin = in_array($user_role, ['admin', 'super_admin']);
 
-// Parse input
+// Parse input (supports JSON or Form POST)
 $input = json_decode(file_get_contents('php://input'), true) ?? $_POST;
 $course_id = trim($input['course_id'] ?? '');
 
@@ -41,48 +41,101 @@ try {
         exit;
     }
 
-    // Begin deletion
+    // Check enrolled students count
+    $enrolledStmt = $pdo->prepare("SELECT COUNT(*) FROM enrollments WHERE course_id = ?");
+    $enrolledStmt->execute([$course_id]);
+    $enrolled_count = (int)$enrolledStmt->fetchColumn();
+
+    // Case B: Has >= 1 enrolled student -> Soft Delete with 14-day grace period
+    if ($enrolled_count > 0) {
+        $updateStmt = $pdo->prepare("UPDATE courses SET status = 'disabled', is_archived = 1, deleted_at = NOW() WHERE id = ?");
+        $updateStmt->execute([$course_id]);
+
+        echo json_encode([
+            'success' => true,
+            'action' => 'soft_deleted',
+            'course_id' => $course_id,
+            'enrolled_count' => $enrolled_count,
+            'message' => 'This course has active students. It has been unpublished from the catalog. You have 14 days to restore it.'
+        ]);
+        exit;
+    }
+
+    // Case A: 0 Enrolled Students -> Direct Hard Delete
     $pdo->beginTransaction();
 
-    // Delete lessons
+    // 1. Delete lesson progress and completed lessons associated with course lessons
+    try {
+        $pdo->prepare("DELETE lp FROM lesson_progress lp INNER JOIN lessons l ON l.id = lp.lesson_id WHERE l.course_id = ?")->execute([$course_id]);
+    } catch (PDOException $e) {}
+
+    try {
+        $pdo->prepare("DELETE cl FROM completed_lessons cl INNER JOIN lessons l ON l.id = cl.lesson_id WHERE l.course_id = ?")->execute([$course_id]);
+    } catch (PDOException $e) {}
+
+    // 2. Delete lessons
     $stmt = $pdo->prepare("DELETE FROM lessons WHERE course_id = ?");
     $stmt->execute([$course_id]);
 
-    // Delete quizzes
+    // 3. Delete quizzes
     $stmt = $pdo->prepare("DELETE FROM quizzes WHERE course_id = ?");
     $stmt->execute([$course_id]);
 
-    // Delete quiz settings if table exists
+    // 4. Delete quiz settings if table exists
     try {
         $stmt = $pdo->prepare("DELETE FROM course_quiz_settings WHERE course_id = ?");
         $stmt->execute([$course_id]);
     } catch (PDOException $e) {}
 
-    // Delete quiz attempts if table exists
+    // 5. Delete quiz attempts if table exists
     try {
         $stmt = $pdo->prepare("DELETE FROM quiz_attempts WHERE course_id = ?");
         $stmt->execute([$course_id]);
     } catch (PDOException $e) {}
 
-    // Delete enrollments
+    // 6. Delete quiz results if table exists
     try {
-        $stmt = $pdo->prepare("DELETE FROM enrollments WHERE course_id = ?");
+        $stmt = $pdo->prepare("DELETE FROM quiz_results WHERE course_id = ?");
         $stmt->execute([$course_id]);
     } catch (PDOException $e) {}
 
-    // Delete bank payments if table exists
+    // 7. Delete forum replies & topics
+    try {
+        $pdo->prepare("DELETE fr FROM forum_replies fr INNER JOIN forum_topics ft ON ft.qa_id = fr.qa_id WHERE ft.course_id = ?")->execute([$course_id]);
+        $pdo->prepare("DELETE FROM forum_topics WHERE course_id = ?")->execute([$course_id]);
+    } catch (PDOException $e) {}
+
+    // 8. Delete certificate requests if table exists
+    try {
+        $stmt = $pdo->prepare("DELETE FROM certificate_requests WHERE course_id = ?");
+        $stmt->execute([$course_id]);
+    } catch (PDOException $e) {}
+
+    // 9. Delete bank payments if table exists
     try {
         $stmt = $pdo->prepare("DELETE FROM bank_payments WHERE course_id = ?");
         $stmt->execute([$course_id]);
     } catch (PDOException $e) {}
 
-    // Delete the course record itself
+    // 10. Delete enrollments
+    try {
+        $stmt = $pdo->prepare("DELETE FROM enrollments WHERE course_id = ?");
+        $stmt->execute([$course_id]);
+    } catch (PDOException $e) {}
+
+    // 11. Delete the course record itself
     $stmt = $pdo->prepare("DELETE FROM courses WHERE id = ?");
     $stmt->execute([$course_id]);
 
     $pdo->commit();
 
-    echo json_encode(['success' => true, 'message' => 'Course deleted successfully.']);
+    echo json_encode([
+        'success' => true,
+        'action' => 'hard_deleted',
+        'course_id' => $course_id,
+        'enrolled_count' => 0,
+        'message' => 'Course deleted successfully.'
+    ]);
 } catch (Exception $e) {
     if (isset($pdo) && $pdo->inTransaction()) {
         $pdo->rollBack();

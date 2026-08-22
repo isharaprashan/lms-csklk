@@ -94,7 +94,7 @@ document.addEventListener('DOMContentLoaded', function () {
       let currentHref = btn.getAttribute('href') || '';
       if (currentHref) {
         try {
-          const url = new URL(currentHref, window.location.origin);
+          const url = new URL(currentHref, window.location.href);
           url.searchParams.set('lesson_id', lessonId);
           btn.setAttribute('href', url.pathname + url.search);
         } catch (e) {
@@ -204,9 +204,9 @@ document.addEventListener('DOMContentLoaded', function () {
       this.classList.add('active', 'bg-light');
 
       // Swap views: show video, hide quiz/forum
-      videoView.classList.remove('d-none');
-      quizView.classList.add('d-none');
-      forumView.classList.add('d-none');
+      if (videoView) videoView.classList.remove('d-none');
+      if (quizView) quizView.classList.add('d-none');
+      if (forumView) forumView.classList.add('d-none');
 
       // Update video player
       const videoUrl = this.getAttribute('data-lesson-video');
@@ -224,14 +224,17 @@ document.addEventListener('DOMContentLoaded', function () {
       }
 
       if (window.HAS_ACCESS) {
-        checkAndRenderAccess(videoView);
+        if (videoView) checkAndRenderAccess(videoView);
         renderPlayer(videoUrl, lessonId);
       } else {
-        checkAndRenderAccess(videoView, "Premium Lesson Locked", "This video lecture is part of a premium syllabus module.");
+        if (videoView) checkAndRenderAccess(videoView, "Premium Lesson Locked", "This video lecture is part of a premium syllabus module.");
       }
 
       updateCompletionButtonState(lessonId);
       updateQuizForLesson(lessonId);
+      if (typeof window.renderActiveLessonResources === 'function') {
+        window.renderActiveLessonResources(lessonId);
+      }
     });
   });
 
@@ -242,11 +245,11 @@ document.addEventListener('DOMContentLoaded', function () {
       this.classList.add('active', 'bg-light');
 
       // Swap views: show quiz, hide video/forum
-      videoView.classList.add('d-none');
-      quizView.classList.remove('d-none');
-      forumView.classList.add('d-none');
+      if (videoView) videoView.classList.add('d-none');
+      if (quizView) quizView.classList.remove('d-none');
+      if (forumView) forumView.classList.add('d-none');
 
-      checkAndRenderAccess(quizView, "Quiz Locked", "Evaluations and quizzes are restricted to enrolled students.");
+      if (quizView) checkAndRenderAccess(quizView, "Quiz Locked", "Evaluations and quizzes are restricted to enrolled students.");
     });
   }
 
@@ -257,11 +260,11 @@ document.addEventListener('DOMContentLoaded', function () {
       this.classList.add('active', 'bg-light');
 
       // Swap views: show forum, hide video/quiz
-      videoView.classList.add('d-none');
-      quizView.classList.add('d-none');
-      forumView.classList.remove('d-none');
+      if (videoView) videoView.classList.add('d-none');
+      if (quizView) quizView.classList.add('d-none');
+      if (forumView) forumView.classList.remove('d-none');
 
-      if (checkAndRenderAccess(forumView, "Discussion Board Locked", "Syllabus discussion threads and academic forums are restricted to enrolled students.")) {
+      if (forumView && checkAndRenderAccess(forumView, "Discussion Board Locked", "Syllabus discussion threads and academic forums are restricted to enrolled students.")) {
         loadQABoard(); // Fetch latest discussion board state
       }
     });
@@ -1151,7 +1154,7 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   // --- Teacher Section: Edit Course & Edit Lesson Handlers ---
-  if (window.IS_TEACHER) {
+  if (window.IS_TEACHER || window.IS_ADMIN) {
     // 1. Edit Course Toggle Logic
     const editPriceToggle = document.getElementById('edit-price-toggle');
     const editPriceToggleLabel = document.getElementById('edit-price-toggle-label');

@@ -17,12 +17,13 @@ try {
     $query = isset($_GET['query']) ? trim($_GET['query']) : '';
     $category = isset($_GET['category']) ? trim($_GET['category']) : '';
 
-    // Build SQL query to fetch approved courses (or owned courses if logged-in tutor)
-    $sql = "SELECT c.*, u.name as u_name, u.avatar as u_avatar FROM courses c LEFT JOIN users u ON c.tutor_id = u.id WHERE (c.status = 'approved'";
-    if (isset($_SESSION['user_id'])) {
-        $sql .= " OR c.tutor_id = " . intval($_SESSION['user_id']);
-    }
-    $sql .= ")";
+    // Build SQL query to fetch active/approved courses (excluding disabled or archived courses)
+    $sql = "SELECT c.*, u.name as u_name, u.avatar as u_avatar 
+            FROM courses c 
+            LEFT JOIN users u ON c.tutor_id = u.id 
+            WHERE (c.status = 'approved' OR c.status = 'active') 
+              AND (c.is_archived = 0 OR c.is_archived IS NULL) 
+              AND (c.deleted_at IS NULL)";
     $params = [];
 
     if ($category !== '') {

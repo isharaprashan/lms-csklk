@@ -164,6 +164,8 @@ $inactive_students = $total_students - $active_students;
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Registered Students Directory - Admin Console</title>
+    <link rel="icon" type="image/x-icon" href="../<?php echo function_exists('get_site_favicon') ? get_site_favicon() : 'assets/logo.png'; ?>?v=<?php echo time(); ?>">
+    <link rel="shortcut icon" href="../<?php echo function_exists('get_site_favicon') ? get_site_favicon() : 'assets/logo.png'; ?>?v=<?php echo time(); ?>">
 
     <!-- Local Bootstrap 5 CSS & Icons -->
     <link href="assets/css/bootstrap.min.css" rel="stylesheet">

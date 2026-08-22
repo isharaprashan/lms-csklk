@@ -39,13 +39,21 @@ if (empty($course_id) || empty($title) || empty($category) || empty($long_desc))
 try {
     $pdo = getDBConnection();
     
-    // Verify course exists and belongs to this teacher
-    $stmt = $pdo->prepare("SELECT thumbnail FROM courses WHERE id = ? AND tutor_id = ?");
-    $stmt->execute([$course_id, $user_id]);
+    // Verify course exists and belongs to this teacher or user is admin
+    $stmt = $pdo->prepare("SELECT thumbnail, tutor_id, status FROM courses WHERE id = ?");
+    $stmt->execute([$course_id]);
     $course = $stmt->fetch();
     
     if (!$course) {
-        echo json_encode(['success' => false, 'message' => 'Course not found or unauthorized to edit.']);
+        echo json_encode(['success' => false, 'message' => 'Course not found.']);
+        exit;
+    }
+    
+    $user_role = $_SESSION['user_role'] ?? 'student';
+    $is_admin = in_array($user_role, ['admin', 'super_admin']);
+    
+    if (!$is_admin && !empty($course['tutor_id']) && intval($course['tutor_id']) !== intval($user_id)) {
+        echo json_encode(['success' => false, 'message' => 'You do not have permission to edit this course.']);
         exit;
     }
     
@@ -73,7 +81,7 @@ try {
         }
     }
     
-    // Update course details and set status to pending for admin approval
+    // Update course details
     $stmt = $pdo->prepare("UPDATE courses SET 
         title = ?, 
         category = ?, 
@@ -83,9 +91,8 @@ try {
         duration = ?, 
         short_description = ?, 
         long_description = ?, 
-        thumbnail = ?, 
-        status = 'pending' 
-        WHERE id = ? AND tutor_id = ?");
+        thumbnail = ?
+        WHERE id = ?");
         
     $stmt->execute([
         $title,
@@ -97,8 +104,7 @@ try {
         $short_desc,
         $long_desc,
         $thumbnail,
-        $course_id,
-        $user_id
+        $course_id
     ]);
     
     echo json_encode([

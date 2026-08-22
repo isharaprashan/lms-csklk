@@ -30,8 +30,8 @@ try {
     }
   }
 
-  // Fetch courses for the sidebar
-  $stmt = $pdo->query("SELECT id, title, tutor_id FROM courses");
+  // Fetch courses for the sidebar (active/approved only)
+  $stmt = $pdo->query("SELECT id, title, tutor_id FROM courses WHERE (status = 'approved' OR status = 'active') AND (is_archived = 0 OR is_archived IS NULL) AND deleted_at IS NULL");
   $all_courses_sidebar = $stmt->fetchAll();
 
   // Fetch active site announcements
@@ -81,6 +81,8 @@ try {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Computerscience.lk | Site Home</title>
+  <link rel="icon" type="image/x-icon" href="<?php echo function_exists('get_site_favicon') ? get_site_favicon() : 'assets/logo.png'; ?>?v=<?php echo time(); ?>">
+  <link rel="shortcut icon" href="<?php echo function_exists('get_site_favicon') ? get_site_favicon() : 'assets/logo.png'; ?>?v=<?php echo time(); ?>">
   <script src="assets/js/session_manager.js"></script>
 
   <!-- Local Bootstrap 5 CSS -->
@@ -111,6 +113,8 @@ try {
 
   <!-- Custom CSS -->
   <link rel="stylesheet" href="assets/css/style.css">
+  <!-- Modern Notification System Styles -->
+  <link rel="stylesheet" href="assets/css/notifications.css">
   <style>
     .no-caret::after {
       display: none !important;
@@ -159,152 +163,23 @@ try {
 
 <body class="bg-light">
 
-  <!-- Moodle Top Header Bar -->
-  <header class="moodle-header px-3 px-md-4 shadow-sm">
-    <div class="d-flex align-items-center w-100 justify-content-between">
-
-      <!-- Left: Toggle button + Brand -->
-      <div class="d-flex align-items-center gap-3">
-        <button id="drawer-toggle"
-          class="btn btn-light border-0 rounded-circle p-2 fs-5 d-flex align-items-center justify-content-center"
-          style="width: 42px; height: 42px;">
-          <i class="bi bi-list"></i>
-        </button>
-        <a class="moodle-brand fw-bold text-decoration-none fs-4 d-flex align-items-center" href="index.php"
-          style="color: #0f4c81;">
-          <img src="<?php echo get_site_logo(); ?>?v=<?php echo time(); ?>" alt="Logo" class="me-2"
-            style="height: 32px; width: auto; object-fit: contain;">computerscience.lk
-        </a>
-      </div>
-
-      <!-- Center: Main Navbar links -->
-      <nav class="d-none d-lg-flex align-items-center gap-2">
-        <a href="index.php"
-          class="btn btn-light text-primary fw-bold px-3"><?php echo __('nav_home', 'Site Home'); ?></a>
-        <a href="dashboard.php"
-          class="btn btn-light px-3 text-secondary"><?php echo __('nav_dashboard', 'Dashboard'); ?></a>
-        <?php if ($logged_in): ?>
-          <?php $is_teacher = ($user['role'] ?? 'student') === 'teacher'; ?>
-          <a href="my_courses.php"
-            class="btn btn-light px-3 text-secondary"><?php echo $is_teacher ? __('nav_uploaded_courses', 'Uploaded Courses') : __('nav_my_courses', 'My Courses'); ?></a>
-          <a href="live_classes.php" class="btn btn-light px-3 text-danger fw-semibold d-inline-flex align-items-center gap-1.5">
-            <i class="bi bi-broadcast text-danger fs-7"></i>
-            <span>Live Classes</span>
-          </a>
-        <?php else: ?>
-          <a href="index.php#courses-section"
-            class="btn btn-light px-3 text-secondary"><?php echo __('nav_courses', 'Course Catalog'); ?></a>
-        <?php endif; ?>
-      </nav>
-
-      <!-- Right: Actions, Notifications, Profiles -->
-      <div class="d-flex align-items-center gap-2.5">
-        <!-- Language Switcher Dropdown -->
-        <div class="dropdown">
-          <button
-            class="btn btn-sm btn-light border text-secondary dropdown-toggle d-flex align-items-center gap-1.5 rounded-pill px-2.5 py-1"
-            type="button" id="langDropdown" data-bs-toggle="dropdown" aria-expanded="false">
-            <i class="bi bi-globe text-primary fs-7"></i>
-            <span
-              class="fw-semibold fs-8"><?php echo (($_SESSION['lang'] ?? 'en') === 'si') ? 'සිංහල' : 'English'; ?></span>
-          </button>
-          <ul class="dropdown-menu dropdown-menu-end shadow-sm border-0 py-1" aria-labelledby="langDropdown">
-            <li>
-              <a class="dropdown-item fs-8 d-flex align-items-center justify-content-between <?php echo (($_SESSION['lang'] ?? 'en') === 'en') ? 'active fw-bold' : ''; ?>"
-                href="#" onclick="switchLanguage('en'); return false;">
-                <span>English</span>
-                <?php if (($_SESSION['lang'] ?? 'en') === 'en'): ?><i
-                    class="bi bi-check-lg text-primary ms-2"></i><?php endif; ?>
-              </a>
-            </li>
-            <li>
-              <a class="dropdown-item fs-8 d-flex align-items-center justify-content-between <?php echo (($_SESSION['lang'] ?? 'en') === 'si') ? 'active fw-bold' : ''; ?>"
-                href="#" onclick="switchLanguage('si'); return false;">
-                <span>සිංහල</span>
-                <?php if (($_SESSION['lang'] ?? 'en') === 'si'): ?><i
-                    class="bi bi-check-lg text-primary ms-2"></i><?php endif; ?>
-              </a>
-            </li>
-          </ul>
-        </div>
-
-        <?php if ($logged_in): ?>
-          <!-- Notifications -->
-          <!-- Notification Dropdown -->
-          <div class="dropdown">
-            <button class="text-secondary fs-5 border-0 bg-transparent p-2 position-relative dropdown-toggle no-caret"
-              type="button" id="notificationDropdown" data-bs-toggle="dropdown" aria-expanded="false"
-              onclick="markNotificationsAsRead()">
-              <i class="bi bi-bell"></i>
-              <?php if ($unread_count > 0): ?>
-                <span class="position-absolute top-1 end-1 translate-middle badge rounded-circle bg-danger"
-                  id="notification-badge" style="padding: 4px; font-size: 0.5rem;">
-                  <?php echo $unread_count; ?>
-                </span>
-              <?php endif; ?>
-            </button>
-            <ul class="dropdown-menu dropdown-menu-end shadow border-light py-2" aria-labelledby="notificationDropdown"
-              style="width: 320px; max-height: 400px; overflow-y: auto; z-index: 1050;">
-              <li
-                class="dropdown-header fw-bold text-dark border-bottom pb-2 mb-2 d-flex justify-content-between align-items-center">
-                <span><?php echo __('notifications', 'Notifications'); ?></span>
-                <?php if ($unread_count > 0): ?>
-                  <span class="badge bg-primary text-white fs-9" id="notification-count"><?php echo $unread_count; ?>
-                    new</span>
-                <?php endif; ?>
-              </li>
-              <?php if (empty($notifications)): ?>
-                <li class="px-3 py-4 text-center text-muted fs-8 italic">
-                  <?php echo __('no_notifications', 'No notifications yet.'); ?></li>
-              <?php else: ?>
-                <?php foreach ($notifications as $notif): ?>
-                  <li
-                    class="px-3 py-2 border-bottom last-border-0 <?php echo $notif['is_read'] ? 'opacity-70' : 'bg-light bg-opacity-50 fw-semibold'; ?>">
-                    <div class="fs-8 text-dark mb-1"><?php echo htmlspecialchars($notif['message']); ?></div>
-                    <small class="text-muted fs-9"><i
-                        class="bi bi-clock me-1"></i><?php echo date('M d, H:i', strtotime($notif['created_at'])); ?></small>
-                  </li>
-                <?php endforeach; ?>
-              <?php endif; ?>
-            </ul>
-          </div>
-          <!-- Profile dropdown -->
-          <div class="dropdown">
-            <button class="user-menu-btn dropdown-toggle" type="button" data-bs-toggle="dropdown">
-              <img src="<?php echo htmlspecialchars($user['avatar']); ?>" class="rounded-circle"
-                style="width: 32px; height: 32px; object-fit: cover;" alt="Profile">
-              <span
-                class="d-none d-md-inline text-secondary fw-semibold text-sm"><?php echo htmlspecialchars(explode(' ', $user['name'])[0]); ?></span>
-            </button>
-            <ul class="dropdown-menu dropdown-menu-end shadow border-light">
-              <li><a class="dropdown-item" href="dashboard.php"><i class="bi bi-speedometer2 me-2"></i>
-                  <?php echo __('nav_dashboard', 'Dashboard'); ?></a></li>
-              <li><a class="dropdown-item" href="profile.php"><i class="bi bi-person me-2"></i>
-                  <?php echo __('nav_profile', 'Profile'); ?></a></li>
-              <li>
-                <hr class="dropdown-divider">
-              </li>
-              <li><a class="dropdown-item text-danger" href="logout.php"><i class="bi bi-box-arrow-right me-2"></i>
-                  <?php echo __('nav_logout', 'Logout'); ?></a></li>
-            </ul>
-          </div>
-          <li><a class="dropdown-item text-danger" href="logout.php"><i class="bi bi-box-arrow-right me-2"></i> Log
-              out</a></li>
-          </ul>
-        </div>
-      <?php else: ?>
-        <a href="login.php" class="btn btn-outline-primary btn-sm px-3 rounded-pill fw-semibold">Log In</a>
-        <a href="register.php" class="btn btn-primary btn-sm px-3 rounded-pill text-white fw-semibold"
-          style="background-color: #0f4c81; border: none;">Register</a>
-      <?php endif; ?>
-    </div>
-
-    </div>
-  </header>
+  <!-- Unified LMS Top Header Bar -->
+  <?php include __DIR__ . '/includes/navbar.php'; ?>
 
   <!-- Moodle Left Navigation Drawer -->
   <aside id="moodle-drawer" class="moodle-drawer collapsed">
     <div class="d-flex flex-column">
+      <!-- Drawer Header with Prominent Close Button -->
+      <div class="px-3 py-2.5 mb-2 d-flex align-items-center justify-content-between border-bottom bg-light bg-opacity-50">
+        <span class="fs-8 fw-bold text-uppercase tracking-wider text-muted d-flex align-items-center gap-1.5">
+          <i class="bi bi-compass-fill text-primary"></i>
+          <span><?php echo __('navigation', 'Navigation'); ?></span>
+        </span>
+        <button type="button" class="btn btn-sm btn-light border rounded-circle d-flex align-items-center justify-content-center drawer-close-trigger text-secondary" style="width: 32px; height: 32px;" title="<?php echo __('close', 'Close'); ?>">
+          <i class="bi bi-x-lg fs-6"></i>
+        </button>
+      </div>
+
       <a href="index.php" class="drawer-link active">
         <i class="bi bi-house-door fs-5 text-primary"></i> Site Home
       </a>
@@ -737,36 +612,12 @@ try {
         });
     }
   </script>
-  <script>
-    document.addEventListener('DOMContentLoaded', function () {
-      const toggleBtn = document.getElementById('drawer-toggle');
-      const drawer = document.getElementById('moodle-drawer');
-      const wrapper = document.getElementById('moodle-content-wrapper');
 
-      toggleBtn.addEventListener('click', function () {
-        drawer.classList.toggle('collapsed');
-        wrapper.classList.toggle('full-width');
-      });
-    });
-  </script>
 
   <!-- Main JS file handling AJAX Catalog and Interactions -->
   <script src="assets/js/main.js"></script>
-  <script>
-    function markNotificationsAsRead() {
-      fetch('api/read_notifications.php')
-        .then(res => res.json())
-        .then(data => {
-          if (data.success) {
-            const badge = document.getElementById('notification-badge');
-            if (badge) badge.remove();
-            const count = document.getElementById('notification-count');
-            if (count) count.remove();
-          }
-        })
-        .catch(err => console.error('Error marking notifications read:', err));
-    }
-  </script>
+  <!-- Modern Notification System JS Client -->
+  <script src="assets/js/notifications.js"></script>
 </body>
 
 </html>
