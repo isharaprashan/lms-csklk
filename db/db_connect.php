@@ -248,16 +248,82 @@ function ensureMigrations($pdo)
             `title` VARCHAR(255) NOT NULL,
             `content` TEXT NOT NULL,
             `badge_text` VARCHAR(50) NULL,
+            `category` VARCHAR(50) DEFAULT 'notice',
             `status` VARCHAR(20) DEFAULT 'active',
             `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;");
     }
 
+    try {
+        $pdo->query("SELECT category FROM site_announcements LIMIT 1");
+    } catch (PDOException $e) {
+        $pdo->exec("ALTER TABLE site_announcements ADD COLUMN category VARCHAR(50) DEFAULT 'notice' AFTER badge_text");
+    }
+
     $announcementCheck = $pdo->query("SELECT COUNT(*) FROM site_announcements");
     if ($announcementCheck->fetchColumn() == 0) {
-        $pdo->exec("INSERT INTO site_announcements (title, content, badge_text, status) VALUES
-        ('Registration open for Algorithms 2026 Batch', 'The new academic program covering complex sorting paradigms and computational models starts next Tuesday. Check requirements in the course directory.', 'July 15, 2026', 'active'),
-        ('Apache and MySQL database maintenance', 'The local XAMPP database instances will be offline briefly on Sunday morning for index optimizations. Direct AJAX operations will be paused.', 'July 10, 2026', 'active')");
+        $pdo->exec("INSERT INTO site_announcements (title, content, badge_text, category, status) VALUES
+        ('Registration open for Algorithms 2026 Batch', 'The new academic program covering complex sorting paradigms and computational models starts next Tuesday. Check requirements in the course directory.', 'July 15, 2026', 'launch', 'active'),
+        ('Special Weekend Workshop on Cloud & Microservices', 'Join industry architects for an intensive live session on Kubernetes and distributed microservice patterns with exclusive early-bird access.', 'Special Offer', 'offer', 'active'),
+        ('Scheduled Apache and MySQL database maintenance', 'The local XAMPP database instances will be offline briefly on Sunday morning for index optimizations. Direct operations will resume promptly.', 'Maintenance', 'notice', 'active')");
+    }
+
+    // 3.7.0 Ensure promotional_banners table exists and seed default records
+    try {
+        $pdo->query("SELECT id FROM promotional_banners LIMIT 1");
+    } catch (PDOException $e) {
+        $pdo->exec("CREATE TABLE IF NOT EXISTS `promotional_banners` (
+            `id` INT AUTO_INCREMENT PRIMARY KEY,
+            `title` VARCHAR(255) NOT NULL,
+            `subtitle` VARCHAR(255) NULL,
+            `image_path` VARCHAR(255) NOT NULL,
+            `details_content` TEXT NOT NULL,
+            `cta_button_text` VARCHAR(100) DEFAULT 'Learn More',
+            `cta_button_url` VARCHAR(255) NULL,
+            `display_order` INT DEFAULT 0,
+            `is_active` TINYINT(1) DEFAULT 1,
+            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;");
+    }
+
+    // Ensure all promotional_banners columns exist if upgraded
+    try {
+        $pdo->query("SELECT subtitle FROM promotional_banners LIMIT 1");
+    } catch (PDOException $e) {
+        $pdo->exec("ALTER TABLE promotional_banners ADD COLUMN subtitle VARCHAR(255) NULL AFTER title");
+    }
+    try {
+        $pdo->query("SELECT details_content FROM promotional_banners LIMIT 1");
+    } catch (PDOException $e) {
+        $pdo->exec("ALTER TABLE promotional_banners ADD COLUMN details_content TEXT NOT NULL AFTER image_path");
+    }
+    try {
+        $pdo->query("SELECT cta_button_text FROM promotional_banners LIMIT 1");
+    } catch (PDOException $e) {
+        $pdo->exec("ALTER TABLE promotional_banners ADD COLUMN cta_button_text VARCHAR(100) DEFAULT 'Learn More' AFTER details_content");
+    }
+    try {
+        $pdo->query("SELECT cta_button_url FROM promotional_banners LIMIT 1");
+    } catch (PDOException $e) {
+        $pdo->exec("ALTER TABLE promotional_banners ADD COLUMN cta_button_url VARCHAR(255) NULL AFTER cta_button_text");
+    }
+    try {
+        $pdo->query("SELECT display_order FROM promotional_banners LIMIT 1");
+    } catch (PDOException $e) {
+        $pdo->exec("ALTER TABLE promotional_banners ADD COLUMN display_order INT DEFAULT 0 AFTER cta_button_url");
+    }
+    try {
+        $pdo->query("SELECT is_active FROM promotional_banners LIMIT 1");
+    } catch (PDOException $e) {
+        $pdo->exec("ALTER TABLE promotional_banners ADD COLUMN is_active TINYINT(1) DEFAULT 1 AFTER display_order");
+    }
+
+    $bannerCheck = $pdo->query("SELECT COUNT(*) FROM promotional_banners");
+    if ($bannerCheck->fetchColumn() == 0) {
+        $pdo->exec("INSERT INTO promotional_banners (title, subtitle, image_path, details_content, cta_button_text, cta_button_url, display_order, is_active) VALUES
+        ('Full-Stack Software Engineering 2026 Batch', 'Master Modern Web Development, Cloud Infrastructure & DevOps with Industry Mentors', 'https://images.unsplash.com/photo-1517694712202-14dd9538aa97?w=1200&auto=format&fit=crop&q=80', 'Embark on an intensive, immersive journey through modern full-stack development. Covering HTML5, Modern CSS, React, PHP, Node.js, relational database architecture, Docker containers, and automated deployment pipelines.<br><br><strong>Key Features:</strong><br>• Hands-on project portfolio building<br>• Live weekly interactive mentor sessions<br>• Verified Certificate of Academic Completion<br>• Career readiness and technical interview preparation<br><br>Learn more and register at: https://computerscience.lk/bootcamp-curriculum', '', '', 1, 1),
+        ('AI & Data Science Advanced Masterclass', 'Deep Learning, Neural Networks & Machine Learning Pipelines', 'https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=1200&auto=format&fit=crop&q=80', 'Unlock high-demand skills in Artificial Intelligence and Computational Data Science. Learn predictive modelling, natural language processing with modern transformer architectures, and deep neural networks with Python, NumPy, Pandas, Scikit-Learn, and PyTorch.<br><br><strong>Curriculum Includes:</strong><br>• Comprehensive theoretical and hands-on modules<br>• Full source code and datasets access<br>• Lifetime access to recorded lecture labs<br><br>Detailed syllabus: https://computerscience.lk/ai-curriculum', '', '', 2, 1),
+        ('Cloud Architecture & DevOps Certification Workshop', 'Accelerate Your Infrastructure Skills with Kubernetes, CI/CD, and Microservices', 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=1200&auto=format&fit=crop&q=80', 'Designed for software engineers and aspiring cloud solutions architects looking to elevate their system design capabilities. Deep dive into Kubernetes orchestration, infrastructure as code (Terraform), robust microservice communication, and multi-region high availability.<br><br><strong>Highlights:</strong><br>• Enterprise cloud architectural case studies<br>• Interactive sandbox environments<br>• Digital credential verification ID for LinkedIn<br><br>Workshop details: https://computerscience.lk/devops-program', '', '', 3, 1)");
     }
 
     // 3.7.1 Ensure lesson_progress table exists (video watch progress tracking)
@@ -555,10 +621,40 @@ function ensureMigrations($pdo)
         $pdo->exec("UPDATE hero_settings SET bg_image_1 = bg_image WHERE bg_image IS NOT NULL AND bg_image_1 IS NULL");
     }
 
+    // Ensure hero_image_path and hero_image_alt columns exist (hero portrait image manager)
+    try {
+        $pdo->query("SELECT hero_image_path FROM hero_settings LIMIT 1");
+    } catch (PDOException $e) {
+        $pdo->exec("ALTER TABLE hero_settings ADD COLUMN hero_image_path VARCHAR(255) NULL AFTER bg_image_3");
+    }
+    try {
+        $pdo->query("SELECT hero_image_alt FROM hero_settings LIMIT 1");
+    } catch (PDOException $e) {
+        $pdo->exec("ALTER TABLE hero_settings ADD COLUMN hero_image_alt VARCHAR(255) DEFAULT 'Student with books' AFTER hero_image_path");
+    }
+
+    // Ensure social media URL columns exist in hero_settings
+    $social_columns = [
+        'facebook_url'  => "VARCHAR(255) DEFAULT '#'",
+        'twitter_url'   => "VARCHAR(255) DEFAULT '#'",
+        'telegram_url'  => "VARCHAR(255) DEFAULT '#'",
+        'instagram_url' => "VARCHAR(255) DEFAULT '#'",
+        'youtube_url'   => "VARCHAR(255) NULL",
+        'linkedin_url'  => "VARCHAR(255) NULL",
+        'whatsapp_url'  => "VARCHAR(255) NULL"
+    ];
+    foreach ($social_columns as $col => $col_def) {
+        try {
+            $pdo->query("SELECT $col FROM hero_settings LIMIT 1");
+        } catch (PDOException $e) {
+            $pdo->exec("ALTER TABLE hero_settings ADD COLUMN $col $col_def");
+        }
+    }
+
     $heroCheck = $pdo->query("SELECT COUNT(*) FROM hero_settings");
     if ($heroCheck->fetchColumn() == 0) {
-        $pdo->exec("INSERT INTO hero_settings (id, title, description, button_text, button_url, secondary_button_text, secondary_button_url, phone_number, enrolled_students_count, bg_image_1, bg_image_2, bg_image_3) VALUES
-        (1, 'Enhance Your Skills With Our Online Courses', 'Dive into a World of Knowledge with Our Comprehensive and Engaging Online Courses Designed for Skill Enhancement', 'Apply Now', '#courses-section', 'Know More', '#courses-section', 'Call Us : 011 234 5678', '30K Enrolled Students', NULL, NULL, NULL)");
+        $pdo->exec("INSERT INTO hero_settings (id, title, description, button_text, button_url, secondary_button_text, secondary_button_url, phone_number, enrolled_students_count, bg_image_1, bg_image_2, bg_image_3, hero_image_path, hero_image_alt, facebook_url, twitter_url, telegram_url, instagram_url, youtube_url, linkedin_url, whatsapp_url) VALUES
+        (1, 'Enhance Your Skills With Our Online Courses', 'Dive into a World of Knowledge with Our Comprehensive and Engaging Online Courses Designed for Skill Enhancement', 'Apply Now', '#courses-section', 'Know More', '#courses-section', 'Call Us : 011 234 5678', '30K Enrolled Students', NULL, NULL, NULL, NULL, 'Student with books', '#', '#', '#', '#', NULL, NULL, NULL)");
     }
 
 
@@ -1150,5 +1246,51 @@ function get_user_avatar($avatar = null, $name = 'User', $background = '0f4c81',
     }
     $displayName = !empty($name) ? trim($name) : 'User';
     return 'https://ui-avatars.com/api/?name=' . urlencode($displayName) . '&background=' . urlencode($background) . '&color=' . urlencode($color);
+}
+
+// Global Helper function to retrieve Login page split-screen background image
+function get_login_page_image()
+{
+    static $login_img = null;
+    if ($login_img !== null) {
+        return $login_img;
+    }
+    try {
+        $pdo = getDBConnection();
+        $stmt = $pdo->prepare("SELECT setting_value FROM site_settings WHERE setting_key = 'login_page_image' LIMIT 1");
+        $stmt->execute();
+        $val = $stmt->fetchColumn();
+        if (!empty($val)) {
+            $login_img = $val;
+            return $login_img;
+        }
+    } catch (Exception $e) {
+    }
+
+    $login_img = 'https://images.unsplash.com/photo-1522202176988-66273c2fd55f?w=1600&auto=format&fit=crop&q=85';
+    return $login_img;
+}
+
+// Global Helper function to retrieve Register page split-screen background image
+function get_register_page_image()
+{
+    static $register_img = null;
+    if ($register_img !== null) {
+        return $register_img;
+    }
+    try {
+        $pdo = getDBConnection();
+        $stmt = $pdo->prepare("SELECT setting_value FROM site_settings WHERE setting_key = 'register_page_image' LIMIT 1");
+        $stmt->execute();
+        $val = $stmt->fetchColumn();
+        if (!empty($val)) {
+            $register_img = $val;
+            return $register_img;
+        }
+    } catch (Exception $e) {
+    }
+
+    $register_img = 'https://images.unsplash.com/photo-1523240795612-9a054b0db644?w=1600&auto=format&fit=crop&q=85';
+    return $register_img;
 }
 ?>

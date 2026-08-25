@@ -292,3 +292,428 @@ h1, h2, h3, h4, h5, h6, .moodle-brand {
   visibility: visible !important;
 }
 
+/* ==========================================================================
+   Promotional Announcements Banner / Ad Slider Styles
+   ========================================================================== */
+.promo-carousel-container {
+  position: relative;
+  overflow: hidden;
+  border-radius: 16px;
+  background-color: #0f172a;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+  min-height: 270px;
+  touch-action: pan-y;
+}
+
+.promo-carousel-track {
+  display: flex;
+  transition: transform 0.5s cubic-bezier(0.25, 1, 0.5, 1);
+  width: 100%;
+  height: 100%;
+}
+
+.promo-slide {
+  min-width: 100%;
+  position: relative;
+  overflow: hidden;
+  user-select: none;
+}
+
+.promo-slide-img {
+  width: 100%;
+  height: 100%;
+  min-height: 280px;
+  max-height: 320px;
+  object-fit: cover;
+  display: block;
+  transition: transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.promo-carousel-container:hover .promo-slide-img {
+  transform: scale(1.04);
+}
+
+.promo-slide-overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.15) 0%, rgba(15, 23, 42, 0.45) 45%, rgba(15, 23, 42, 0.94) 100%);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 20px 22px;
+  color: #ffffff;
+  z-index: 2;
+}
+
+.text-shadow {
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+}
+
+.backdrop-blur {
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+/* Glassmorphism Carousel Navigation Controls */
+.promo-nav-btn {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.22);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 6;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  opacity: 0;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+}
+
+.promo-carousel-container:hover .promo-nav-btn,
+.promo-carousel-container:focus-within .promo-nav-btn {
+  opacity: 1;
+}
+
+.promo-nav-btn:hover {
+  background: rgba(255, 255, 255, 0.95);
+  color: #0f4c81;
+  transform: translateY(-50%) scale(1.1);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+}
+
+.promo-nav-prev {
+  left: 14px;
+}
+
+.promo-nav-next {
+  right: 14px;
+}
+
+/* Animated Pagination Indicators */
+.promo-indicators {
+  position: absolute;
+  bottom: 16px;
+  right: 22px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  z-index: 6;
+}
+
+.promo-indicator-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.4);
+  cursor: pointer;
+  transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.promo-indicator-dot.active {
+  width: 24px;
+  background: #ffffff;
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.85);
+}
+
+/* ==========================================================================
+   Modernized Text Announcements Cards
+   ========================================================================== */
+.announcement-card-modern {
+  background: #ffffff;
+  border: 1px solid #eef0f3;
+  border-radius: 12px;
+  padding: 16px 18px;
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s ease, border-color 0.25s ease;
+  position: relative;
+  border-left: 4px solid #0f4c81;
+}
+
+.announcement-card-modern:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 24px rgba(15, 76, 129, 0.08);
+  border-color: #dbe2ea;
+}
+
+.announcement-card-modern.cat-notice {
+  border-left-color: #0f4c81;
+}
+
+.announcement-card-modern.cat-offer {
+  border-left-color: #198754;
+}
+
+.announcement-card-modern.cat-launch {
+  border-left-color: #6f42c1;
+}
+
+.announcement-card-modern.cat-alert {
+  border-left-color: #dc3545;
+}
+
+.announcement-card-modern.cat-event {
+  border-left-color: #0dcaf0;
+}
+
+@media (max-width: 767.98px) {
+  .promo-slide-img {
+    min-height: 240px;
+    max-height: 260px;
+  }
+  .promo-slide-overlay {
+    padding: 16px;
+  }
+  .promo-nav-btn {
+    opacity: 0.85;
+    width: 32px;
+    height: 32px;
+  }
+}
+
+/* ==========================================================================
+   Professional Available Courses Section & Card Styles
+   ========================================================================== */
+.courses-section-wrapper {
+  background: #ffffff;
+  border-radius: 24px;
+  border: 1px solid #eef2f6;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.04);
+}
+
+.courses-search-box {
+  background: #f8fafc;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 9999px;
+  padding: 4px 16px;
+  transition: all 0.25s ease;
+  display: flex;
+  align-items: center;
+}
+.courses-search-box:focus-within {
+  background: #ffffff;
+  border-color: #2b529a;
+  box-shadow: 0 0 0 4px rgba(43, 82, 154, 0.12);
+}
+.courses-search-box input {
+  border: none;
+  background: transparent;
+  outline: none;
+  box-shadow: none;
+  font-size: 0.9rem;
+  color: #1e293b;
+  width: 100%;
+  padding: 6px 8px;
+}
+
+.category-btn-pro {
+  border: 1.5px solid #e2e8f0;
+  background: #ffffff;
+  color: #475569;
+  border-radius: 9999px;
+  padding: 7px 18px;
+  font-size: 0.84rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.category-btn-pro:hover {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  color: #1e293b;
+  transform: translateY(-1px);
+}
+.category-btn-pro.active {
+  background: linear-gradient(135deg, #2b529a 0%, #1e3a6d 100%);
+  border-color: #2b529a;
+  color: #ffffff !important;
+  box-shadow: 0 4px 14px rgba(43, 82, 154, 0.32);
+}
+
+/* Modern Pro Course Card with Interactive Mouse Pointer Animations */
+.course-card-pro {
+  background: #ffffff;
+  border: 1.5px solid #eef2f6;
+  border-radius: 18px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  height: 100%;
+  width: 100%;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
+  transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1),
+              box-shadow 0.4s cubic-bezier(0.34, 1.56, 0.64, 1),
+              border-color 0.3s ease;
+  position: relative;
+  cursor: pointer;
+}
+
+/* Subtle glowing top accent bar on card hover */
+.course-card-pro::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3.5px;
+  background: linear-gradient(90deg, #2b529a 0%, #06b6d4 50%, #f59e0b 100%);
+  opacity: 0;
+  transition: opacity 0.35s ease;
+  z-index: 10;
+}
+
+.course-card-pro:hover {
+  transform: translateY(-10px) scale(1.012);
+  border-color: #2b529a;
+  box-shadow: 0 24px 48px rgba(43, 82, 154, 0.16), 0 8px 18px rgba(43, 82, 154, 0.08);
+}
+
+.course-card-pro:hover::before {
+  opacity: 1;
+}
+
+/* Thumbnail Wrap & Light Sweep Shimmer */
+.course-thumb-wrap {
+  position: relative;
+  overflow: hidden;
+  height: 180px;
+  background: #0f172a;
+}
+
+/* Diagonal Light Sweep Reflection on mouse over */
+.course-thumb-wrap::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -130%;
+  width: 80%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.38) 50%, transparent 100%);
+  transform: skewX(-25deg);
+  pointer-events: none;
+  z-index: 3;
+  transition: none;
+}
+
+.course-card-pro:hover .course-thumb-wrap::after {
+  left: 150%;
+  transition: left 0.85s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.course-thumb-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.55s cubic-bezier(0.25, 0.8, 0.25, 1), filter 0.35s ease;
+  cursor: pointer;
+  display: block;
+}
+
+.course-card-pro:hover .course-thumb-img {
+  transform: scale(1.09);
+  filter: brightness(1.04);
+}
+
+/* Floating Category & Level Badges */
+.course-badge-cat {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  background: rgba(15, 23, 42, 0.75);
+  backdrop-filter: blur(8px);
+  color: #ffffff;
+  padding: 4px 12px;
+  border-radius: 9999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  z-index: 2;
+  transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), background-color 0.3s ease;
+}
+
+.course-card-pro:hover .course-badge-cat {
+  transform: translateY(-3px);
+  background: rgba(43, 82, 154, 0.90);
+}
+
+.course-badge-level {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(8px);
+  color: #1e293b;
+  padding: 4px 11px;
+  border-radius: 9999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  z-index: 2;
+  transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.3s ease;
+}
+
+.course-card-pro:hover .course-badge-level {
+  transform: translateY(-3px);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.20);
+}
+
+/* Title Hover Transition */
+.course-title-link {
+  color: #1e293b;
+  text-decoration: none;
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1.35;
+  transition: color 0.25s ease, transform 0.25s ease;
+  cursor: pointer;
+  display: block;
+}
+
+.course-card-pro:hover .course-title-link {
+  color: #2b529a;
+}
+
+/* Tutor Avatar Micro-Glow on mouse pointer */
+.course-tutor-avatar {
+  transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.3s ease;
+}
+
+.course-card-pro:hover .course-tutor-avatar {
+  transform: scale(1.12);
+  box-shadow: 0 0 0 3px rgba(43, 82, 154, 0.30);
+}
+
+/* Action button micro-interactions inside course card */
+.course-card-pro .btn {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.course-card-pro:hover .btn {
+  transform: translateY(-2px);
+}
+
+.course-card-pro:hover .btn.btn-primary {
+  box-shadow: 0 8px 22px rgba(43, 82, 154, 0.38);
+}
+
+.course-card-pro .btn i {
+  transition: transform 0.25s ease;
+}
+
+.course-card-pro:hover .btn i {
+  transform: translateX(3px);
+}
+

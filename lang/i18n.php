@@ -69,6 +69,32 @@ if (!function_exists('render_i18n_js')) {
     }
 }
 
+if (!function_exists('format_time_ago_lms')) {
+    function format_time_ago_lms($timestamp) {
+        if (empty($timestamp)) return __('recently', 'Recently');
+        $time = is_numeric($timestamp) ? (int)$timestamp : strtotime($timestamp);
+        $diff = time() - $time;
+        $is_si = (isset($_SESSION['lang']) && $_SESSION['lang'] === 'si');
+
+        if ($diff < 60) {
+            return $is_si ? 'සුළු මොහොතකට පෙර' : 'Just now';
+        } elseif ($diff < 3600) {
+            $mins = max(1, floor($diff / 60));
+            return $is_si ? "මිනිත්තු {$mins}කට පෙර" : ($mins . 'm ago');
+        } elseif ($diff < 86400) {
+            $hours = floor($diff / 3600);
+            return $is_si ? "පැය {$hours}කට පෙර" : ($hours . 'h ago');
+        } elseif ($diff < 172800) {
+            return $is_si ? 'ඊයේ' : 'Yesterday';
+        } elseif ($diff < 604800) {
+            $days = floor($diff / 86400);
+            return $is_si ? "දින {$days}කට පෙර" : ($days . 'd ago');
+        } else {
+            return date('M d, Y', $time);
+        }
+    }
+}
+
 // Auto-run initialization
 init_lms_language();
 ?>

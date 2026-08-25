@@ -375,11 +375,12 @@ try {
     $title = trim($_POST['title'] ?? '');
     $content = trim($_POST['content'] ?? '');
     $badge_text = trim($_POST['badge_text'] ?? '');
+    $category = trim($_POST['category'] ?? 'notice');
     $status = trim($_POST['status'] ?? 'active');
 
     if (!empty($title) && !empty($content)) {
-      $stmt = $pdo->prepare("INSERT INTO site_announcements (title, content, badge_text, status) VALUES (?, ?, ?, ?)");
-      $stmt->execute([$title, $content, $badge_text, $status]);
+      $stmt = $pdo->prepare("INSERT INTO site_announcements (title, content, badge_text, category, status) VALUES (?, ?, ?, ?, ?)");
+      $stmt->execute([$title, $content, $badge_text, $category, $status]);
       $success_message = 'Site announcement added successfully!';
     } else {
       $error_message = 'Please provide both title and content for the announcement.';
@@ -392,11 +393,12 @@ try {
     $title = trim($_POST['title'] ?? '');
     $content = trim($_POST['content'] ?? '');
     $badge_text = trim($_POST['badge_text'] ?? '');
+    $category = trim($_POST['category'] ?? 'notice');
     $status = trim($_POST['status'] ?? 'active');
 
     if ($announcement_id > 0 && !empty($title) && !empty($content)) {
-      $stmt = $pdo->prepare("UPDATE site_announcements SET title = ?, content = ?, badge_text = ?, status = ? WHERE id = ?");
-      $stmt->execute([$title, $content, $badge_text, $status, $announcement_id]);
+      $stmt = $pdo->prepare("UPDATE site_announcements SET title = ?, content = ?, badge_text = ?, category = ?, status = ? WHERE id = ?");
+      $stmt->execute([$title, $content, $badge_text, $category, $status, $announcement_id]);
       $success_message = 'Site announcement updated successfully!';
     } else {
       $error_message = 'Invalid parameters for editing announcement.';
@@ -415,7 +417,185 @@ try {
     }
   }
 
-  // Handle Hero Settings Update action (supporting 3 background images and target design fields)
+  // Handle Add Promotional / Featured Announcement Banner action
+  if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'add_banner') {
+    $title = trim($_POST['title'] ?? '');
+    $subtitle = trim($_POST['subtitle'] ?? '');
+    $details_content = trim($_POST['details_content'] ?? '');
+    $cta_button_text = trim($_POST['cta_button_text'] ?? '');
+    $cta_button_url = trim($_POST['cta_button_url'] ?? '');
+    $display_order = intval($_POST['display_order'] ?? 0);
+    $is_active = isset($_POST['is_active']) ? 1 : 0;
+    $image_url_input = trim($_POST['image_url'] ?? '');
+
+    $image_path = '';
+    $allowed = ['jpg', 'jpeg', 'png', 'webp', 'svg', 'gif'];
+    $upload_dir = __DIR__ . '/../uploads/banners';
+
+    if (isset($_FILES['banner_image_file']) && $_FILES['banner_image_file']['error'] === UPLOAD_ERR_OK) {
+      $file = $_FILES['banner_image_file'];
+      $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+
+      if (in_array($ext, $allowed)) {
+        if (!file_exists($upload_dir)) {
+          mkdir($upload_dir, 0777, true);
+        }
+        $filename = 'banner_' . time() . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
+        $dest_path = $upload_dir . '/' . $filename;
+        if (move_uploaded_file($file['tmp_name'], $dest_path)) {
+          $image_path = 'uploads/banners/' . $filename;
+        }
+      } else {
+        $error_message = 'Only JPG, JPEG, PNG, WEBP, SVG, and GIF image files are allowed.';
+      }
+    } elseif (!empty($image_url_input)) {
+      $image_path = $image_url_input;
+    }
+
+    if (empty($error_message)) {
+      if (!empty($title) && !empty($details_content) && !empty($image_path)) {
+        // Auto-assign display order if 0
+        if ($display_order === 0) {
+          $stmt = $pdo->query("SELECT COALESCE(MAX(display_order), 0) + 1 FROM promotional_banners");
+          $display_order = (int)$stmt->fetchColumn();
+        }
+        $stmt = $pdo->prepare("INSERT INTO promotional_banners (title, subtitle, image_path, details_content, cta_button_text, cta_button_url, display_order, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+        $stmt->execute([$title, $subtitle, $image_path, $details_content, $cta_button_text, $cta_button_url, $display_order, $is_active]);
+        $success_message = 'Featured announcement added successfully!';
+      } else {
+        $error_message = 'Please provide a title, full details, and upload or provide an announcement image.';
+      }
+    }
+  }
+
+  // Handle Edit Promotional / Featured Announcement Banner action
+  if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'edit_banner') {
+    $banner_id = intval($_POST['banner_id'] ?? 0);
+    $title = trim($_POST['title'] ?? '');
+    $subtitle = trim($_POST['subtitle'] ?? '');
+    $details_content = trim($_POST['details_content'] ?? '');
+    $cta_button_text = trim($_POST['cta_button_text'] ?? '');
+    $cta_button_url = trim($_POST['cta_button_url'] ?? '');
+    $display_order = intval($_POST['display_order'] ?? 0);
+    $is_active = isset($_POST['is_active']) ? 1 : 0;
+    $image_url_input = trim($_POST['image_url'] ?? '');
+
+    if ($banner_id > 0 && !empty($title) && !empty($details_content)) {
+      $stmt = $pdo->prepare("SELECT image_path FROM promotional_banners WHERE id = ?");
+      $stmt->execute([$banner_id]);
+      $existing_image = $stmt->fetchColumn();
+      $image_path = $existing_image;
+
+      $allowed = ['jpg', 'jpeg', 'png', 'webp', 'svg', 'gif'];
+      $upload_dir = __DIR__ . '/../uploads/banners';
+
+      if (isset($_FILES['banner_image_file']) && $_FILES['banner_image_file']['error'] === UPLOAD_ERR_OK) {
+        $file = $_FILES['banner_image_file'];
+        $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+
+        if (in_array($ext, $allowed)) {
+          if (!file_exists($upload_dir)) {
+            mkdir($upload_dir, 0777, true);
+          }
+          $filename = 'banner_' . time() . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
+          $dest_path = $upload_dir . '/' . $filename;
+          if (move_uploaded_file($file['tmp_name'], $dest_path)) {
+            // Unlink old local image
+            if (!empty($existing_image) && strpos($existing_image, 'uploads/banners/') !== false && file_exists(__DIR__ . '/../' . $existing_image)) {
+              @unlink(__DIR__ . '/../' . $existing_image);
+            }
+            $image_path = 'uploads/banners/' . $filename;
+          }
+        } else {
+          $error_message = 'Only JPG, JPEG, PNG, WEBP, SVG, and GIF image files are allowed.';
+        }
+      } elseif (!empty($image_url_input)) {
+        $image_path = $image_url_input;
+      }
+
+      if (empty($error_message)) {
+        $stmt = $pdo->prepare("UPDATE promotional_banners SET title = ?, subtitle = ?, image_path = ?, details_content = ?, cta_button_text = ?, cta_button_url = ?, display_order = ?, is_active = ? WHERE id = ?");
+        $stmt->execute([$title, $subtitle, $image_path, $details_content, $cta_button_text, $cta_button_url, $display_order, $is_active, $banner_id]);
+        $success_message = 'Featured announcement updated successfully!';
+      }
+    } else {
+      $error_message = 'Invalid parameters for updating featured announcement.';
+    }
+  }
+
+  // Handle Delete Promotional / Featured Announcement action
+  if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete_banner') {
+    $banner_id = intval($_POST['banner_id'] ?? 0);
+    if ($banner_id > 0) {
+      $stmt = $pdo->prepare("SELECT image_path FROM promotional_banners WHERE id = ?");
+      $stmt->execute([$banner_id]);
+      $img = $stmt->fetchColumn();
+
+      if (!empty($img) && strpos($img, 'uploads/banners/') !== false && file_exists(__DIR__ . '/../' . $img)) {
+        @unlink(__DIR__ . '/../' . $img);
+      }
+
+      $stmt = $pdo->prepare("DELETE FROM promotional_banners WHERE id = ?");
+      $stmt->execute([$banner_id]);
+      $success_message = 'Featured announcement deleted successfully!';
+    } else {
+      $error_message = 'Invalid banner ID for deletion.';
+    }
+  }
+
+  // Handle Quick Toggle Banner Status action (supports AJAX and form post)
+  if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'toggle_banner_status') {
+    $banner_id = intval($_POST['banner_id'] ?? 0);
+    if ($banner_id > 0) {
+      $stmt = $pdo->prepare("UPDATE promotional_banners SET is_active = CASE WHEN is_active = 1 THEN 0 ELSE 1 END WHERE id = ?");
+      $stmt->execute([$banner_id]);
+      
+      $stmt = $pdo->prepare("SELECT is_active FROM promotional_banners WHERE id = ?");
+      $stmt->execute([$banner_id]);
+      $new_status = (int)$stmt->fetchColumn();
+
+      if (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest') {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => true, 'new_status' => $new_status]);
+        exit;
+      }
+      $success_message = 'Banner status updated successfully!';
+    }
+  }
+
+  // Handle Move Banner Order (Up/Down) action
+  if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'move_banner_order') {
+    $banner_id = intval($_POST['banner_id'] ?? 0);
+    $direction = trim($_POST['direction'] ?? 'up');
+
+    if ($banner_id > 0) {
+      $stmt = $pdo->prepare("SELECT id, display_order FROM promotional_banners WHERE id = ?");
+      $stmt->execute([$banner_id]);
+      $current = $stmt->fetch();
+
+      if ($current) {
+        $cur_order = (int)$current['display_order'];
+        if ($direction === 'up') {
+          $stmt = $pdo->prepare("SELECT id, display_order FROM promotional_banners WHERE display_order < ? ORDER BY display_order DESC LIMIT 1");
+          $stmt->execute([$cur_order]);
+          $swap = $stmt->fetch();
+        } else {
+          $stmt = $pdo->prepare("SELECT id, display_order FROM promotional_banners WHERE display_order > ? ORDER BY display_order ASC LIMIT 1");
+          $stmt->execute([$cur_order]);
+          $swap = $stmt->fetch();
+        }
+
+        if ($swap) {
+          $swap_order = (int)$swap['display_order'];
+          $pdo->prepare("UPDATE promotional_banners SET display_order = ? WHERE id = ?")->execute([$swap_order, $current['id']]);
+          $pdo->prepare("UPDATE promotional_banners SET display_order = ? WHERE id = ?")->execute([$cur_order, $swap['id']]);
+          $success_message = 'Banner position shifted successfully!';
+        }
+      }
+    }
+  }
+
+  // Handle Hero Settings Update action (hero banner text, links, and social channels)
   if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_hero_settings') {
     $title = trim($_POST['title'] ?? '');
     $description = trim($_POST['description'] ?? '');
@@ -425,68 +605,93 @@ try {
     $secondary_button_url = trim($_POST['secondary_button_url'] ?? '');
     $phone_number = trim($_POST['phone_number'] ?? '');
     $enrolled_students_count = trim($_POST['enrolled_students_count'] ?? '');
+    $facebook_url = trim($_POST['facebook_url'] ?? '#');
+    $twitter_url = trim($_POST['twitter_url'] ?? '#');
+    $telegram_url = trim($_POST['telegram_url'] ?? '#');
+    $instagram_url = trim($_POST['instagram_url'] ?? '#');
+    $youtube_url = trim($_POST['youtube_url'] ?? '');
+    $linkedin_url = trim($_POST['linkedin_url'] ?? '');
+    $whatsapp_url = trim($_POST['whatsapp_url'] ?? '');
 
-    // Fetch current bg_image_1, bg_image_2, bg_image_3
-    $stmt = $pdo->query("SELECT bg_image_1, bg_image_2, bg_image_3 FROM hero_settings WHERE id = 1 LIMIT 1");
-    $current_hero = $stmt->fetch();
-
-    $img_paths = [
-      1 => $current_hero ? $current_hero['bg_image_1'] : null,
-      2 => $current_hero ? $current_hero['bg_image_2'] : null,
-      3 => $current_hero ? $current_hero['bg_image_3'] : null,
-    ];
-
-    // Process removals
-    for ($i = 1; $i <= 3; $i++) {
-      if (isset($_POST["remove_bg_image_$i"]) && $_POST["remove_bg_image_$i"] === '1') {
-        if ($img_paths[$i] && file_exists(__DIR__ . '/../' . $img_paths[$i])) {
-          @unlink(__DIR__ . '/../' . $img_paths[$i]);
-        }
-        $img_paths[$i] = null;
-      }
+    if (!empty($title) && !empty($description) && !empty($button_text) && !empty($button_url)) {
+      $stmt = $pdo->prepare("INSERT INTO hero_settings (id, title, description, button_text, button_url, secondary_button_text, secondary_button_url, phone_number, enrolled_students_count, facebook_url, twitter_url, telegram_url, instagram_url, youtube_url, linkedin_url, whatsapp_url) 
+                             VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) 
+                             ON DUPLICATE KEY UPDATE title = VALUES(title), description = VALUES(description), button_text = VALUES(button_text), button_url = VALUES(button_url), secondary_button_text = VALUES(secondary_button_text), secondary_button_url = VALUES(secondary_button_url), phone_number = VALUES(phone_number), enrolled_students_count = VALUES(enrolled_students_count), facebook_url = VALUES(facebook_url), twitter_url = VALUES(twitter_url), telegram_url = VALUES(telegram_url), instagram_url = VALUES(instagram_url), youtube_url = VALUES(youtube_url), linkedin_url = VALUES(linkedin_url), whatsapp_url = VALUES(whatsapp_url)");
+      $stmt->execute([$title, $description, $button_text, $button_url, $secondary_button_text, $secondary_button_url, $phone_number, $enrolled_students_count, $facebook_url, $twitter_url, $telegram_url, $instagram_url, $youtube_url, $linkedin_url, $whatsapp_url]);
+      $success_message = 'Hero section settings & social media links updated successfully!';
+    } else {
+      $error_message = 'Please fill in all required Hero section text fields.';
     }
+  }
 
-    // Process uploads
-    $allowed = ['jpg', 'jpeg', 'png', 'webp', 'svg', 'gif'];
+  // Handle Hero Portrait Image Upload (update_hero_portrait_image)
+  if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_hero_portrait_image') {
+    $hero_image_alt_input = trim($_POST['hero_image_alt'] ?? 'Student with books');
     $upload_dir = __DIR__ . '/../uploads/hero';
+    $allowed_exts  = ['png', 'jpg', 'jpeg', 'webp'];
+    $allowed_mimes = ['image/png', 'image/jpeg', 'image/webp'];
 
-    for ($i = 1; $i <= 3; $i++) {
-      $field_name = "bg_image_{$i}_file";
-      if (isset($_FILES[$field_name]) && $_FILES[$field_name]['error'] === UPLOAD_ERR_OK) {
-        $file = $_FILES[$field_name];
-        $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
-
-        if (in_array($ext, $allowed)) {
-          if (!file_exists($upload_dir)) {
-            mkdir($upload_dir, 0777, true);
-          }
-
-          $filename = "hero_bg_{$i}_" . time() . '.' . $ext;
-          $dest_path = $upload_dir . '/' . $filename;
-
-          if (move_uploaded_file($file['tmp_name'], $dest_path)) {
-            if ($img_paths[$i] && file_exists(__DIR__ . '/../' . $img_paths[$i])) {
-              @unlink(__DIR__ . '/../' . $img_paths[$i]);
-            }
-            $img_paths[$i] = 'uploads/hero/' . $filename;
-          }
-        } else {
-          $error_message = 'Only JPG, JPEG, PNG, WEBP, SVG, and GIF background image files are allowed.';
-          break;
+    if (isset($_POST['remove_hero_portrait']) && $_POST['remove_hero_portrait'] === '1') {
+      // Revert to default preset by unlinking custom image and clearing database record
+      $stmt_old = $pdo->query("SELECT hero_image_path FROM hero_settings WHERE id = 1 LIMIT 1");
+      $old_row  = $stmt_old->fetch();
+      if ($old_row && !empty($old_row['hero_image_path'])) {
+        $old_local = __DIR__ . '/../' . $old_row['hero_image_path'];
+        if (strpos($old_row['hero_image_path'], 'uploads/hero/') !== false && file_exists($old_local)) {
+          @unlink($old_local);
         }
       }
-    }
+      $stmt = $pdo->prepare("UPDATE hero_settings SET hero_image_path = NULL, hero_image_alt = ? WHERE id = 1");
+      $stmt->execute([$hero_image_alt_input]);
+      $success_message = 'Custom hero portrait removed. Reverted to default preset successfully!';
+    } elseif (isset($_FILES['hero_portrait_file']) && $_FILES['hero_portrait_file']['error'] === UPLOAD_ERR_OK) {
+      $file    = $_FILES['hero_portrait_file'];
+      $ext     = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
 
-    if (empty($error_message)) {
-      if (!empty($title) && !empty($description) && !empty($button_text) && !empty($button_url)) {
-        $stmt = $pdo->prepare("INSERT INTO hero_settings (id, title, description, button_text, button_url, secondary_button_text, secondary_button_url, phone_number, enrolled_students_count, bg_image_1, bg_image_2, bg_image_3) 
-                                       VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) 
-                                       ON DUPLICATE KEY UPDATE title = VALUES(title), description = VALUES(description), button_text = VALUES(button_text), button_url = VALUES(button_url), secondary_button_text = VALUES(secondary_button_text), secondary_button_url = VALUES(secondary_button_url), phone_number = VALUES(phone_number), enrolled_students_count = VALUES(enrolled_students_count), bg_image_1 = VALUES(bg_image_1), bg_image_2 = VALUES(bg_image_2), bg_image_3 = VALUES(bg_image_3)");
-        $stmt->execute([$title, $description, $button_text, $button_url, $secondary_button_text, $secondary_button_url, $phone_number, $enrolled_students_count, $img_paths[1], $img_paths[2], $img_paths[3]]);
-        $success_message = 'Hero section settings updated successfully!';
+      // MIME type validation using finfo
+      $finfo     = finfo_open(FILEINFO_MIME_TYPE);
+      $mime_type = finfo_file($finfo, $file['tmp_name']);
+      finfo_close($finfo);
+
+      if (in_array($ext, $allowed_exts) && in_array($mime_type, $allowed_mimes)) {
+        if (!file_exists($upload_dir)) {
+          mkdir($upload_dir, 0755, true);
+        }
+
+        // Sanitized filename — no user input in name
+        $filename  = 'hero_portrait_' . time() . '_' . bin2hex(random_bytes(5)) . '.' . $ext;
+        $dest_path = $upload_dir . '/' . $filename;
+
+        if (move_uploaded_file($file['tmp_name'], $dest_path)) {
+          // Delete old portrait file if it was a local upload
+          $stmt_old = $pdo->query("SELECT hero_image_path FROM hero_settings WHERE id = 1 LIMIT 1");
+          $old_row  = $stmt_old->fetch();
+          if ($old_row && !empty($old_row['hero_image_path'])) {
+            $old_local = __DIR__ . '/../' . $old_row['hero_image_path'];
+            if (strpos($old_row['hero_image_path'], 'uploads/hero/') !== false && file_exists($old_local)) {
+              @unlink($old_local);
+            }
+          }
+
+          $new_path = 'uploads/hero/' . $filename;
+          $stmt = $pdo->prepare("INSERT INTO hero_settings (id, title, description, button_text, button_url, hero_image_path, hero_image_alt)
+                                 VALUES (1, 'Enhance Your Skills With Our Online Courses', 'Dive into a World of Knowledge', 'Apply Now', '#courses-section', ?, ?)
+                                 ON DUPLICATE KEY UPDATE hero_image_path = VALUES(hero_image_path), hero_image_alt = VALUES(hero_image_alt)");
+          $stmt->execute([$new_path, $hero_image_alt_input]);
+          $success_message = __('hero_portrait_saved', 'Hero portrait image updated successfully!');
+        } else {
+          $error_message = 'Failed to move uploaded hero portrait file. Please check folder permissions.';
+        }
       } else {
-        $error_message = 'Please fill in all required Hero section text fields.';
+        $error_message = 'Invalid file type. Only PNG, JPG, JPEG, and WebP images are allowed for the hero portrait.';
       }
+    } elseif (!empty($hero_image_alt_input)) {
+      // Only alt text updated — no new file
+      $stmt = $pdo->prepare("UPDATE hero_settings SET hero_image_alt = ? WHERE id = 1");
+      $stmt->execute([$hero_image_alt_input]);
+      $success_message = 'Hero portrait alt text updated successfully!';
+    } else {
+      $error_message = 'Please select a valid image file to upload as the hero portrait.';
     }
   }
 
@@ -739,6 +944,96 @@ try {
     }
   }
 
+  // Handle Login Page Visual Image Update action
+  if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_login_image') {
+    $custom_url = trim($_POST['login_image_url'] ?? '');
+    
+    if (isset($_FILES['login_image_file']) && $_FILES['login_image_file']['error'] === UPLOAD_ERR_OK) {
+      $file = $_FILES['login_image_file'];
+      $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+      $allowed = ['png', 'jpg', 'jpeg', 'webp', 'svg'];
+
+      if (in_array($ext, $allowed)) {
+        $upload_dir = __DIR__ . '/../uploads/auth';
+        if (!file_exists($upload_dir)) {
+          mkdir($upload_dir, 0777, true);
+        }
+
+        $filename = 'login_bg_' . time() . '.' . $ext;
+        $dest_path = $upload_dir . '/' . $filename;
+        $relative_path = 'uploads/auth/' . $filename;
+
+        if (move_uploaded_file($file['tmp_name'], $dest_path)) {
+          $stmt = $pdo->prepare("INSERT INTO site_settings (setting_key, setting_value) VALUES ('login_page_image', ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)");
+          $stmt->execute([$relative_path]);
+          $success_message = 'Login page background image updated successfully!';
+        } else {
+          $error_message = 'Failed to save uploaded image file.';
+        }
+      } else {
+        $error_message = 'Only PNG, JPG, JPEG, SVG, and WEBP image files are allowed.';
+      }
+    } elseif (!empty($custom_url)) {
+      $stmt = $pdo->prepare("INSERT INTO site_settings (setting_key, setting_value) VALUES ('login_page_image', ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)");
+      $stmt->execute([$custom_url]);
+      $success_message = 'Login page image URL updated successfully!';
+    } else {
+      $error_message = 'Please select an image file or provide a valid image URL.';
+    }
+  }
+
+  // Handle Reset Login Page Image
+  if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'reset_login_image') {
+    $stmt = $pdo->prepare("DELETE FROM site_settings WHERE setting_key = 'login_page_image'");
+    $stmt->execute();
+    $success_message = 'Login page background image reset to default successfully!';
+  }
+
+  // Handle Register Page Visual Image Update action
+  if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_register_image') {
+    $custom_url = trim($_POST['register_image_url'] ?? '');
+    
+    if (isset($_FILES['register_image_file']) && $_FILES['register_image_file']['error'] === UPLOAD_ERR_OK) {
+      $file = $_FILES['register_image_file'];
+      $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+      $allowed = ['png', 'jpg', 'jpeg', 'webp', 'svg'];
+
+      if (in_array($ext, $allowed)) {
+        $upload_dir = __DIR__ . '/../uploads/auth';
+        if (!file_exists($upload_dir)) {
+          mkdir($upload_dir, 0777, true);
+        }
+
+        $filename = 'register_bg_' . time() . '.' . $ext;
+        $dest_path = $upload_dir . '/' . $filename;
+        $relative_path = 'uploads/auth/' . $filename;
+
+        if (move_uploaded_file($file['tmp_name'], $dest_path)) {
+          $stmt = $pdo->prepare("INSERT INTO site_settings (setting_key, setting_value) VALUES ('register_page_image', ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)");
+          $stmt->execute([$relative_path]);
+          $success_message = 'Register page background image updated successfully!';
+        } else {
+          $error_message = 'Failed to save uploaded image file.';
+        }
+      } else {
+        $error_message = 'Only PNG, JPG, JPEG, SVG, and WEBP image files are allowed.';
+      }
+    } elseif (!empty($custom_url)) {
+      $stmt = $pdo->prepare("INSERT INTO site_settings (setting_key, setting_value) VALUES ('register_page_image', ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)");
+      $stmt->execute([$custom_url]);
+      $success_message = 'Register page image URL updated successfully!';
+    } else {
+      $error_message = 'Please select an image file or provide a valid image URL.';
+    }
+  }
+
+  // Handle Reset Register Page Image
+  if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'reset_register_image') {
+    $stmt = $pdo->prepare("DELETE FROM site_settings WHERE setting_key = 'register_page_image'");
+    $stmt->execute();
+    $success_message = 'Register page background image reset to default successfully!';
+  }
+
   // Handle Certificate Delivery Note Update action
   if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_delivery_note') {
     $cert_cod_title = trim($_POST['cert_cod_title'] ?? 'Cash on Delivery & Courier Details:');
@@ -809,6 +1104,10 @@ try {
   $stmt = $pdo->query("SELECT * FROM site_announcements ORDER BY created_at DESC");
   $all_site_announcements = $stmt->fetchAll();
 
+  // Fetch all promotional banners
+  $stmt = $pdo->query("SELECT * FROM promotional_banners ORDER BY display_order ASC, created_at DESC");
+  $all_promotional_banners = $stmt->fetchAll();
+
   // Fetch all course categories
   $stmt = $pdo->query("SELECT * FROM course_categories ORDER BY id ASC");
   $admin_categories = $stmt->fetchAll();
@@ -832,9 +1131,22 @@ try {
       'enrolled_students_count' => '30K Enrolled Students',
       'bg_image_1' => null,
       'bg_image_2' => null,
-      'bg_image_3' => null
+      'bg_image_3' => null,
+      'hero_image_path' => null,
+      'hero_image_alt' => 'Student with books',
+      'facebook_url' => '#',
+      'twitter_url' => '#',
+      'telegram_url' => '#',
+      'instagram_url' => '#',
+      'youtube_url' => '',
+      'linkedin_url' => '',
+      'whatsapp_url' => ''
     ];
   }
+  // Resolve portrait preview path for the admin card
+  $admin_hero_portrait_preview = !empty($hero_settings['hero_image_path'])
+    ? '../' . htmlspecialchars($hero_settings['hero_image_path'])
+    : null;
 
 } catch (PDOException $e) {
   $error_message = 'Database error: ' . $e->getMessage();
@@ -959,9 +1271,12 @@ try {
 
     .nav-link-item.active {
       background-color: var(--sidebar-active);
-      color: #ffffff;
+      color: #ffffff !important;
       font-weight: 600;
       box-shadow: 0 4px 12px rgba(11, 69, 40, 0.4);
+    }
+    .nav-link-item.active * {
+      color: #ffffff !important;
     }
 
     .nav-link-item i {
@@ -1014,6 +1329,43 @@ try {
     .stat-card-widget:hover {
       transform: translateY(-3px);
       box-shadow: 0 10px 20px rgba(0, 0, 0, 0.08);
+    }
+
+    /* Contrast Enforcements */
+    .form-label {
+      color: #1e293b !important;
+      font-weight: 600;
+    }
+
+    .nav-pills .nav-link {
+      color: #334155 !important;
+      background-color: #f8fafc;
+      border: 1px solid #e2e8f0;
+    }
+    .nav-pills .nav-link:hover {
+      background-color: #f1f5f9;
+      color: #0f172a !important;
+    }
+    .nav-pills .nav-link.active {
+      background-color: <?php echo $is_super_admin ? '#0b4528' : '#0f4c81'; ?> !important;
+      color: #ffffff !important;
+      border-color: <?php echo $is_super_admin ? '#0b4528' : '#0f4c81'; ?> !important;
+    }
+    .nav-pills .nav-link.active i,
+    .nav-pills .nav-link.active span:not(.badge) {
+      color: #ffffff !important;
+    }
+    .nav-pills .nav-link.active .badge {
+      background-color: rgba(255, 255, 255, 0.25) !important;
+      color: #ffffff !important;
+      border: 1px solid rgba(255, 255, 255, 0.4) !important;
+    }
+
+    .btn-primary, .btn-success, .btn-danger, .btn-dark {
+      color: #ffffff !important;
+    }
+    .btn-primary *, .btn-success *, .btn-danger *, .btn-dark * {
+      color: #ffffff !important;
     }
   </style>
 </head>
@@ -1170,11 +1522,11 @@ try {
         </div>
       </a>
 
-      <!-- Site Logo & Favicon Customization -->
+      <!-- Site Logo, Favicon & Auth Page Visuals Customization -->
       <a class="nav-link-item" id="btn-logo-tab">
         <div class="d-flex align-items-center gap-2.5">
           <i class="bi bi-palette-fill text-danger"></i>
-          <span>Site Logo & Favicon</span>
+          <span>Branding &amp; Auth Images</span>
         </div>
       </a>
 
@@ -2359,225 +2711,545 @@ try {
         </div>
       </div>
 
-      <!-- Site Announcements Section -->
+      <!-- Site Announcements & Promotional Banners Section -->
       <div id="announcements-section" class="d-none">
-        <div class="d-flex justify-content-between align-items-center mb-4">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
           <div>
-            <h2 class="fw-bold text-dark mb-1">Site Announcements Management</h2>
-            <p class="text-secondary mb-0">Create, customize, and publish announcements displayed on the LMS home page.
-            </p>
+            <h2 class="fw-bold text-dark mb-1 d-flex align-items-center gap-2">
+              <i class="bi bi-megaphone-fill text-warning"></i> Announcements & Featured Slider
+            </h2>
+            <p class="text-secondary mb-0">Manage auto-swiping featured announcements hero slider and standard site notices.</p>
           </div>
-          <button type="button"
-            class="btn btn-primary rounded-pill px-4 fw-semibold shadow-sm d-flex align-items-center gap-2"
-            style="background-color: #0f4c81; border: none;" data-bs-toggle="modal"
-            data-bs-target="#addAnnouncementModal">
-            <i class="bi bi-plus-circle"></i> Add New Announcement
-          </button>
+          <div class="d-flex gap-2">
+            <button type="button" class="btn btn-primary rounded-pill px-4 fw-semibold shadow-sm d-flex align-items-center gap-2"
+              style="background-color: <?php echo $is_super_admin ? '#0b4528' : '#0f4c81'; ?>; border: none;"
+              data-bs-toggle="modal" data-bs-target="#addBannerModal">
+              <i class="bi bi-plus-circle"></i> Add Announcement
+            </button>
+            <button type="button" class="btn btn-outline-secondary rounded-pill px-3 fw-semibold shadow-sm d-flex align-items-center gap-2"
+              data-bs-toggle="modal" data-bs-target="#addAnnouncementModal">
+              <i class="bi bi-card-text"></i> Add Text Notice
+            </button>
+          </div>
         </div>
 
-        <div class="glass-card p-4">
-          <?php if (count($all_site_announcements) === 0): ?>
-            <div class="text-center py-5">
-              <i class="bi bi-megaphone text-muted fs-1"></i>
-              <p class="text-muted mt-3 mb-0">No site announcements created yet. Click "Add New Announcement" to post one.
-              </p>
+        <!-- Sub-Navigation Pills -->
+        <ul class="nav nav-pills mb-4 gap-2 bg-white p-2 rounded-4 shadow-sm border" id="announcementsSubTabs" role="tablist">
+          <li class="nav-item" role="presentation">
+            <button class="nav-link active rounded-pill px-4 py-2 fw-semibold d-flex align-items-center gap-2"
+              id="subtab-banners-btn" data-bs-toggle="pill" data-bs-target="#subtab-banners-content" type="button" role="tab">
+              <i class="bi bi-images text-primary"></i>
+              <span>Featured Announcements</span>
+              <span class="badge bg-primary bg-opacity-10 text-primary rounded-pill ms-1"><?php echo count($all_promotional_banners); ?></span>
+            </button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link rounded-pill px-4 py-2 fw-semibold d-flex align-items-center gap-2"
+              id="subtab-text-btn" data-bs-toggle="pill" data-bs-target="#subtab-text-content" type="button" role="tab">
+              <i class="bi bi-bell-fill text-warning"></i>
+              <span>Standard Text Notices</span>
+              <span class="badge bg-secondary bg-opacity-10 text-secondary rounded-pill ms-1"><?php echo count($all_site_announcements); ?></span>
+            </button>
+          </li>
+        </ul>
+
+        <!-- Tab Content Containers -->
+        <div class="tab-content" id="announcementsSubTabContent">
+          
+          <!-- TAB 1: Featured Announcements (Slider) -->
+          <div class="tab-pane fade show active" id="subtab-banners-content" role="tabpanel">
+            <div class="glass-card p-4">
+              <div class="d-flex justify-content-between align-items-center mb-3">
+                <div class="d-flex align-items-center gap-2">
+                  <h5 class="fw-bold mb-0 text-dark">Visual Featured Carousel Slider</h5>
+                  <span class="badge bg-success bg-opacity-10 text-success rounded-pill px-2.5 py-1 fs-8">
+                    <?php 
+                      $active_count = count(array_filter($all_promotional_banners, function($b) { return $b['is_active'] == 1; }));
+                      echo $active_count . ' Active on Homepage'; 
+                    ?>
+                  </span>
+                </div>
+                <div class="text-muted fs-8">
+                  <i class="bi bi-info-circle me-1"></i> Auto-swipes every 4.5s on Homepage (Pause on Hover)
+                </div>
+              </div>
+
+              <?php if (count($all_promotional_banners) === 0): ?>
+                <div class="text-center py-5">
+                  <div class="bg-light rounded-circle d-inline-flex p-4 mb-3">
+                    <i class="bi bi-images text-muted fs-1"></i>
+                  </div>
+                  <h6 class="fw-bold text-dark mb-1">No Featured Announcements Created</h6>
+                  <p class="text-muted fs-7 mb-3">Add eye-catching announcements with uncropped images and clickable website links in description modals.</p>
+                  <button type="button" class="btn btn-sm btn-primary rounded-pill px-4" data-bs-toggle="modal" data-bs-target="#addBannerModal">
+                    <i class="bi bi-plus-circle me-1"></i> Create First Announcement
+                  </button>
+                </div>
+              <?php else: ?>
+                <div class="table-responsive">
+                  <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                      <tr>
+                        <th scope="col" class="py-3 border-0 text-center" style="width: 90px;">Order</th>
+                        <th scope="col" class="py-3 border-0" style="width: 140px;">Image</th>
+                        <th scope="col" class="py-3 border-0" style="width: 240px;">Title & Subtitle</th>
+                        <th scope="col" class="py-3 border-0">Announcement Details (with Links)</th>
+                        <th scope="col" class="py-3 border-0 text-center" style="width: 120px;">Display State</th>
+                        <th scope="col" class="py-3 border-0 text-end" style="width: 140px;">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <?php foreach ($all_promotional_banners as $banner): ?>
+                        <tr>
+                          <!-- Order & Quick Move -->
+                          <td class="py-3 text-center">
+                            <div class="d-flex flex-column align-items-center gap-1">
+                              <span class="badge bg-light text-dark border rounded-pill px-2.5 py-1 fs-8 fw-bold">#<?php echo $banner['display_order']; ?></span>
+                              <div class="btn-group btn-group-sm">
+                                <form action="index.php" method="POST" class="d-inline">
+                                  <input type="hidden" name="action" value="move_banner_order">
+                                  <input type="hidden" name="banner_id" value="<?php echo $banner['id']; ?>">
+                                  <input type="hidden" name="direction" value="up">
+                                  <button type="submit" class="btn btn-xs btn-outline-secondary py-0 px-1" title="Move Up"><i class="bi bi-chevron-up"></i></button>
+                                </form>
+                                <form action="index.php" method="POST" class="d-inline">
+                                  <input type="hidden" name="action" value="move_banner_order">
+                                  <input type="hidden" name="banner_id" value="<?php echo $banner['id']; ?>">
+                                  <input type="hidden" name="direction" value="down">
+                                  <button type="submit" class="btn btn-xs btn-outline-secondary py-0 px-1" title="Move Down"><i class="bi bi-chevron-down"></i></button>
+                                </form>
+                              </div>
+                            </div>
+                          </td>
+
+                          <!-- Thumbnail Image -->
+                          <td class="py-3">
+                            <div class="position-relative rounded-3 overflow-hidden shadow-sm border bg-dark" style="width: 130px; height: 75px;">
+                              <img src="<?php echo htmlspecialchars((strpos($banner['image_path'], 'http') === 0) ? $banner['image_path'] : '../' . $banner['image_path']); ?>" alt="Announcement" class="w-100 h-100 object-fit-cover">
+                              <span class="position-absolute bottom-0 end-0 bg-dark bg-opacity-75 text-white fs-9 px-1.5 py-0.5 rounded-top-start">
+                                <i class="bi bi-aspect-ratio"></i>
+                              </span>
+                            </div>
+                          </td>
+
+                          <!-- Title & Subtitle -->
+                          <td class="py-3">
+                            <div class="fw-bold text-dark mb-0.5 fs-7"><?php echo htmlspecialchars($banner['title']); ?></div>
+                            <?php if (!empty($banner['subtitle'])): ?>
+                              <div class="text-secondary fs-8"><?php echo htmlspecialchars($banner['subtitle']); ?></div>
+                            <?php endif; ?>
+                          </td>
+
+                          <!-- Announcement Details snippet with links -->
+                          <td class="py-3">
+                            <div class="text-muted fs-8 leading-normal" style="max-width: 420px; max-height: 80px; overflow-y: auto; word-break: break-word;">
+                              <?php
+                                // Show preview of content with auto-link detection
+                                $content_preview = strip_tags($banner['details_content']);
+                                $linked_preview = preg_replace('~(https?://[^\s<]+|www\.[^\s<]+)~i', '<a href="$1" target="_blank" class="text-primary text-decoration-underline">$1</a>', htmlspecialchars($content_preview));
+                                echo $linked_preview;
+                              ?>
+                            </div>
+                          </td>
+
+                          <!-- Display Status Active Toggle -->
+                          <td class="py-3 text-center">
+                            <form action="index.php" method="POST" class="d-inline">
+                              <input type="hidden" name="action" value="toggle_banner_status">
+                              <input type="hidden" name="banner_id" value="<?php echo $banner['id']; ?>">
+                              <button type="submit" class="btn btn-sm border-0 rounded-pill px-3 py-1 fw-semibold fs-8 <?php echo $banner['is_active'] ? 'btn-success bg-success text-white' : 'btn-light text-muted border'; ?>" title="Click to toggle status">
+                                <?php if ($banner['is_active']): ?>
+                                  <i class="bi bi-check-circle-fill me-1"></i> Active
+                                <?php else: ?>
+                                  <i class="bi bi-pause-circle me-1"></i> Hidden
+                                <?php endif; ?>
+                              </button>
+                            </form>
+                          </td>
+
+                          <!-- Actions -->
+                          <td class="py-3 text-end">
+                            <div class="d-flex justify-content-end gap-1.5">
+                              <button type="button" class="btn btn-sm btn-outline-primary rounded-pill px-3 fw-semibold"
+                                onclick='openEditBannerModal(<?php echo json_encode($banner, JSON_HEX_APOS | JSON_HEX_QUOT); ?>)'>
+                                <i class="bi bi-pencil me-1"></i> Edit
+                              </button>
+                              <form action="index.php" method="POST" class="d-inline"
+                                onsubmit="return confirm('Are you sure you want to delete this featured announcement?');">
+                                <input type="hidden" name="action" value="delete_banner">
+                                <input type="hidden" name="banner_id" value="<?php echo $banner['id']; ?>">
+                                <button type="submit" class="btn btn-sm btn-outline-danger rounded-pill px-2.5" title="Delete">
+                                  <i class="bi bi-trash"></i>
+                                </button>
+                              </form>
+                            </div>
+                          </td>
+                        </tr>
+                      <?php endforeach; ?>
+                    </tbody>
+                  </table>
+                </div>
+              <?php endif; ?>
             </div>
-          <?php else: ?>
-            <div class="table-responsive">
-              <table class="table table-hover align-middle mb-0">
-                <thead class="table-light">
-                  <tr>
-                    <th scope="col" class="py-3 border-0">Title & Content</th>
-                    <th scope="col" class="py-3 border-0">Date / Badge Label</th>
-                    <th scope="col" class="py-3 border-0">Status</th>
-                    <th scope="col" class="py-3 border-0">Created At</th>
-                    <th scope="col" class="py-3 border-0 text-end">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <?php foreach ($all_site_announcements as $ann): ?>
-                    <tr>
-                      <td class="py-3">
-                        <div class="fw-bold text-dark mb-1"><?php echo htmlspecialchars($ann['title']); ?></div>
-                        <div class="text-muted fs-8 text-truncate" style="max-width: 320px;"
-                          title="<?php echo htmlspecialchars($ann['content']); ?>">
-                          <?php echo htmlspecialchars($ann['content']); ?>
-                        </div>
-                      </td>
-                      <td class="py-3">
-                        <span
-                          class="badge bg-light text-dark border fs-8"><?php echo htmlspecialchars($ann['badge_text'] ?: date('M d, Y', strtotime($ann['created_at']))); ?></span>
-                      </td>
-                      <td class="py-3">
-                        <?php if ($ann['status'] === 'active'): ?>
-                          <span class="status-badge-active"><i class="bi bi-check-circle me-1"></i> Active</span>
-                        <?php else: ?>
-                          <span
-                            class="badge bg-secondary bg-opacity-10 text-secondary px-2.5 py-1 rounded-pill fs-8">Inactive</span>
-                        <?php endif; ?>
-                      </td>
-                      <td class="py-3 fs-8 text-secondary">
-                        <?php echo date('Y-m-d H:i', strtotime($ann['created_at'])); ?>
-                      </td>
-                      <td class="py-3 text-end">
-                        <div class="d-flex justify-content-end gap-2">
-                          <button type="button" class="btn btn-sm btn-outline-primary rounded-pill px-3 fw-semibold"
-                            onclick='openEditAnnouncementModal(<?php echo json_encode($ann, JSON_HEX_APOS | JSON_HEX_QUOT); ?>)'>
-                            <i class="bi bi-pencil me-1"></i> Edit
-                          </button>
-                          <form action="index.php" method="POST" class="d-inline"
-                            onsubmit="return confirm('Are you sure you want to delete this announcement?');">
-                            <input type="hidden" name="action" value="delete_announcement">
-                            <input type="hidden" name="announcement_id" value="<?php echo $ann['id']; ?>">
-                            <button type="submit" class="btn btn-sm btn-outline-danger rounded-pill px-3 fw-semibold">
-                              <i class="bi bi-trash me-1"></i> Delete
-                            </button>
-                          </form>
-                        </div>
-                      </td>
-                    </tr>
-                  <?php endforeach; ?>
-                </tbody>
-              </table>
+          </div>
+
+          <!-- TAB 2: Standard Text Announcements -->
+          <div class="tab-pane fade" id="subtab-text-content" role="tabpanel">
+            <div class="glass-card p-4">
+              <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="fw-bold mb-0 text-dark">Standard Site Notices</h5>
+                <button type="button" class="btn btn-sm btn-outline-primary rounded-pill px-3 fw-semibold"
+                  data-bs-toggle="modal" data-bs-target="#addAnnouncementModal">
+                  <i class="bi bi-plus-circle me-1"></i> New Notice
+                </button>
+              </div>
+
+              <?php if (count($all_site_announcements) === 0): ?>
+                <div class="text-center py-5">
+                  <i class="bi bi-megaphone text-muted fs-1"></i>
+                  <p class="text-muted mt-3 mb-0">No text announcements created yet.</p>
+                </div>
+              <?php else: ?>
+                <div class="table-responsive">
+                  <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                      <tr>
+                        <th scope="col" class="py-3 border-0" style="width: 140px;">Category</th>
+                        <th scope="col" class="py-3 border-0">Title & Content</th>
+                        <th scope="col" class="py-3 border-0" style="width: 140px;">Badge / Date</th>
+                        <th scope="col" class="py-3 border-0" style="width: 100px;">Status</th>
+                        <th scope="col" class="py-3 border-0 text-end" style="width: 140px;">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <?php foreach ($all_site_announcements as $ann): ?>
+                        <?php 
+                          $cat = $ann['category'] ?? 'notice';
+                          $cat_badge = '<span class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 rounded-pill px-2.5 py-1 fs-8"><i class="bi bi-megaphone me-1"></i> Notice</span>';
+                          if ($cat === 'offer') {
+                            $cat_badge = '<span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 rounded-pill px-2.5 py-1 fs-8">🎉 Special Offer</span>';
+                          } elseif ($cat === 'launch') {
+                            $cat_badge = '<span class="badge bg-purple bg-opacity-10 text-purple border border-purple border-opacity-25 rounded-pill px-2.5 py-1 fs-8" style="color: #6f42c1; background-color: rgba(111, 66, 193, 0.1);">🚀 Course Launch</span>';
+                          } elseif ($cat === 'alert') {
+                            $cat_badge = '<span class="badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25 rounded-pill px-2.5 py-1 fs-8">⚡ Urgent Alert</span>';
+                          } elseif ($cat === 'event') {
+                            $cat_badge = '<span class="badge bg-info bg-opacity-10 text-info border border-info border-opacity-25 rounded-pill px-2.5 py-1 fs-8">📅 Event</span>';
+                          }
+                        ?>
+                        <tr>
+                          <td class="py-3"><?php echo $cat_badge; ?></td>
+                          <td class="py-3">
+                            <div class="fw-bold text-dark mb-1"><?php echo htmlspecialchars($ann['title']); ?></div>
+                            <div class="text-muted fs-8 text-truncate" style="max-width: 380px;" title="<?php echo htmlspecialchars($ann['content']); ?>">
+                              <?php echo htmlspecialchars($ann['content']); ?>
+                            </div>
+                          </td>
+                          <td class="py-3">
+                            <span class="badge bg-light text-dark border fs-8"><?php echo htmlspecialchars($ann['badge_text'] ?: date('M d, Y', strtotime($ann['created_at']))); ?></span>
+                          </td>
+                          <td class="py-3">
+                            <?php if ($ann['status'] === 'active'): ?>
+                              <span class="status-badge-active"><i class="bi bi-check-circle me-1"></i> Active</span>
+                            <?php else: ?>
+                              <span class="badge bg-secondary bg-opacity-10 text-secondary px-2.5 py-1 rounded-pill fs-8">Inactive</span>
+                            <?php endif; ?>
+                          </td>
+                          <td class="py-3 text-end">
+                            <div class="d-flex justify-content-end gap-1.5">
+                              <button type="button" class="btn btn-sm btn-outline-primary rounded-pill px-3 fw-semibold"
+                                onclick='openEditAnnouncementModal(<?php echo json_encode($ann, JSON_HEX_APOS | JSON_HEX_QUOT); ?>)'>
+                                <i class="bi bi-pencil me-1"></i> Edit
+                              </button>
+                              <form action="index.php" method="POST" class="d-inline"
+                                onsubmit="return confirm('Are you sure you want to delete this announcement?');">
+                                <input type="hidden" name="action" value="delete_announcement">
+                                <input type="hidden" name="announcement_id" value="<?php echo $ann['id']; ?>">
+                                <button type="submit" class="btn btn-sm btn-outline-danger rounded-pill px-2.5">
+                                  <i class="bi bi-trash"></i>
+                                </button>
+                              </form>
+                            </div>
+                          </td>
+                        </tr>
+                      <?php endforeach; ?>
+                    </tbody>
+                  </table>
+                </div>
+              <?php endif; ?>
             </div>
-          <?php endif; ?>
+          </div>
         </div>
       </div>
 
       <!-- Hero Banner Customization Section -->
       <div id="hero-section" class="d-none">
         <div class="mb-4">
-          <h2 class="fw-bold text-dark mb-1">Homepage Hero Section Management</h2>
-          <p class="text-secondary mb-0">Customize the hero banner title, subtitle description, call-to-action button,
-            and upload a custom background image.</p>
+          <h2 class="fw-bold text-dark mb-1 d-flex align-items-center gap-2">
+            <i class="bi bi-layout-text-window-reverse text-success"></i>
+            <span>Homepage Hero Section Management</span>
+          </h2>
+          <p class="text-secondary mb-0">Customize the hero banner title, subtitle description, call-to-action buttons, and manage the featured student portrait image.</p>
         </div>
 
-        <div class="glass-card p-4">
-          <form action="index.php" method="POST" enctype="multipart/form-data">
-            <input type="hidden" name="action" value="update_hero_settings">
+        <div class="row g-4">
+          <!-- Card 1: Hero Banner Content -->
+          <div class="col-lg-7">
+            <div class="glass-card p-4 h-100 d-flex flex-column justify-content-between">
+              <form action="index.php" method="POST">
+                <input type="hidden" name="action" value="update_hero_settings">
 
-            <div class="row g-4">
-              <div class="col-lg-7">
-                <h5 class="fw-bold text-dark border-bottom pb-2 mb-3 fs-6"><i
-                    class="bi bi-pencil-square me-2 text-primary"></i>Hero Banner Content</h5>
-
-                <div class="mb-3">
-                  <label class="form-label fw-semibold text-secondary fs-8">Hero Title <span
-                      class="text-danger">*</span></label>
-                  <input type="text" name="title" class="form-control"
-                    value="<?php echo htmlspecialchars($hero_settings['title'] ?? ''); ?>" required>
+                <div class="d-flex align-items-center justify-content-between border-bottom pb-2 mb-3">
+                  <h5 class="fw-bold text-dark mb-0 fs-6 d-flex align-items-center gap-2">
+                    <i class="bi bi-pencil-square text-primary"></i>
+                    <span>Hero Banner Content &amp; Buttons</span>
+                  </h5>
+                  <span class="badge bg-primary bg-opacity-10 text-primary rounded-pill px-2.5 py-1 fs-9 fw-semibold">
+                    Text &amp; Links
+                  </span>
                 </div>
 
                 <div class="mb-3">
-                  <label class="form-label fw-semibold text-secondary fs-8">Subtitle / Description <span
-                      class="text-danger">*</span></label>
-                  <textarea name="description" class="form-control" rows="4"
+                  <label class="form-label fw-bold text-dark fs-8">Hero Title <span class="text-danger">*</span></label>
+                  <input type="text" name="title" class="form-control"
+                    value="<?php echo htmlspecialchars($hero_settings['title'] ?? ''); ?>" required>
+                  <small class="text-muted fs-9">Headline displayed at the top of the homepage hero banner.</small>
+                </div>
+
+                <div class="mb-3">
+                  <label class="form-label fw-bold text-dark fs-8">Subtitle / Description <span class="text-danger">*</span></label>
+                  <textarea name="description" class="form-control" rows="3"
                     required><?php echo htmlspecialchars($hero_settings['description'] ?? ''); ?></textarea>
+                  <small class="text-muted fs-9">Supporting text explaining the platform and offerings.</small>
                 </div>
 
                 <div class="row g-3 mb-3">
                   <div class="col-md-6">
-                    <label class="form-label fw-semibold text-secondary fs-8">Primary Button Text <span
-                        class="text-danger">*</span></label>
+                    <label class="form-label fw-bold text-dark fs-8">Primary Button Text <span class="text-danger">*</span></label>
                     <input type="text" name="button_text" class="form-control form-control-sm"
                       value="<?php echo htmlspecialchars($hero_settings['button_text'] ?? 'Apply Now'); ?>" required>
                   </div>
                   <div class="col-md-6">
-                    <label class="form-label fw-semibold text-secondary fs-8">Primary Button Link URL <span
-                        class="text-danger">*</span></label>
+                    <label class="form-label fw-bold text-dark fs-8">Primary Button Link URL <span class="text-danger">*</span></label>
                     <input type="text" name="button_url" class="form-control form-control-sm"
-                      value="<?php echo htmlspecialchars($hero_settings['button_url'] ?? '#courses-section'); ?>"
-                      required>
+                      value="<?php echo htmlspecialchars($hero_settings['button_url'] ?? '#courses-section'); ?>" required>
                   </div>
                 </div>
 
                 <div class="row g-3 mb-3">
                   <div class="col-md-6">
-                    <label class="form-label fw-semibold text-secondary fs-8">Secondary Button Text</label>
+                    <label class="form-label fw-bold text-dark fs-8">Secondary Button Text</label>
                     <input type="text" name="secondary_button_text" class="form-control form-control-sm"
                       value="<?php echo htmlspecialchars($hero_settings['secondary_button_text'] ?? 'Know More'); ?>">
                   </div>
                   <div class="col-md-6">
-                    <label class="form-label fw-semibold text-secondary fs-8">Secondary Button Link URL</label>
+                    <label class="form-label fw-bold text-dark fs-8">Secondary Button Link URL</label>
                     <input type="text" name="secondary_button_url" class="form-control form-control-sm"
                       value="<?php echo htmlspecialchars($hero_settings['secondary_button_url'] ?? '#courses-section'); ?>">
                   </div>
                 </div>
 
-                <div class="row g-3">
+                <div class="row g-3 mb-4">
                   <div class="col-md-6">
-                    <label class="form-label fw-semibold text-secondary fs-8">Phone Contact Text</label>
+                    <label class="form-label fw-bold text-dark fs-8">Phone Contact Text</label>
                     <input type="text" name="phone_number" class="form-control form-control-sm"
                       value="<?php echo htmlspecialchars($hero_settings['phone_number'] ?? 'Call Us : 011 234 5678'); ?>">
                   </div>
                   <div class="col-md-6">
-                    <label class="form-label fw-semibold text-secondary fs-8">Enrolled Students Pill Badge</label>
+                    <label class="form-label fw-bold text-dark fs-8">Enrolled Students Pill Badge</label>
                     <input type="text" name="enrolled_students_count" class="form-control form-control-sm"
                       value="<?php echo htmlspecialchars($hero_settings['enrolled_students_count'] ?? '30K Enrolled Students'); ?>">
                   </div>
                 </div>
-              </div>
 
-              <div class="col-lg-5">
-                <h5 class="fw-bold text-dark border-bottom pb-2 mb-3 fs-6"><i
-                    class="bi bi-images me-2 text-primary"></i>Background Slider Images (Up to 3 Images)</h5>
+                <!-- Social Media Channels Section -->
+                <div class="border-top pt-3 mt-4">
+                  <div class="d-flex align-items-center justify-content-between border-bottom pb-2 mb-3">
+                    <h6 class="fw-bold text-dark mb-0 fs-7 d-flex align-items-center gap-2">
+                      <i class="bi bi-share text-primary"></i>
+                      <span><?php echo __('hero_social_links_title', 'Social Media Links & Contact Channels'); ?></span>
+                    </h6>
+                    <span class="badge bg-secondary bg-opacity-10 text-secondary rounded-pill px-2.5 py-1 fs-9 fw-semibold">
+                      Hero Icons
+                    </span>
+                  </div>
+                  <p class="text-secondary fs-9 mb-3">
+                    <?php echo __('hero_social_links_desc', 'Customize the direct links for the social media icons shown in the homepage hero banner.'); ?>
+                  </p>
 
-                <p class="text-muted fs-8 mb-3">Upload up to 3 background images. The homepage slider will automatically
-                  transition between them cleanly without color gradient masks.</p>
-
-                <?php
-                $defaults_preview = [
-                  1 => 'https://images.unsplash.com/photo-1517694712202-14dd9538aa97?w=300&auto=format&fit=crop&q=80',
-                  2 => 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=300&auto=format&fit=crop&q=80',
-                  3 => 'https://images.unsplash.com/photo-1531482615713-2afd69097998?w=300&auto=format&fit=crop&q=80'
-                ];
-                for ($i = 1; $i <= 3; $i++):
-                  $img_key = "bg_image_$i";
-                  $custom_img = !empty($hero_settings[$img_key]) ? '../' . $hero_settings[$img_key] : null;
-                  $display_img = $custom_img ?: $defaults_preview[$i];
-                  ?>
-                  <div class="border rounded p-3 mb-3 bg-light">
-                    <div class="d-flex align-items-center gap-3">
-                      <img src="<?php echo htmlspecialchars($display_img); ?>" alt="Background Slot <?php echo $i; ?>"
-                        class="rounded border shadow-sm" style="width: 80px; height: 50px; object-fit: cover;">
-                      <div class="flex-grow-1">
-                        <div class="d-flex justify-content-between align-items-center mb-1">
-                          <span class="fw-bold fs-8 text-dark">Background Image <?php echo $i; ?></span>
-                          <?php if ($custom_img): ?>
-                            <span class="badge bg-success bg-opacity-10 text-success fs-9">Custom Uploaded</span>
-                          <?php else: ?>
-                            <span class="badge bg-secondary bg-opacity-10 text-secondary fs-9">Default Preset</span>
-                          <?php endif; ?>
-                        </div>
-                        <input type="file" name="bg_image_<?php echo $i; ?>_file"
-                          class="form-control form-control-sm mb-1" accept="image/*">
-                        <?php if ($custom_img): ?>
-                          <div class="form-check mb-0 mt-1">
-                            <input class="form-check-input" type="checkbox" name="remove_bg_image_<?php echo $i; ?>"
-                              value="1" id="remove_bg_<?php echo $i; ?>">
-                            <label class="form-check-label text-danger fs-9 fw-semibold" for="remove_bg_<?php echo $i; ?>">
-                              <i class="bi bi-trash me-1"></i> Revert to default preset
-                            </label>
-                          </div>
-                        <?php endif; ?>
-                      </div>
+                  <div class="row g-3 mb-3">
+                    <div class="col-md-6">
+                      <label class="form-label fw-bold text-dark fs-9 d-flex align-items-center gap-1.5 mb-1">
+                        <i class="bi bi-facebook text-primary"></i>
+                        <span>Facebook URL</span>
+                      </label>
+                      <input type="text" name="facebook_url" class="form-control form-control-sm"
+                        value="<?php echo htmlspecialchars($hero_settings['facebook_url'] ?? '#'); ?>"
+                        placeholder="https://facebook.com/yourpage">
+                    </div>
+                    <div class="col-md-6">
+                      <label class="form-label fw-bold text-dark fs-9 d-flex align-items-center gap-1.5 mb-1">
+                        <i class="bi bi-twitter-x text-dark"></i>
+                        <span>Twitter / X URL</span>
+                      </label>
+                      <input type="text" name="twitter_url" class="form-control form-control-sm"
+                        value="<?php echo htmlspecialchars($hero_settings['twitter_url'] ?? '#'); ?>"
+                        placeholder="https://x.com/yourhandle">
                     </div>
                   </div>
-                <?php endfor; ?>
+
+                  <div class="row g-3 mb-3">
+                    <div class="col-md-6">
+                      <label class="form-label fw-bold text-dark fs-9 d-flex align-items-center gap-1.5 mb-1">
+                        <i class="bi bi-telegram text-info"></i>
+                        <span>Telegram Channel / Group URL</span>
+                      </label>
+                      <input type="text" name="telegram_url" class="form-control form-control-sm"
+                        value="<?php echo htmlspecialchars($hero_settings['telegram_url'] ?? '#'); ?>"
+                        placeholder="https://t.me/yourchannel">
+                    </div>
+                    <div class="col-md-6">
+                      <label class="form-label fw-bold text-dark fs-9 d-flex align-items-center gap-1.5 mb-1">
+                        <i class="bi bi-instagram text-danger"></i>
+                        <span>Instagram URL</span>
+                      </label>
+                      <input type="text" name="instagram_url" class="form-control form-control-sm"
+                        value="<?php echo htmlspecialchars($hero_settings['instagram_url'] ?? '#'); ?>"
+                        placeholder="https://instagram.com/yourprofile">
+                    </div>
+                  </div>
+
+                  <div class="row g-3 mb-3">
+                    <div class="col-md-6">
+                      <label class="form-label fw-bold text-dark fs-9 d-flex align-items-center gap-1.5 mb-1">
+                        <i class="bi bi-youtube text-danger"></i>
+                        <span>YouTube Channel URL</span>
+                      </label>
+                      <input type="text" name="youtube_url" class="form-control form-control-sm"
+                        value="<?php echo htmlspecialchars($hero_settings['youtube_url'] ?? ''); ?>"
+                        placeholder="https://youtube.com/@yourchannel (Optional)">
+                    </div>
+                    <div class="col-md-6">
+                      <label class="form-label fw-bold text-dark fs-9 d-flex align-items-center gap-1.5 mb-1">
+                        <i class="bi bi-whatsapp text-success"></i>
+                        <span>WhatsApp Link / Number</span>
+                      </label>
+                      <input type="text" name="whatsapp_url" class="form-control form-control-sm"
+                        value="<?php echo htmlspecialchars($hero_settings['whatsapp_url'] ?? ''); ?>"
+                        placeholder="https://wa.me/94771234567 (Optional)">
+                    </div>
+                  </div>
+
+                  <div class="row g-3 mb-3">
+                    <div class="col-12">
+                      <label class="form-label fw-bold text-dark fs-9 d-flex align-items-center gap-1.5 mb-1">
+                        <i class="bi bi-linkedin text-primary"></i>
+                        <span>LinkedIn Page URL</span>
+                      </label>
+                      <input type="text" name="linkedin_url" class="form-control form-control-sm"
+                        value="<?php echo htmlspecialchars($hero_settings['linkedin_url'] ?? ''); ?>"
+                        placeholder="https://linkedin.com/company/yourorg (Optional)">
+                    </div>
+                  </div>
+                </div>
+
+                <div class="pt-3 border-top d-flex justify-content-end">
+                  <button type="submit" class="btn btn-primary text-white px-4 py-2 rounded-pill fw-semibold shadow-sm"
+                    style="background-color: <?php echo $is_super_admin ? '#0b4528' : '#0f4c81'; ?>; border: none;">
+                    <i class="bi bi-check-circle me-1"></i> Save Hero Banner &amp; Social Links
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          <!-- Card 2: Hero Section Image Manager -->
+          <div class="col-lg-5">
+            <div class="glass-card p-4 h-100 d-flex flex-column justify-content-between">
+              <div>
+                <div class="d-flex align-items-center justify-content-between border-bottom pb-2 mb-3">
+                  <h5 class="fw-bold text-dark mb-0 fs-6 d-flex align-items-center gap-2">
+                    <i class="bi bi-person-bounding-box" style="color:<?php echo $is_super_admin ? '#0b4528' : '#0f4c81'; ?>;"></i>
+                    <span><?php echo __('hero_image_manager', 'Hero Section Image Manager'); ?></span>
+                  </h5>
+                  <span class="badge bg-success bg-opacity-10 text-success rounded-pill px-2.5 py-1 fs-9 fw-semibold">
+                    <i class="bi bi-stars me-1"></i>Portrait Image
+                  </span>
+                </div>
+
+                <p class="text-secondary fs-8 mb-3">
+                  Upload a student portrait cutout for the homepage hero right-side column. Layered decorative background graphics are applied automatically.
+                </p>
+
+                <!-- Current Hero Image Live Preview -->
+                <div class="mb-3">
+                  <div class="d-flex justify-content-between align-items-center mb-1">
+                    <label class="form-label fw-bold text-dark fs-8 mb-0"><?php echo __('hero_current_preview', 'Current Hero Image Preview'); ?></label>
+                    <span class="badge <?php echo $admin_hero_portrait_preview ? 'bg-success' : 'bg-secondary'; ?> text-white rounded-pill fs-9 px-2">
+                      <?php echo $admin_hero_portrait_preview ? 'Custom Uploaded' : 'Default Preset'; ?>
+                    </span>
+                  </div>
+                  <div class="rounded-3 border overflow-hidden d-flex align-items-center justify-content-center p-3"
+                    style="min-height: 180px; max-height: 220px; background: repeating-conic-gradient(#f8fafc 0% 25%, #ffffff 0% 50%) 50% / 16px 16px;">
+                    <img id="admin-hero-portrait-preview"
+                      src="<?php echo $admin_hero_portrait_preview ? ($admin_hero_portrait_preview . '?v=' . time()) : 'https://images.unsplash.com/photo-1523050854058-8df90110c9f1?w=400&auto=format&fit=crop&q=85'; ?>"
+                      alt="<?php echo htmlspecialchars($hero_settings['hero_image_alt'] ?? 'Hero Portrait'); ?>"
+                      class="img-fluid" style="max-height: 190px; object-fit: contain; display: block;"
+                      onerror="this.src='https://images.unsplash.com/photo-1523050854058-8df90110c9f1?w=400&auto=format&fit=crop&q=85';">
+                  </div>
+                </div>
+
+                <!-- Form -->
+                <form action="index.php" method="POST" enctype="multipart/form-data" id="heroPortraitUploadForm">
+                  <input type="hidden" name="action" value="update_hero_portrait_image">
+
+                  <div class="mb-3">
+                    <label for="hero_portrait_file" class="form-label fw-bold text-dark fs-8 mb-1">
+                      <?php echo __('hero_portrait_upload_label', 'Upload Hero Portrait Image'); ?>
+                    </label>
+                    <input type="file" name="hero_portrait_file" id="hero_portrait_file" class="form-control form-control-sm"
+                      accept=".png,.webp,.jpg,.jpeg,image/png,image/webp,image/jpeg"
+                      onchange="previewHeroPortrait(this)">
+                    <small class="text-dark d-block fs-9 mt-1 fw-medium">
+                      <i class="bi bi-info-circle text-primary me-1"></i><strong>Recommended:</strong> Transparent PNG or WebP (800&times;900px or larger).
+                    </small>
+                  </div>
+
+                  <div class="mb-3">
+                    <label for="hero_image_alt_input" class="form-label fw-bold text-dark fs-8 mb-1">
+                      <?php echo __('hero_image_alt_label', 'Image Alt Text (for accessibility)'); ?>
+                    </label>
+                    <input type="text" name="hero_image_alt" id="hero_image_alt_input" class="form-control form-control-sm"
+                      value="<?php echo htmlspecialchars($hero_settings['hero_image_alt'] ?? 'Student with books'); ?>"
+                      placeholder="e.g. Student holding books">
+                  </div>
+
+                  <?php if ($admin_hero_portrait_preview): ?>
+                    <div class="form-check mb-3 p-2 bg-danger bg-opacity-10 rounded-3 border border-danger border-opacity-25">
+                      <input class="form-check-input ms-0 me-2" type="checkbox" name="remove_hero_portrait" value="1" id="remove_hero_portrait_chk">
+                      <label class="form-check-label text-danger fs-8 fw-bold" for="remove_hero_portrait_chk">
+                        <i class="bi bi-trash me-1"></i> Revert to default preset portrait
+                      </label>
+                    </div>
+                  <?php endif; ?>
+
+                  <button type="submit" class="btn btn-primary text-white w-100 py-2 rounded-pill fw-bold shadow-sm d-flex align-items-center justify-content-center gap-2"
+                    style="background-color:<?php echo $is_super_admin ? '#0b4528' : '#0f4c81'; ?>;border:none;">
+                    <i class="bi bi-cloud-upload-fill"></i>
+                    <span><?php echo __('hero_upload_save', 'Upload &amp; Save Hero Image'); ?></span>
+                  </button>
+                </form>
+              </div>
+
+              <div class="mt-3 pt-2 border-top">
+                <p class="text-muted fs-9 mb-0">
+                  <i class="bi bi-shield-check text-success me-1"></i> Supported: <strong>PNG, WebP, JPG, JPEG</strong>. Validated securely by MIME type.
+                </p>
               </div>
             </div>
-
-            <hr class="my-4">
-
-            <div class="d-flex justify-content-end">
-              <button type="submit" class="btn btn-primary px-5 py-2 rounded-pill fw-semibold shadow-sm"
-                style="background-color: #0f4c81; border: none;">
-                <i class="bi bi-check-circle me-1"></i> Save Hero Settings
-              </button>
-            </div>
-          </form>
+          </div>
         </div>
-      </div>
+
+      </div><!-- /#hero-section -->
 
       <!-- Course Dropdown Options Customization Section -->
       <div id="options-section" class="d-none">
@@ -2882,6 +3554,166 @@ try {
               <div class="mt-4 pt-3 border-top">
                 <p class="text-muted fs-9 mb-0">
                   <i class="bi bi-info-circle text-success me-1"></i> Updates immediately for browser tabs, bookmark bars, and mobile home screen icons.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Divider / Section Title: Authentication Pages Background Images -->
+          <div class="col-12 mt-4 pt-2">
+            <div class="d-flex align-items-center justify-content-between pb-2 border-bottom">
+              <div>
+                <h4 class="fw-bold text-dark mb-1">
+                  <i class="bi bi-shield-lock-fill text-primary me-2"></i>Login &amp; Register Page Visual Images
+                </h4>
+                <p class="text-secondary fs-7 mb-0">Customize the left-side full visual banner images displayed on the Student and Teacher Login and Registration portals.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 3: Login Page Image Customizer -->
+          <div class="col-lg-6">
+            <div class="glass-card p-4 h-100 d-flex flex-column justify-content-between">
+              <div>
+                <div class="d-flex align-items-center justify-content-between mb-3 pb-2 border-bottom">
+                  <h5 class="fw-bold text-dark mb-0">
+                    <i class="bi bi-box-arrow-in-right text-primary me-2"></i>Login Page Left Visual Image
+                  </h5>
+                  <span class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 rounded-pill px-2.5 py-1 fs-9 fw-semibold">
+                    <i class="bi bi-person-fill me-1"></i>login.php
+                  </span>
+                </div>
+
+                <p class="text-secondary fs-8 mb-3">
+                  This image occupies the left 50% split column on the student and teacher login screen.
+                </p>
+
+                <!-- Current Active Login Image Preview -->
+                <?php
+                $admin_login_img = get_login_page_image();
+                $admin_login_preview_src = (preg_match('~^https?://~i', $admin_login_img) || strpos($admin_login_img, 'data:') === 0) ? $admin_login_img : '../' . ltrim($admin_login_img, '/');
+                ?>
+                <div class="mb-4">
+                  <div class="d-flex justify-content-between align-items-center mb-1">
+                    <label class="form-label fw-semibold text-secondary fs-8 mb-0">Active Login Image Preview</label>
+                    <span class="text-muted fs-9">Split-Screen View</span>
+                  </div>
+                  <div class="rounded-3 border overflow-hidden position-relative shadow-sm" style="height: 180px; background-color: #0b1329;">
+                    <img id="login-img-live-preview" src="<?php echo htmlspecialchars($admin_login_preview_src); ?>?v=<?php echo time(); ?>" alt="Login Page Image"
+                      class="w-100 h-100" style="object-fit: cover;">
+                  </div>
+                </div>
+
+                <!-- Upload / URL Form -->
+                <form action="index.php?tab=logo" method="POST" enctype="multipart/form-data" id="loginImgUploadForm">
+                  <input type="hidden" name="action" value="update_login_image">
+
+                  <div class="mb-3">
+                    <label for="login_image_file" class="form-label fw-semibold text-secondary fs-8">Upload New Image File</label>
+                    <input type="file" name="login_image_file" id="login_image_file" class="form-control"
+                      accept="image/png, image/jpeg, image/webp, image/svg+xml" onchange="previewAuthFile(this, 'login-img-live-preview')">
+                    <small class="text-muted fs-9 mt-1 d-block">Supported formats: <strong>PNG, JPG, JPEG, WEBP</strong> (Recommended: 1200x1600 or 1600x1200 high-res).</small>
+                  </div>
+
+                  <div class="mb-3">
+                    <label for="login_image_url" class="form-label fw-semibold text-secondary fs-8">Or Paste Image Web URL</label>
+                    <input type="url" name="login_image_url" id="login_image_url" class="form-control"
+                      placeholder="https://images.unsplash.com/..." value="<?php echo preg_match('~^https?://~i', $admin_login_img) ? htmlspecialchars($admin_login_img) : ''; ?>">
+                  </div>
+
+                  <div class="d-flex gap-2 pt-2">
+                    <button type="submit" class="btn btn-primary px-4 py-2.5 rounded-pill fw-semibold shadow-sm flex-grow-1"
+                      style="background-color: <?php echo $is_super_admin ? '#0b4528' : '#0f4c81'; ?>; border: none;">
+                      <i class="bi bi-cloud-upload me-1"></i> Apply Login Image
+                    </button>
+                  </div>
+                </form>
+
+                <form action="index.php?tab=logo" method="POST" class="mt-2">
+                  <input type="hidden" name="action" value="reset_login_image">
+                  <button type="submit" class="btn btn-outline-secondary btn-sm rounded-pill w-100" onclick="return confirm('Reset login page image to default educational photo?');">
+                    <i class="bi bi-arrow-counterclockwise me-1"></i> Reset to Default Image
+                  </button>
+                </form>
+              </div>
+
+              <div class="mt-4 pt-3 border-top">
+                <p class="text-muted fs-9 mb-0">
+                  <i class="bi bi-info-circle text-primary me-1"></i> Changes appear instantly on the <a href="../login.php" target="_blank" class="text-decoration-none fw-semibold">Login Page <i class="bi bi-box-arrow-up-right fs-9"></i></a>.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 4: Register Page Image Customizer -->
+          <div class="col-lg-6">
+            <div class="glass-card p-4 h-100 d-flex flex-column justify-content-between">
+              <div>
+                <div class="d-flex align-items-center justify-content-between mb-3 pb-2 border-bottom">
+                  <h5 class="fw-bold text-dark mb-0">
+                    <i class="bi bi-person-plus-fill text-success me-2"></i>Register Page Left Visual Image
+                  </h5>
+                  <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 rounded-pill px-2.5 py-1 fs-9 fw-semibold">
+                    <i class="bi bi-mortarboard-fill me-1"></i>register.php
+                  </span>
+                </div>
+
+                <p class="text-secondary fs-8 mb-3">
+                  This image occupies the left 50% split column on the student and teacher registration screen.
+                </p>
+
+                <!-- Current Active Register Image Preview -->
+                <?php
+                $admin_reg_img = get_register_page_image();
+                $admin_reg_preview_src = (preg_match('~^https?://~i', $admin_reg_img) || strpos($admin_reg_img, 'data:') === 0) ? $admin_reg_img : '../' . ltrim($admin_reg_img, '/');
+                ?>
+                <div class="mb-4">
+                  <div class="d-flex justify-content-between align-items-center mb-1">
+                    <label class="form-label fw-semibold text-secondary fs-8 mb-0">Active Register Image Preview</label>
+                    <span class="text-muted fs-9">Split-Screen View</span>
+                  </div>
+                  <div class="rounded-3 border overflow-hidden position-relative shadow-sm" style="height: 180px; background-color: #0b1329;">
+                    <img id="register-img-live-preview" src="<?php echo htmlspecialchars($admin_reg_preview_src); ?>?v=<?php echo time(); ?>" alt="Register Page Image"
+                      class="w-100 h-100" style="object-fit: cover;">
+                  </div>
+                </div>
+
+                <!-- Upload / URL Form -->
+                <form action="index.php?tab=logo" method="POST" enctype="multipart/form-data" id="registerImgUploadForm">
+                  <input type="hidden" name="action" value="update_register_image">
+
+                  <div class="mb-3">
+                    <label for="register_image_file" class="form-label fw-semibold text-secondary fs-8">Upload New Image File</label>
+                    <input type="file" name="register_image_file" id="register_image_file" class="form-control"
+                      accept="image/png, image/jpeg, image/webp, image/svg+xml" onchange="previewAuthFile(this, 'register-img-live-preview')">
+                    <small class="text-muted fs-9 mt-1 d-block">Supported formats: <strong>PNG, JPG, JPEG, WEBP</strong> (Recommended: 1200x1600 or 1600x1200 high-res).</small>
+                  </div>
+
+                  <div class="mb-3">
+                    <label for="register_image_url" class="form-label fw-semibold text-secondary fs-8">Or Paste Image Web URL</label>
+                    <input type="url" name="register_image_url" id="register_image_url" class="form-control"
+                      placeholder="https://images.unsplash.com/..." value="<?php echo preg_match('~^https?://~i', $admin_reg_img) ? htmlspecialchars($admin_reg_img) : ''; ?>">
+                  </div>
+
+                  <div class="d-flex gap-2 pt-2">
+                    <button type="submit" class="btn btn-success px-4 py-2.5 rounded-pill fw-semibold shadow-sm flex-grow-1"
+                      style="background-color: <?php echo $is_super_admin ? '#0e6237' : '#198754'; ?>; border: none;">
+                      <i class="bi bi-cloud-upload me-1"></i> Apply Register Image
+                    </button>
+                  </div>
+                </form>
+
+                <form action="index.php?tab=logo" method="POST" class="mt-2">
+                  <input type="hidden" name="action" value="reset_register_image">
+                  <button type="submit" class="btn btn-outline-secondary btn-sm rounded-pill w-100" onclick="return confirm('Reset register page image to default educational photo?');">
+                    <i class="bi bi-arrow-counterclockwise me-1"></i> Reset to Default Image
+                  </button>
+                </form>
+              </div>
+
+              <div class="mt-4 pt-3 border-top">
+                <p class="text-muted fs-9 mb-0">
+                  <i class="bi bi-info-circle text-success me-1"></i> Changes appear instantly on the <a href="../register.php" target="_blank" class="text-decoration-none fw-semibold">Register Page <i class="bi bi-box-arrow-up-right fs-9"></i></a>.
                 </p>
               </div>
             </div>
@@ -3312,6 +4144,146 @@ try {
       </div>
     </div>
 
+    <!-- Add Featured Announcement Modal -->
+    <div class="modal fade" id="addBannerModal" tabindex="-1" aria-labelledby="addBannerModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content border-0 shadow">
+          <div class="modal-header text-white" style="background-color: <?php echo $is_super_admin ? '#0b4528' : '#0f4c81'; ?>;">
+            <h5 class="modal-title fw-bold fs-6 mb-0" id="addBannerModalLabel">
+              <i class="bi bi-plus-circle-fill me-2"></i>Create New Featured Announcement
+            </h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <form action="index.php" method="POST" enctype="multipart/form-data">
+            <input type="hidden" name="action" value="add_banner">
+            <div class="modal-body p-4">
+              <div class="row g-3">
+                <div class="col-md-7">
+                  <div class="mb-3">
+                    <label class="form-label fw-semibold text-secondary fs-8">Announcement Title <span class="text-danger">*</span></label>
+                    <input type="text" name="title" class="form-control form-control-sm" placeholder="e.g. Full-Stack Software Engineering 2026 Batch" required>
+                  </div>
+                  <div class="mb-3">
+                    <label class="form-label fw-semibold text-secondary fs-8">Subtitle / Tagline</label>
+                    <input type="text" name="subtitle" class="form-control form-control-sm" placeholder="e.g. Master Modern Web Dev, Cloud & DevOps with Mentors">
+                  </div>
+                </div>
+
+                <div class="col-md-5">
+                  <label class="form-label fw-semibold text-secondary fs-8">Announcement Image <span class="text-danger">*</span></label>
+                  <div class="border border-dashed rounded-3 p-2 text-center bg-light mb-2">
+                    <div id="add_banner_preview_box" class="position-relative rounded-2 overflow-hidden bg-dark d-flex align-items-center justify-content-center" style="height: 110px;">
+                      <span id="add_banner_placeholder" class="text-muted fs-8 d-flex flex-column align-items-center">
+                        <i class="bi bi-image fs-3 mb-1"></i> Live Image Preview
+                      </span>
+                      <img id="add_banner_preview_img" src="" alt="Preview" class="w-100 h-100 object-fit-cover d-none">
+                    </div>
+                  </div>
+                  <input type="file" name="banner_image_file" id="add_banner_file_input" class="form-control form-control-sm mb-1.5" accept="image/*">
+                  <input type="url" name="image_url" id="add_banner_url_input" class="form-control form-control-sm" placeholder="Or enter Image URL (https://...)">
+                </div>
+              </div>
+
+              <div class="mb-3">
+                <label class="form-label fw-semibold text-secondary fs-8">Full Announcement Details / Description (Supports Clickable Website Links) <span class="text-danger">*</span></label>
+                <textarea name="details_content" class="form-control form-control-sm" rows="5" placeholder="Enter comprehensive announcement content, key highlights, dates, and website URLs (e.g. https://example.com/register)..." required></textarea>
+                <div class="form-text fs-9 text-muted mt-1.5"><i class="bi bi-link-45deg text-primary"></i> <strong>Tip:</strong> Any website URLs (e.g. <code>https://example.com</code> or <code>www.example.com</code>) will automatically be converted to clickable links in the popup window.</div>
+              </div>
+
+              <div class="row g-3 align-items-center pt-2 border-top">
+                <div class="col-md-4">
+                  <label class="form-label fw-semibold text-secondary fs-8 mb-1">Display Order</label>
+                  <input type="number" name="display_order" class="form-control form-control-sm" value="1" min="1">
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label fw-semibold text-secondary fs-8 mb-1">Visibility State</label>
+                  <div class="form-check form-switch pt-1">
+                    <input class="form-check-input" type="checkbox" name="is_active" id="add_is_active" checked>
+                    <label class="form-check-label fs-8 fw-semibold text-dark" for="add_is_active">Active on Slider</label>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="modal-footer bg-light">
+              <button type="button" class="btn btn-secondary btn-sm px-3 rounded-pill" data-bs-dismiss="modal">Cancel</button>
+              <button type="submit" class="btn btn-primary btn-sm px-4 rounded-pill fw-semibold" style="background-color: <?php echo $is_super_admin ? '#0b4528' : '#0f4c81'; ?>;">
+                <i class="bi bi-check2-circle me-1"></i> Publish Announcement
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Edit Featured Announcement Modal -->
+    <div class="modal fade" id="editBannerModal" tabindex="-1" aria-labelledby="editBannerModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content border-0 shadow">
+          <div class="modal-header text-white" style="background-color: <?php echo $is_super_admin ? '#0b4528' : '#0f4c81'; ?>;">
+            <h5 class="modal-title fw-bold fs-6 mb-0" id="editBannerModalLabel">
+              <i class="bi bi-pencil-square me-2"></i>Edit Featured Announcement
+            </h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <form action="index.php" method="POST" enctype="multipart/form-data">
+            <input type="hidden" name="action" value="edit_banner">
+            <input type="hidden" name="banner_id" id="edit_banner_id">
+            <div class="modal-body p-4">
+              <div class="row g-3">
+                <div class="col-md-7">
+                  <div class="mb-3">
+                    <label class="form-label fw-semibold text-secondary fs-8">Announcement Title <span class="text-danger">*</span></label>
+                    <input type="text" name="title" id="edit_banner_title" class="form-control form-control-sm" required>
+                  </div>
+                  <div class="mb-3">
+                    <label class="form-label fw-semibold text-secondary fs-8">Subtitle / Tagline</label>
+                    <input type="text" name="subtitle" id="edit_banner_subtitle" class="form-control form-control-sm">
+                  </div>
+                </div>
+
+                <div class="col-md-5">
+                  <label class="form-label fw-semibold text-secondary fs-8">Announcement Image (Leave empty to keep current)</label>
+                  <div class="border border-dashed rounded-3 p-2 text-center bg-light mb-2">
+                    <div id="edit_banner_preview_box" class="position-relative rounded-2 overflow-hidden bg-dark d-flex align-items-center justify-content-center" style="height: 110px;">
+                      <img id="edit_banner_preview_img" src="" alt="Preview" class="w-100 h-100 object-fit-cover">
+                    </div>
+                  </div>
+                  <input type="file" name="banner_image_file" id="edit_banner_file_input" class="form-control form-control-sm mb-1.5" accept="image/*">
+                  <input type="url" name="image_url" id="edit_banner_url_input" class="form-control form-control-sm" placeholder="Or update Image URL">
+                </div>
+              </div>
+
+              <div class="mb-3">
+                <label class="form-label fw-semibold text-secondary fs-8">Full Announcement Details / Description (Supports Clickable Website Links) <span class="text-danger">*</span></label>
+                <textarea name="details_content" id="edit_banner_details_content" class="form-control form-control-sm" rows="5" required></textarea>
+                <div class="form-text fs-9 text-muted mt-1.5"><i class="bi bi-link-45deg text-primary"></i> <strong>Tip:</strong> Any website URLs (e.g. <code>https://example.com</code> or <code>www.example.com</code>) will automatically be converted to clickable links in the popup window.</div>
+              </div>
+
+              <div class="row g-3 align-items-center pt-2 border-top">
+                <div class="col-md-4">
+                  <label class="form-label fw-semibold text-secondary fs-8 mb-1">Display Order</label>
+                  <input type="number" name="display_order" id="edit_banner_display_order" class="form-control form-control-sm" min="1">
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label fw-semibold text-secondary fs-8 mb-1">Visibility State</label>
+                  <div class="form-check form-switch pt-1">
+                    <input class="form-check-input" type="checkbox" name="is_active" id="edit_is_active">
+                    <label class="form-check-label fs-8 fw-semibold text-dark" for="edit_is_active">Active on Slider</label>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="modal-footer bg-light">
+              <button type="button" class="btn btn-secondary btn-sm px-3 rounded-pill" data-bs-dismiss="modal">Cancel</button>
+              <button type="submit" class="btn btn-primary btn-sm px-4 rounded-pill fw-semibold" style="background-color: <?php echo $is_super_admin ? '#0b4528' : '#0f4c81'; ?>;">
+                <i class="bi bi-check2-circle me-1"></i> Update Announcement
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
     <!-- Add Announcement Modal -->
     <div class="modal fade" id="addAnnouncementModal" tabindex="-1" aria-labelledby="addAnnouncementModalLabel"
       aria-hidden="true">
@@ -3320,7 +4292,7 @@ try {
           <div class="modal-header text-white"
             style="background-color: <?php echo $is_super_admin ? '#0b4528' : '#0f4c81'; ?>;">
             <h5 class="modal-title fw-bold fs-6 mb-0" id="addAnnouncementModalLabel"><i
-                class="bi bi-megaphone me-2"></i>Add New Announcement</h5>
+                class="bi bi-megaphone me-2"></i>Add New Text Notice</h5>
             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
           </div>
           <form action="index.php" method="POST">
@@ -3342,12 +4314,22 @@ try {
               </div>
 
               <div class="row g-2">
-                <div class="col-6 mb-3">
+                <div class="col-4 mb-3">
+                  <label class="form-label fw-semibold text-secondary fs-8">Category Badge</label>
+                  <select name="category" class="form-select form-select-sm">
+                    <option value="notice" selected>📢 Notice</option>
+                    <option value="offer">🎉 Special Offer</option>
+                    <option value="launch">🚀 Course Launch</option>
+                    <option value="alert">⚡ Urgent Alert</option>
+                    <option value="event">📅 Event</option>
+                  </select>
+                </div>
+                <div class="col-4 mb-3">
                   <label class="form-label fw-semibold text-secondary fs-8">Badge / Date Label</label>
                   <input type="text" name="badge_text" class="form-control form-control-sm"
-                    placeholder="e.g. July 15, 2026 or Important">
+                    placeholder="e.g. July 15, 2026">
                 </div>
-                <div class="col-6 mb-3">
+                <div class="col-4 mb-3">
                   <label class="form-label fw-semibold text-secondary fs-8">Status</label>
                   <select name="status" class="form-select form-select-sm">
                     <option value="active" selected>Active</option>
@@ -3360,8 +4342,7 @@ try {
               <button type="button" class="btn btn-secondary btn-sm px-3 rounded-pill"
                 data-bs-dismiss="modal">Cancel</button>
               <button type="submit" class="btn btn-primary btn-sm px-4 rounded-pill fw-semibold"
-                style="background-color: <?php echo $is_super_admin ? '#0b4528' : '#0f4c81'; ?>;">Publish
-                Announcement</button>
+                style="background-color: <?php echo $is_super_admin ? '#0b4528' : '#0f4c81'; ?>;">Publish Notice</button>
             </div>
           </form>
         </div>
@@ -3376,7 +4357,7 @@ try {
           <div class="modal-header text-white"
             style="background-color: <?php echo $is_super_admin ? '#0b4528' : '#0f4c81'; ?>;">
             <h5 class="modal-title fw-bold fs-6 mb-0" id="editAnnouncementModalLabel"><i
-                class="bi bi-pencil-square me-2"></i>Edit Announcement</h5>
+                class="bi bi-pencil-square me-2"></i>Edit Text Notice</h5>
             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
           </div>
           <form action="index.php" method="POST">
@@ -3399,12 +4380,22 @@ try {
               </div>
 
               <div class="row g-2">
-                <div class="col-6 mb-3">
+                <div class="col-4 mb-3">
+                  <label class="form-label fw-semibold text-secondary fs-8">Category Badge</label>
+                  <select name="category" id="edit_announcement_category" class="form-select form-select-sm">
+                    <option value="notice">📢 Notice</option>
+                    <option value="offer">🎉 Special Offer</option>
+                    <option value="launch">🚀 Course Launch</option>
+                    <option value="alert">⚡ Urgent Alert</option>
+                    <option value="event">📅 Event</option>
+                  </select>
+                </div>
+                <div class="col-4 mb-3">
                   <label class="form-label fw-semibold text-secondary fs-8">Badge / Date Label</label>
                   <input type="text" name="badge_text" id="edit_announcement_badge_text"
                     class="form-control form-control-sm">
                 </div>
-                <div class="col-6 mb-3">
+                <div class="col-4 mb-3">
                   <label class="form-label fw-semibold text-secondary fs-8">Status</label>
                   <select name="status" id="edit_announcement_status" class="form-select form-select-sm">
                     <option value="active">Active</option>
@@ -3417,8 +4408,7 @@ try {
               <button type="button" class="btn btn-secondary btn-sm px-3 rounded-pill"
                 data-bs-dismiss="modal">Cancel</button>
               <button type="submit" class="btn btn-primary btn-sm px-4 rounded-pill fw-semibold"
-                style="background-color: <?php echo $is_super_admin ? '#0b4528' : '#0f4c81'; ?>;">Update
-                Announcement</button>
+                style="background-color: <?php echo $is_super_admin ? '#0b4528' : '#0f4c81'; ?>;">Update Notice</button>
             </div>
           </form>
         </div>
@@ -3591,11 +4581,59 @@ try {
         modal.show();
       }
 
+      // Hero portrait image live preview on file select
+      function previewHeroPortrait(input) {
+        if (input.files && input.files[0]) {
+          const reader = new FileReader();
+          reader.onload = function(e) {
+            const preview = document.getElementById('admin-hero-portrait-preview');
+            if (preview) {
+              preview.src = e.target.result;
+              preview.style.display = 'block';
+            }
+          };
+          reader.readAsDataURL(input.files[0]);
+        }
+      }
+
+
+      function previewAuthFile(input, targetId) {
+        if (input.files && input.files[0]) {
+          const reader = new FileReader();
+          reader.onload = function(e) {
+            const target = document.getElementById(targetId);
+            if (target) target.src = e.target.result;
+          };
+          reader.readAsDataURL(input.files[0]);
+        }
+      }
+
+      function openEditBannerModal(banner) {
+        document.getElementById('edit_banner_id').value = banner.id;
+        document.getElementById('edit_banner_title').value = banner.title;
+        document.getElementById('edit_banner_subtitle').value = banner.subtitle || '';
+        document.getElementById('edit_banner_details_content').value = banner.details_content;
+        document.getElementById('edit_banner_display_order').value = banner.display_order || 1;
+        document.getElementById('edit_is_active').checked = (banner.is_active == 1);
+        
+        // Show current image preview
+        const previewImg = document.getElementById('edit_banner_preview_img');
+        if (banner.image_path) {
+          previewImg.src = banner.image_path.startsWith('http') ? banner.image_path : '../' + banner.image_path;
+        }
+        document.getElementById('edit_banner_url_input').value = (banner.image_path && banner.image_path.startsWith('http')) ? banner.image_path : '';
+        document.getElementById('edit_banner_file_input').value = '';
+
+        const modal = new bootstrap.Modal(document.getElementById('editBannerModal'));
+        modal.show();
+      }
+
       function openEditAnnouncementModal(ann) {
         document.getElementById('edit_announcement_id').value = ann.id;
         document.getElementById('edit_announcement_title').value = ann.title;
         document.getElementById('edit_announcement_content').value = ann.content;
         document.getElementById('edit_announcement_badge_text').value = ann.badge_text || '';
+        document.getElementById('edit_announcement_category').value = ann.category || 'notice';
         document.getElementById('edit_announcement_status').value = ann.status || 'active';
 
         const modal = new bootstrap.Modal(document.getElementById('editAnnouncementModal'));
@@ -3766,12 +4804,79 @@ try {
         function switchToBank() { setActiveTab(btnBank, secBank, 'bank', 'Bank Slip Reviews'); }
         function switchToManageBank() { setActiveTab(btnManageBank, secManageBank, 'manage_bank', 'Manage Bank Accounts'); }
         function switchToOptions() { setActiveTab(btnOptions, secOptions, 'options', 'Category & Batch Options'); }
-        function switchToAnnouncements() { setActiveTab(btnAnnouncements, secAnnouncements, 'announcements', 'Site Announcements'); }
+        function switchToAnnouncements() { setActiveTab(btnAnnouncements, secAnnouncements, 'announcements', 'Site Announcements & Promotional Banners'); }
         function switchToHero() { setActiveTab(btnHero, secHero, 'hero', 'Hero Banner Settings'); }
         function switchToDeliveryNote() { setActiveTab(btnDeliveryNote, secDeliveryNote, 'delivery_note', 'Certificate Delivery Note & COD Settings'); }
         function switchToGoogleAuth() { setActiveTab(btnGoogleAuth, secGoogleAuth, 'google_auth', 'Google Sign-In & OAuth Settings'); }
         function switchToLogo() { setActiveTab(btnLogo, secLogo, 'logo', 'Site Logo & Favicon Customization'); }
         function switchToPassword() { setActiveTab(btnPassword, secPassword, 'password', 'Change Admin Password'); }
+
+        // Live Image Preview for Add Banner Modal
+        const addBannerFileInput = document.getElementById('add_banner_file_input');
+        const addBannerUrlInput = document.getElementById('add_banner_url_input');
+        const addBannerPreviewImg = document.getElementById('add_banner_preview_img');
+        const addBannerPlaceholder = document.getElementById('add_banner_placeholder');
+
+        if (addBannerFileInput) {
+          addBannerFileInput.addEventListener('change', function () {
+            if (this.files && this.files[0]) {
+              const reader = new FileReader();
+              reader.onload = function (e) {
+                if (addBannerPreviewImg) {
+                  addBannerPreviewImg.src = e.target.result;
+                  addBannerPreviewImg.classList.remove('d-none');
+                }
+                if (addBannerPlaceholder) {
+                  addBannerPlaceholder.classList.add('d-none');
+                }
+              };
+              reader.readAsDataURL(this.files[0]);
+            }
+          });
+        }
+
+        if (addBannerUrlInput) {
+          addBannerUrlInput.addEventListener('input', function () {
+            if (this.value.trim().length > 5) {
+              if (addBannerPreviewImg) {
+                addBannerPreviewImg.src = this.value.trim();
+                addBannerPreviewImg.classList.remove('d-none');
+              }
+              if (addBannerPlaceholder) {
+                addBannerPlaceholder.classList.add('d-none');
+              }
+            }
+          });
+        }
+
+        // Live Image Preview for Edit Banner Modal
+        const editBannerFileInput = document.getElementById('edit_banner_file_input');
+        const editBannerUrlInput = document.getElementById('edit_banner_url_input');
+        const editBannerPreviewImg = document.getElementById('edit_banner_preview_img');
+
+        if (editBannerFileInput) {
+          editBannerFileInput.addEventListener('change', function () {
+            if (this.files && this.files[0]) {
+              const reader = new FileReader();
+              reader.onload = function (e) {
+                if (editBannerPreviewImg) {
+                  editBannerPreviewImg.src = e.target.result;
+                }
+              };
+              reader.readAsDataURL(this.files[0]);
+            }
+          });
+        }
+
+        if (editBannerUrlInput) {
+          editBannerUrlInput.addEventListener('input', function () {
+            if (this.value.trim().length > 5) {
+              if (editBannerPreviewImg) {
+                editBannerPreviewImg.src = this.value.trim();
+              }
+            }
+          });
+        }
       });
 
       // Live File Previews for Site Logo & Favicon

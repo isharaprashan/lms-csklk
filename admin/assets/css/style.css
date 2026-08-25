@@ -294,8 +294,8 @@ h1, h2, h3, h4, h5, h6, .moodle-brand {
 }
 
 .status-badge-pending {
-  background-color: #ffc107 !important;
-  color: #111827 !important;
+  background-color: #f59e0b !important;
+  color: #0f172a !important;
   border-radius: 50rem !important;
   padding: 6px 14px !important;
   font-weight: 700 !important;
@@ -303,9 +303,113 @@ h1, h2, h3, h4, h5, h6, .moodle-brand {
   display: inline-flex !important;
   align-items: center !important;
   gap: 5px !important;
-  box-shadow: 0 2px 5px rgba(255, 193, 7, 0.25) !important;
+  box-shadow: 0 2px 5px rgba(245, 158, 11, 0.25) !important;
 }
 .status-badge-pending * {
-  color: #111827 !important;
+  color: #0f172a !important;
+}
+
+/* High Contrast UI Fixes: Badges, Buttons, Nav Pills */
+.badge.bg-primary.bg-opacity-10,
+.badge.bg-primary-subtle {
+  background-color: #e0f2fe !important;
+  color: #0369a1 !important;
+  border: 1px solid #bae6fd !important;
+  font-weight: 600 !important;
+}
+
+.badge.bg-success.bg-opacity-10,
+.badge.bg-success-subtle {
+  background-color: #dcfce7 !important;
+  color: #15803d !important;
+  border: 1px solid #bbf7d0 !important;
+  font-weight: 600 !important;
+}
+
+.badge.bg-danger.bg-opacity-10,
+.badge.bg-danger-subtle {
+  background-color: #fee2e2 !important;
+  color: #b91c1c !important;
+  border: 1px solid #fecaca !important;
+  font-weight: 600 !important;
+}
+
+.badge.bg-warning.bg-opacity-10,
+.badge.bg-warning-subtle {
+  background-color: #fef3c7 !important;
+  color: #92400e !important;
+  border: 1px solid #fde68a !important;
+  font-weight: 700 !important;
+}
+
+.badge.bg-secondary.bg-opacity-10,
+.badge.bg-secondary-subtle {
+  background-color: #f1f5f9 !important;
+  color: #334155 !important;
+  border: 1px solid #cbd5e1 !important;
+  font-weight: 600 !important;
+}
+
+.badge.bg-info.bg-opacity-10,
+.badge.bg-info-subtle {
+  background-color: #e0f2fe !important;
+  color: #0284c7 !important;
+  border: 1px solid #bae6fd !important;
+  font-weight: 600 !important;
+}
+
+.badge.bg-purple,
+.badge.text-purple {
+  background-color: #f3e8ff !important;
+  color: #7e22ce !important;
+  border: 1px solid #e9d5ff !important;
+  font-weight: 600 !important;
+}
+
+/* Nav Pills Active State Contrast Fix */
+.nav-pills .nav-link {
+  color: #334155;
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  transition: all 0.2s ease;
+}
+.nav-pills .nav-link:hover {
+  background-color: #f1f5f9;
+  color: #0f172a;
+}
+.nav-pills .nav-link.active {
+  background-color: #0f4c81 !important;
+  color: #ffffff !important;
+  border-color: #0f4c81 !important;
+}
+.nav-pills .nav-link.active i,
+.nav-pills .nav-link.active span:not(.badge) {
+  color: #ffffff !important;
+}
+.nav-pills .nav-link.active .badge {
+  background-color: rgba(255, 255, 255, 0.25) !important;
+  color: #ffffff !important;
+  border: 1px solid rgba(255, 255, 255, 0.4) !important;
+}
+
+/* Button Text Contrast Enforcements */
+.btn-primary, .btn-success, .btn-danger, .btn-dark {
+  color: #ffffff !important;
+}
+.btn-primary *, .btn-success *, .btn-danger *, .btn-dark * {
+  color: #ffffff !important;
+}
+.btn-outline-primary:hover, .btn-outline-success:hover, .btn-outline-danger:hover {
+  color: #ffffff !important;
+}
+
+/* Code block contrast */
+code {
+  color: #0f172a !important;
+  background-color: #f1f5f9 !important;
+  padding: 2px 6px !important;
+  border-radius: 4px !important;
+  border: 1px solid #e2e8f0 !important;
+  font-size: 0.85em !important;
 }
 

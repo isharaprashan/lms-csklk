@@ -108,9 +108,12 @@ $sidebar_text = $is_super_admin ? '#a3cfbb' : '#94a3b8';
 
   .nav-link-item.active {
     background-color: var(--sidebar-active);
-    color: #ffffff;
+    color: #ffffff !important;
     font-weight: 600;
     box-shadow: 0 4px 12px rgba(11, 69, 40, 0.4);
+  }
+  .nav-link-item.active * {
+    color: #ffffff !important;
   }
 
   .nav-link-item i {
@@ -252,11 +255,11 @@ $sidebar_text = $is_super_admin ? '#a3cfbb' : '#94a3b8';
       </div>
     </a>
 
-    <!-- Site Announcements -->
+    <!-- Site Announcements & Banners -->
     <a href="index.php?tab=announcements" class="nav-link-item <?php echo ($current_page === 'announcements') ? 'active' : ''; ?>">
       <div class="d-flex align-items-center gap-2.5">
         <i class="bi bi-megaphone text-warning"></i>
-        <span>Site Announcements</span>
+        <span>Announcements & Banners</span>
       </div>
     </a>
 

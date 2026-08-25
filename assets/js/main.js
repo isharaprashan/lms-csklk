@@ -106,8 +106,8 @@ document.addEventListener('DOMContentLoaded', function () {
       const cardCol = document.createElement('div');
       cardCol.className = 'col-12 col-md-6 col-lg-4 col-xl-3 d-flex';
       cardCol.style.opacity = '0';
-      cardCol.style.transform = 'translateY(20px)';
-      cardCol.style.transition = `all 0.4s ease ${index * 0.08}s`;
+      cardCol.style.transform = 'translateY(22px)';
+      cardCol.style.transition = `opacity 0.45s cubic-bezier(0.16, 1, 0.3, 1) ${index * 0.06}s, transform 0.45s cubic-bezier(0.16, 1, 0.3, 1) ${index * 0.06}s`;
 
       const ratingStars = Array(5).fill(0).map((_, i) => 
         i < Math.floor(course.rating) 
@@ -157,48 +157,56 @@ document.addEventListener('DOMContentLoaded', function () {
       const durationLabel = t('weeks', 'Weeks');
 
       cardCol.innerHTML = `
-        <div class="card moodle-card border-0 w-100 d-flex flex-column justify-content-between overflow-hidden shadow-sm h-100">
-          <div class="position-relative">
-            <img src="${course.thumbnail}" class="card-img-top course-modal-trigger" data-id="${course.id}" alt="${translatedTitle}" style="height: 160px; object-fit: cover; cursor: pointer;">
-            <span class="position-absolute top-3 end-3 badge bg-white text-dark border rounded-pill px-3 py-1">
-              ${translatedLevel}
-            </span>
+        <div class="course-card-pro">
+          <!-- Thumbnail & Badges -->
+          <div class="course-thumb-wrap">
+            <img src="${course.thumbnail}" class="course-thumb-img course-modal-trigger" data-id="${course.id}" alt="${translatedTitle}" loading="lazy">
+            <span class="course-badge-cat">${translatedCat}</span>
+            <span class="course-badge-level">${translatedLevel}</span>
           </div>
-          <div class="card-body p-4 d-flex flex-column justify-content-between">
+
+          <!-- Card Body -->
+          <div class="p-3.5 d-flex flex-column justify-content-between flex-grow-1">
             <div>
-              <div class="d-flex justify-content-between align-items-center mb-2">
-                <span class="text-primary fs-7 fw-bold"><i class="bi bi-tag-fill me-1"></i>${translatedCat}</span>
-                <span class="text-muted fs-7"><i class="bi bi-clock me-1"></i>${course.duration} ${durationLabel}</span>
+              <!-- Meta Tags Info -->
+              <div class="d-flex justify-content-between align-items-center mb-2 text-muted fs-8">
+                <span class="d-inline-flex align-items-center gap-1 text-secondary fw-semibold">
+                  <i class="bi bi-clock-history text-primary"></i> ${course.duration} ${durationLabel}
+                </span>
+                <span class="d-inline-flex align-items-center gap-1 text-warning fw-bold fs-8">
+                  <i class="bi bi-star-fill"></i> ${Number(course.rating || 5).toFixed(1)} <span class="text-muted fw-normal fs-9">(${course.review_count || 0})</span>
+                </span>
               </div>
-              <h5 class="card-title fw-bold text-dark mb-2 line-clamp-2 course-modal-trigger" data-id="${course.id}" style="font-size: 1.1rem; min-height: 2.8rem; line-height: 1.3; cursor: pointer;">
+
+              <!-- Title -->
+              <h5 class="course-title-link line-clamp-2 course-modal-trigger mb-2" data-id="${course.id}">
                 ${translatedTitle}
               </h5>
-              <p class="card-text text-muted text-sm mb-4 line-clamp-3" style="font-size: 0.85rem; min-height: 3.5rem;">
+
+              <!-- Short Description -->
+              <p class="text-secondary fs-8 line-clamp-2 mb-3 leading-relaxed" style="min-height: 2.5rem;">
                 ${translatedDesc}
               </p>
             </div>
             
             <div>
-              <hr class="my-3">
+              <hr class="my-2.5 opacity-10">
               
               <!-- Tutor Meta -->
               <div class="d-flex align-items-center justify-content-between mb-3">
                 <div class="d-flex align-items-center gap-2">
-                  <img src="${course.tutor && course.tutor.avatar ? course.tutor.avatar : 'https://ui-avatars.com/api/?name=' + encodeURIComponent(course.tutor ? course.tutor.name : 'Educator') + '&background=0f4c81&color=fff'}" 
-                       onerror="this.onerror=null; this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(course.tutor ? course.tutor.name : 'Educator')}&background=0f4c81&color=fff';"
-                       class="rounded-circle border border-primary border-opacity-20 shadow-sm" alt="${course.tutor ? course.tutor.name : 'Educator'}" style="width: 32px; height: 32px; object-fit: cover;">
-                  <div>
-                    <h6 class="text-dark mb-0" style="font-size: 0.8rem; font-weight: 600;">${course.tutor ? course.tutor.name : 'Educator'}</h6>
-                    <small class="text-muted" style="font-size: 0.7rem;">${course.tutor ? course.tutor.title : 'Instructor'}</small>
+                  <img src="${course.tutor && course.tutor.avatar ? course.tutor.avatar : 'https://ui-avatars.com/api/?name=' + encodeURIComponent(course.tutor ? course.tutor.name : 'Educator') + '&background=2b529a&color=fff'}" 
+                       onerror="this.onerror=null; this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(course.tutor ? course.tutor.name : 'Educator')}&background=2b529a&color=fff';"
+                       class="course-tutor-avatar rounded-circle border border-primary border-opacity-20 shadow-xs" alt="${course.tutor ? course.tutor.name : 'Educator'}" style="width: 32px; height: 32px; object-fit: cover;">
+                  <div class="text-truncate" style="max-width: 140px;">
+                    <h6 class="text-dark mb-0 fs-8 fw-bold text-truncate">${course.tutor ? course.tutor.name : 'Educator'}</h6>
+                    <small class="text-muted fs-9 text-truncate d-block">${course.tutor ? course.tutor.title : 'Instructor'}</small>
                   </div>
                 </div>
                 
-                <div class="text-end">
-                  <div class="text-warning" style="font-size: 0.75rem;">
-                    ${ratingStars}
-                  </div>
-                  <small class="text-muted" style="font-size: 0.7rem;">(${course.review_count})</small>
-                </div>
+                <span class="badge bg-light text-secondary border rounded-pill px-2 py-1 fs-9 fw-semibold">
+                  <i class="bi bi-shield-check text-success me-0.5"></i>Verified
+                </span>
               </div>
               
               <!-- Action Button -->
@@ -406,4 +414,248 @@ document.addEventListener('DOMContentLoaded', function () {
         buttonElement.innerHTML = `<i class="bi bi-plus-circle me-1"></i> Enroll Now`;
       });
   }
+
+  // Initialize Promotional Ad Carousel
+  initPromoCarousel();
 });
+
+// Promotional Ad Banner Auto-Swiper Controller
+function initPromoCarousel() {
+  const container = document.getElementById('promoCarousel');
+  const track = document.getElementById('promoCarouselTrack');
+  if (!container || !track) return;
+
+  const slides = track.querySelectorAll('.promo-slide');
+  const prevBtn = document.getElementById('promoPrevBtn');
+  const nextBtn = document.getElementById('promoNextBtn');
+  const dots = document.querySelectorAll('.promo-indicator-dot');
+  const totalSlides = slides.length;
+
+  if (totalSlides <= 1) return;
+
+  let currentIndex = 0;
+  let autoplayInterval = null;
+  const AUTOPLAY_DELAY = 4500; // 4.5 seconds auto-swipe
+
+  function goToSlide(index) {
+    if (index < 0) {
+      currentIndex = totalSlides - 1;
+    } else if (index >= totalSlides) {
+      currentIndex = 0;
+    } else {
+      currentIndex = index;
+    }
+
+    track.style.transform = `translateX(-${currentIndex * 100}%)`;
+
+    // Update dots
+    dots.forEach((dot, idx) => {
+      if (idx === currentIndex) {
+        dot.classList.add('active');
+      } else {
+        dot.classList.remove('active');
+      }
+    });
+  }
+
+  function startAutoplay() {
+    stopAutoplay();
+    autoplayInterval = setInterval(() => {
+      goToSlide(currentIndex + 1);
+    }, AUTOPLAY_DELAY);
+  }
+
+  function stopAutoplay() {
+    if (autoplayInterval) {
+      clearInterval(autoplayInterval);
+      autoplayInterval = null;
+    }
+  }
+
+  // Navigation Button Handlers
+  if (prevBtn) {
+    prevBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      goToSlide(currentIndex - 1);
+      startAutoplay();
+    });
+  }
+
+  if (nextBtn) {
+    nextBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      goToSlide(currentIndex + 1);
+      startAutoplay();
+    });
+  }
+
+  // Dots click handlers
+  dots.forEach(dot => {
+    dot.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const target = parseInt(dot.getAttribute('data-target-slide'), 10);
+      goToSlide(target);
+      startAutoplay();
+    });
+  });
+
+  // Pause on mouse hover / resume on mouse leave
+  container.addEventListener('mouseenter', stopAutoplay);
+  container.addEventListener('mouseleave', startAutoplay);
+
+  // Mobile Touch Swipe Gesture Support
+  let touchStartX = 0;
+  let touchEndX = 0;
+  let isSwiping = false;
+
+  container.addEventListener('touchstart', (e) => {
+    touchStartX = e.changedTouches[0].screenX;
+    isSwiping = true;
+    stopAutoplay();
+  }, { passive: true });
+
+  container.addEventListener('touchend', (e) => {
+    if (!isSwiping) return;
+    touchEndX = e.changedTouches[0].screenX;
+    const diffX = touchStartX - touchEndX;
+
+    if (Math.abs(diffX) > 40) {
+      if (diffX > 0) {
+        // Swiped Left -> Next Slide
+        goToSlide(currentIndex + 1);
+      } else {
+        // Swiped Right -> Prev Slide
+        goToSlide(currentIndex - 1);
+      }
+    }
+    isSwiping = false;
+    startAutoplay();
+  }, { passive: true });
+
+  // Start initial autoplay
+  startAutoplay();
+}
+
+// Helper to format announcement details with clickable links redirecting to respective websites
+window.formatAnnouncementDetails = function(content) {
+  if (!content) return '';
+  
+  let formatted = String(content);
+  // If plain text (doesn't contain html tags), convert newlines to <br>
+  if (!/<[a-z][\s\S]*>/i.test(formatted)) {
+    formatted = formatted.replace(/\r\n|\r|\n/g, '<br>');
+  }
+
+  // Create temporary container to safely linkify text nodes without breaking HTML tags
+  const container = document.createElement('div');
+  container.innerHTML = formatted;
+
+  const urlRegex = /(\b(https?:\/\/|www\.)[^\s<>"']+[^\s<>"'.,!?:;)])/gi;
+
+  function linkifyNode(node) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const parent = node.parentNode;
+      if (parent && parent.nodeName.toLowerCase() === 'a') {
+        parent.setAttribute('target', '_blank');
+        parent.setAttribute('rel', 'noopener noreferrer');
+        return;
+      }
+
+      const text = node.textContent;
+      if (urlRegex.test(text)) {
+        const fragment = document.createDocumentFragment();
+        let lastIndex = 0;
+        urlRegex.lastIndex = 0;
+        let match;
+
+        while ((match = urlRegex.exec(text)) !== null) {
+          const matchIndex = match.index;
+          const matchText = match[0];
+
+          if (matchIndex > lastIndex) {
+            fragment.appendChild(document.createTextNode(text.substring(lastIndex, matchIndex)));
+          }
+
+          const a = document.createElement('a');
+          let href = matchText;
+          if (!href.startsWith('http://') && !href.startsWith('https://')) {
+            href = 'https://' + href;
+          }
+          a.href = href;
+          a.target = '_blank';
+          a.rel = 'noopener noreferrer';
+          a.className = 'text-primary fw-semibold text-decoration-underline link-offset-2 d-inline-flex align-items-center gap-1';
+          
+          const textSpan = document.createElement('span');
+          textSpan.textContent = matchText;
+          a.appendChild(textSpan);
+
+          const icon = document.createElement('i');
+          icon.className = 'bi bi-box-arrow-up-right fs-9';
+          a.appendChild(icon);
+
+          fragment.appendChild(a);
+          lastIndex = urlRegex.lastIndex;
+        }
+
+        if (lastIndex < text.length) {
+          fragment.appendChild(document.createTextNode(text.substring(lastIndex)));
+        }
+
+        if (parent) {
+          parent.replaceChild(fragment, node);
+        }
+      }
+    } else if (node.nodeType === Node.ELEMENT_NODE) {
+      if (node.nodeName.toLowerCase() === 'a') {
+        node.setAttribute('target', '_blank');
+        node.setAttribute('rel', 'noopener noreferrer');
+        node.classList.add('text-primary', 'fw-semibold', 'text-decoration-underline', 'link-offset-2');
+      } else {
+        Array.from(node.childNodes).forEach(linkifyNode);
+      }
+    }
+  }
+
+  Array.from(container.childNodes).forEach(linkifyNode);
+  return container.innerHTML;
+};
+
+// Global Interactive Featured Announcement Details Modal opener
+window.openPromoBannerModal = function(banner) {
+  if (!banner) return;
+
+  const modalEl = document.getElementById('promoBannerModal');
+  if (!modalEl) return;
+
+  const imgEl = document.getElementById('modal-promo-img');
+  const titleEl = document.getElementById('modal-promo-title');
+  const subtitleEl = document.getElementById('modal-promo-subtitle');
+  const detailsEl = document.getElementById('modal-promo-details');
+
+  if (imgEl) {
+    imgEl.src = banner.image_path || '';
+    imgEl.alt = banner.title || 'Announcement Image';
+  }
+
+  if (titleEl) {
+    titleEl.innerText = (window.i18n__ ? window.i18n__(banner.title, banner.title) : banner.title) || '';
+  }
+
+  if (subtitleEl) {
+    if (banner.subtitle) {
+      subtitleEl.innerText = (window.i18n__ ? window.i18n__(banner.subtitle, banner.subtitle) : banner.subtitle);
+      subtitleEl.style.display = 'block';
+    } else {
+      subtitleEl.style.display = 'none';
+    }
+  }
+
+  if (detailsEl) {
+    const rawContent = (window.i18n__ ? window.i18n__(banner.details_content, banner.details_content) : banner.details_content) || '';
+    detailsEl.innerHTML = window.formatAnnouncementDetails(rawContent);
+  }
+
+  const bsModal = bootstrap.Modal.getOrCreateInstance(modalEl);
+  bsModal.show();
+};
