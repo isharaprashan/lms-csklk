@@ -13,6 +13,10 @@ if (isset($_SESSION['user_id']) && isset($_GET['sid'])) {
 $error = '';
 $success = '';
 
+if (isset($_GET['error']) && $_GET['error'] === 'account_inactive') {
+    $error = function_exists('__') ? __('account_inactive_error', 'Your account has been deactivated by system administrators. You cannot log in or use the system.') : 'Your account has been deactivated by system administrators. You cannot log in or use the system.';
+}
+
 if (isset($_SESSION['auth_error'])) {
     $error = $_SESSION['auth_error'];
     unset($_SESSION['auth_error']);
@@ -37,8 +41,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $user = $stmt->fetch();
 
             if ($user && password_verify($password, $user['password_hash'])) {
-                // Check if account email is verified
-                if (isset($user['email_verified']) && $user['email_verified'] == 0) {
+                // Check if account has been deactivated by administrators
+                if (isset($user['status']) && $user['status'] === 'inactive') {
+                    $error = function_exists('__') ? __('account_inactive_error', 'Your account has been deactivated by system administrators. You cannot log in or use the system.') : 'Your account has been deactivated by system administrators. You cannot log in or use the system.';
+                } elseif (isset($user['email_verified']) && $user['email_verified'] == 0) {
                     // Generate fresh OTP code and update expiry
                     $otp = sprintf('%06d', random_int(100000, 999999));
                     $expiresAt = date('Y-m-d H:i:s', strtotime('+10 minutes'));

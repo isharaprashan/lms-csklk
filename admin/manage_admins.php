@@ -108,6 +108,15 @@ if (empty($raw_avatar)) {
 $success_message = '';
 $error_message = '';
 
+if (!empty($_SESSION['flash_success'])) {
+    $success_message = $_SESSION['flash_success'];
+    unset($_SESSION['flash_success']);
+}
+if (!empty($_SESSION['flash_error'])) {
+    $error_message = $_SESSION['flash_error'];
+    unset($_SESSION['flash_error']);
+}
+
 // Normalize action
 $rawAction = $_POST['action'] ?? $_GET['action'] ?? '';
 $action = strtoupper(trim($rawAction));
@@ -247,6 +256,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($action)) {
         } else {
             echo json_encode(['success' => true, 'message' => $success_message]);
         }
+        exit;
+    } else {
+        if (!empty($success_message)) {
+            $_SESSION['flash_success'] = $success_message;
+        }
+        if (!empty($error_message)) {
+            $_SESSION['flash_error'] = $error_message;
+        }
+        header("Location: " . $_SERVER['REQUEST_URI']);
         exit;
     }
 }

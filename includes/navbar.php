@@ -11,6 +11,45 @@ if (!defined('LMS_NAVBAR_INCLUDED')) {
 // Resolve current session state
 $nav_is_logged_in = isset($_SESSION['user_id']);
 $nav_user_id = $_SESSION['user_id'] ?? null;
+
+// Synchronize session if calling page has freshly fetched user object
+if ($nav_is_logged_in) {
+    try {
+        if (function_exists('getDBConnection')) {
+            $nav_pdo = getDBConnection();
+            $checkStatusStmt = $nav_pdo->prepare("SELECT status FROM users WHERE id = ?");
+            $checkStatusStmt->execute([$nav_user_id]);
+            $currentStatus = $checkStatusStmt->fetchColumn();
+
+            if ($currentStatus === 'inactive') {
+                $_SESSION = [];
+                if (session_status() === PHP_SESSION_ACTIVE) {
+                    session_destroy();
+                }
+                header("Location: login.php?error=account_inactive");
+                exit;
+            }
+        }
+    } catch (Exception $e) {}
+
+    if (!empty($student) && is_array($student) && isset($student['id']) && $student['id'] == $nav_user_id) {
+        if (isset($student['name'])) $_SESSION['user_name'] = $student['name'];
+        if (isset($student['email'])) $_SESSION['user_email'] = $student['email'];
+        if (isset($student['avatar'])) $_SESSION['user_avatar'] = $student['avatar'];
+        if (isset($student['role'])) $_SESSION['user_role'] = $student['role'];
+    } elseif (!empty($current_user) && is_array($current_user) && isset($current_user['id']) && $current_user['id'] == $nav_user_id) {
+        if (isset($current_user['name'])) $_SESSION['user_name'] = $current_user['name'];
+        if (isset($current_user['email'])) $_SESSION['user_email'] = $current_user['email'];
+        if (isset($current_user['avatar'])) $_SESSION['user_avatar'] = $current_user['avatar'];
+        if (isset($current_user['role'])) $_SESSION['user_role'] = $current_user['role'];
+    } elseif (!empty($user) && is_array($user) && isset($user['id']) && $user['id'] == $nav_user_id) {
+        if (isset($user['name'])) $_SESSION['user_name'] = $user['name'];
+        if (isset($user['email'])) $_SESSION['user_email'] = $user['email'];
+        if (isset($user['avatar'])) $_SESSION['user_avatar'] = $user['avatar'];
+        if (isset($user['role'])) $_SESSION['user_role'] = $user['role'];
+    }
+}
+
 $nav_user_name = $_SESSION['user_name'] ?? ($student['name'] ?? ($user['name'] ?? ($current_user['name'] ?? 'User')));
 $nav_user_email = $_SESSION['user_email'] ?? ($student['email'] ?? ($user['email'] ?? ($current_user['email'] ?? '')));
 $nav_user_role = $_SESSION['user_role'] ?? ($student['role'] ?? ($user['role'] ?? ($current_user['role'] ?? 'student')));
@@ -251,3 +290,7 @@ if ($nav_is_logged_in && !isset($unread_count)) {
   }
 })();
 </script>
+
+<!-- Centralized Real-Time Heartbeat & Notification Poller Engine -->
+<link rel="stylesheet" href="assets/css/notifications.css">
+<script src="assets/js/realtime-poller.js"></script>

@@ -1,48 +1,75 @@
 <?php
 require_once __DIR__ . '/../db/db_connect.php';
-init_lms_session();
 
-header('Content-Type: application/json');
-
+if (session_status() === PHP_SESSION_NONE) {
+    if (isset($_COOKIE['LMS_ADMIN_SESS'])) {
+        session_name('LMS_ADMIN_SESS');
+        session_set_cookie_params(['lifetime' => 0, 'path' => '/']);
+        session_start();
+    }
+}
 if (!isset($_SESSION['user_id'])) {
+    init_lms_session();
+}
+
+if (!headers_sent()) {
+    header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
+    header("Pragma: no-cache");
+    header('Content-Type: application/json');
+}
+
+$user_id = (int)($_SESSION['user_id'] ?? 0);
+if (!$user_id) {
     echo json_encode(['success' => false, 'message' => 'Please log in to view analytics.']);
     exit;
 }
-
-$user_id = $_SESSION['user_id'];
 
 try {
     $pdo = getDBConnection();
 
     // Check user role
-    $stmt = $pdo->prepare("SELECT role FROM users WHERE id = ?");
+    $stmt = $pdo->prepare("SELECT id, name, email, role, status FROM users WHERE id = ?");
     $stmt->execute([$user_id]);
-    $role = $stmt->fetchColumn();
+    $currentUser = $stmt->fetch();
 
-    if (!in_array($role, ['teacher', 'admin', 'super_admin'])) {
-        echo json_encode(['success' => false, 'message' => 'Unauthorized access. Teacher/Admin access required.']);
+    if (!$currentUser || !in_array($currentUser['role'], ['teacher', 'admin', 'super_admin'])) {
+        echo json_encode(['success' => false, 'message' => 'Unauthorized access. Teacher or Admin access required.']);
         exit;
     }
 
-    if (in_array($role, ['admin', 'super_admin'])) {
-        $stmt = $pdo->query("SELECT id FROM courses");
-        $course_ids = $stmt->fetchAll(PDO::FETCH_COLUMN);
+    $is_admin = in_array($currentUser['role'], ['admin', 'super_admin']);
+    $avatar_prefix = $is_admin ? '../' : '';
+
+    // Fetch accessible courses
+    if ($is_admin) {
+        $stmt = $pdo->query("SELECT c.id, c.title, c.category, c.thumbnail, c.tutor_id, u.name as tutor_name, u.email as tutor_email, u.avatar as tutor_avatar 
+                             FROM courses c 
+                             LEFT JOIN users u ON c.tutor_id = u.id 
+                             ORDER BY c.title ASC");
+        $all_courses = $stmt->fetchAll();
+        $course_ids = array_column($all_courses, 'id');
     } else {
-        $stmt = $pdo->prepare("SELECT id FROM courses WHERE tutor_id = ?");
+        $stmt = $pdo->prepare("SELECT c.id, c.title, c.category, c.thumbnail, c.tutor_id, u.name as tutor_name, u.email as tutor_email, u.avatar as tutor_avatar 
+                               FROM courses c 
+                               LEFT JOIN users u ON c.tutor_id = u.id 
+                               WHERE c.tutor_id = ? 
+                               ORDER BY c.title ASC");
         $stmt->execute([$user_id]);
-        $course_ids = $stmt->fetchAll(PDO::FETCH_COLUMN);
+        $all_courses = $stmt->fetchAll();
+        $course_ids = array_column($all_courses, 'id');
     }
 
     if (empty($course_ids)) {
         echo json_encode([
             'success' => true,
+            'is_admin' => $is_admin,
             'summary' => [
                 'total_students' => 0,
                 'active_learners' => 0,
                 'avg_course_completion' => 0,
                 'avg_quiz_score' => 0,
                 'quiz_pass_rate' => 0,
-                'total_study_hours' => '0m'
+                'total_study_time' => '0m'
             ],
             'student_summaries' => [],
             'matrix_rows' => [],
@@ -67,11 +94,15 @@ try {
         $lessons_with_quizzes[$qi['lesson_id']] = (int) $qi['question_count'];
     }
 
-    // 3. Enrollments
-    $stmt = $pdo->prepare("SELECT e.user_id, e.course_id, u.name as student_name, u.email as student_email, u.academic_id, u.avatar as student_avatar, u.status as user_status, c.title as course_title
+    // 3. Enrollments with Student and Tutor Information
+    $stmt = $pdo->prepare("SELECT e.user_id, e.course_id, 
+                                  u.name as student_name, u.email as student_email, u.academic_id, u.avatar as student_avatar, u.status as user_status,
+                                  c.title as course_title, c.tutor_id,
+                                  t.name as tutor_name, t.email as tutor_email, t.avatar as tutor_avatar
                            FROM enrollments e
                            JOIN users u ON e.user_id = u.id
                            JOIN courses c ON e.course_id = c.id
+                           LEFT JOIN users t ON c.tutor_id = t.id
                            WHERE e.course_id IN ($in_clause)
                            ORDER BY c.title ASC, u.name ASC");
     $stmt->execute($course_ids);
@@ -103,7 +134,7 @@ try {
     $stmt->execute($course_ids);
     $quiz_attempts_data = $stmt->fetchAll();
 
-    // Indexing
+    // Indexing maps
     $course_lessons_map = [];
     foreach ($all_lessons as $l) {
         $course_lessons_map[$l['course_id']][] = $l;
@@ -138,6 +169,10 @@ try {
     foreach ($enrollments as $enr) {
         $uid = $enr['user_id'];
         $cid = $enr['course_id'];
+        $tut_id = $enr['tutor_id'] ? (int) $enr['tutor_id'] : 0;
+        $tut_name = $enr['tutor_name'] ?: 'Unassigned Lecturer';
+        $resolved_student_avatar = get_user_avatar($enr['student_avatar'], $enr['student_name'], '0f4c81', 'fff', $avatar_prefix);
+
         $unique_students_set[$uid] = true;
 
         $c_lessons = $course_lessons_map[$cid] ?? [];
@@ -160,8 +195,9 @@ try {
             $prog = $progress_map[$prog_key] ?? null;
             $is_completed_lesson = isset($completed_lessons_map[$prog_key]) || ($prog && ($prog['completed'] == 1 || (float) $prog['progress_percent'] >= 90));
             $pct_watched = $prog ? (float) $prog['progress_percent'] : 0;
-            if ($is_completed_lesson && $pct_watched < 100)
+            if ($is_completed_lesson && $pct_watched < 100) {
                 $pct_watched = 100;
+            }
             $pos_sec = $prog ? (float) $prog['position_seconds'] : 0;
             $dur_sec = $prog ? (float) $prog['duration_seconds'] : 0;
             $student_watch_seconds += $pos_sec;
@@ -219,16 +255,11 @@ try {
 
             $lesson_fully_completed = $is_completed_lesson && (!$has_quiz || $q_is_finalized);
 
-            $matrix_rows[] = [
-                'student_id' => $uid,
-                'student_name' => $enr['student_name'],
-                'student_email' => $enr['student_email'],
-                'student_academic_id' => $enr['academic_id'],
-                'course_id' => $cid,
-                'course_title' => $enr['course_title'],
+            $lesson_detail = [
                 'lesson_id' => $lid,
                 'lesson_title' => $les['title'],
                 'lesson_order' => $idx + 1,
+                'lesson_duration' => $les['duration'],
                 'progress_percent' => $pct_watched,
                 'position_seconds' => $pos_sec,
                 'duration_seconds' => $dur_sec,
@@ -239,6 +270,37 @@ try {
                 'quiz_attempts' => $q_attempts,
                 'quiz_finalized' => $q_is_finalized,
                 'quiz_passed' => $q_passed,
+                'quiz_pct' => $q_pct,
+                'is_fully_completed' => $lesson_fully_completed
+            ];
+
+            $student_lesson_details[] = $lesson_detail;
+
+            $matrix_rows[] = [
+                'student_id' => $uid,
+                'student_name' => $enr['student_name'],
+                'student_email' => $enr['student_email'],
+                'student_academic_id' => $enr['academic_id'] ?: 'N/A',
+                'student_avatar' => $resolved_student_avatar,
+                'tutor_id' => $tut_id,
+                'tutor_name' => $tut_name,
+                'course_id' => $cid,
+                'course_title' => $enr['course_title'],
+                'lesson_id' => $lid,
+                'lesson_title' => $les['title'],
+                'lesson_order' => $idx + 1,
+                'lesson_duration' => $les['duration'],
+                'progress_percent' => $pct_watched,
+                'position_seconds' => $pos_sec,
+                'duration_seconds' => $dur_sec,
+                'is_completed' => $is_completed_lesson,
+                'has_quiz' => $has_quiz,
+                'quiz_score' => $q_score,
+                'quiz_total' => $q_total,
+                'quiz_attempts' => $q_attempts,
+                'quiz_finalized' => $q_is_finalized,
+                'quiz_passed' => $q_passed,
+                'quiz_pct' => $q_pct,
                 'is_fully_completed' => $lesson_fully_completed
             ];
         }
@@ -250,12 +312,28 @@ try {
 
         $avg_quiz_score = count($student_quiz_scores_pct) > 0 ? round(array_sum($student_quiz_scores_pct) / count($student_quiz_scores_pct)) : null;
 
+        if ($overall_progress >= 100) {
+            $learning_status = '100% Completed';
+            $status_badge_class = 'bg-success text-white';
+        } elseif ($overall_progress >= 40) {
+            $learning_status = 'On Track';
+            $status_badge_class = 'bg-primary text-white';
+        } elseif ($overall_progress > 0) {
+            $learning_status = 'Needs Attention';
+            $status_badge_class = 'bg-warning text-dark';
+        } else {
+            $learning_status = 'Not Started';
+            $status_badge_class = 'bg-secondary text-white';
+        }
+
         $student_summaries[] = [
             'student_id' => $uid,
             'student_name' => $enr['student_name'],
             'student_email' => $enr['student_email'],
             'student_academic_id' => $enr['academic_id'] ?: 'N/A',
-            'student_avatar' => $enr['student_avatar'],
+            'student_avatar' => $resolved_student_avatar,
+            'tutor_id' => $tut_id,
+            'tutor_name' => $tut_name,
             'course_id' => $cid,
             'course_title' => $enr['course_title'],
             'total_lessons' => $total_lessons_count,
@@ -265,8 +343,99 @@ try {
             'finalized_quizzes' => $finalized_quizzes_count,
             'avg_quiz_score' => $avg_quiz_score,
             'overall_progress' => $overall_progress,
+            'learning_status' => $learning_status,
+            'status_badge_class' => $status_badge_class,
             'total_watch_seconds' => $student_watch_seconds,
-            'last_active' => $last_active_time ? date('Y-m-d H:i:s', strtotime($last_active_time)) : null
+            'last_active' => $last_active_time ? date('M d, Y H:i', strtotime($last_active_time)) : 'Never',
+            'lessons' => $student_lesson_details
+        ];
+    }
+
+    // 7. Compute Lesson Insights (Tab 3)
+    $lesson_insights = [];
+    foreach ($all_lessons as $l) {
+        $cid = $l['course_id'];
+        $lid = $l['id'];
+
+        $enrolled_in_course = array_filter($enrollments, fn($e) => $e['course_id'] === $cid);
+        $c_total_enrolled = count($enrolled_in_course);
+
+        $watched_100_count = 0;
+        $quiz_attempted_students = 0;
+        $quiz_passed_count = 0;
+        $quiz_scores_list = [];
+        $total_retakes = 0;
+
+        foreach ($enrolled_in_course as $enr) {
+            $uid = $enr['user_id'];
+            $prog_key = $uid . '_' . $lid;
+            $prog = $progress_map[$prog_key] ?? null;
+            if (isset($completed_lessons_map[$prog_key]) || ($prog && ($prog['completed'] == 1 || (float) $prog['progress_percent'] >= 90))) {
+                $watched_100_count++;
+            }
+
+            $quiz_key = $uid . '_' . $cid . '_' . $lid;
+            $qa = $quiz_attempts_map[$quiz_key] ?? null;
+            if ($qa) {
+                $quiz_attempted_students++;
+                $total_retakes += (int) $qa['attempts_count'];
+                $s = (int) $qa['best_score'];
+                $t = (int) $qa['total_questions'] ?: ($lessons_with_quizzes[$lid] ?? 0);
+                if ($t > 0) {
+                    $pct = ($s / $t) * 100;
+                    $quiz_scores_list[] = $pct;
+                    if ($pct >= 50) {
+                        $quiz_passed_count++;
+                    }
+                }
+            }
+        }
+
+        $video_completion_rate = ($c_total_enrolled > 0) ? round(($watched_100_count / $c_total_enrolled) * 100) : 0;
+        $avg_quiz_score_l = count($quiz_scores_list) > 0 ? round(array_sum($quiz_scores_list) / count($quiz_scores_list)) : null;
+        $quiz_pass_rate_l = ($quiz_attempted_students > 0) ? round(($quiz_passed_count / $quiz_attempted_students) * 100) : null;
+        $avg_attempts = ($quiz_attempted_students > 0) ? round($total_retakes / $quiz_attempted_students, 1) : 0;
+
+        $diff_badge = 'Standard';
+        $diff_class = 'bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25';
+        if ($avg_quiz_score_l !== null && $avg_quiz_score_l < 50) {
+            $diff_badge = 'Challenging';
+            $diff_class = 'bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25';
+        } elseif ($avg_attempts > 2.0) {
+            $diff_badge = 'High Retakes';
+            $diff_class = 'bg-warning bg-opacity-15 text-dark border border-warning border-opacity-35';
+        } elseif ($avg_quiz_score_l !== null && $avg_quiz_score_l >= 80) {
+            $diff_badge = 'High Mastery';
+            $diff_class = 'bg-success bg-opacity-10 text-success border border-success border-opacity-25';
+        }
+
+        $c_info = null;
+        foreach ($all_courses as $ac) {
+            if ($ac['id'] === $cid) {
+                $c_info = $ac;
+                break;
+            }
+        }
+
+        $lesson_insights[] = [
+            'course_id' => $cid,
+            'course_title' => $c_info['title'] ?? $cid,
+            'tutor_id' => $c_info['tutor_id'] ? (int) $c_info['tutor_id'] : 0,
+            'tutor_name' => $c_info['tutor_name'] ?: 'Unassigned Lecturer',
+            'lesson_id' => $lid,
+            'lesson_title' => $l['title'],
+            'lesson_order' => $l['sort_order'],
+            'lesson_duration' => $l['duration'],
+            'total_enrolled' => $c_total_enrolled,
+            'watched_100_count' => $watched_100_count,
+            'video_completion_rate' => $video_completion_rate,
+            'has_quiz' => isset($lessons_with_quizzes[$lid]),
+            'quiz_attempted_students' => $quiz_attempted_students,
+            'avg_quiz_score' => $avg_quiz_score_l,
+            'quiz_pass_rate' => $quiz_pass_rate_l,
+            'avg_attempts' => $avg_attempts,
+            'difficulty_badge' => $diff_badge,
+            'difficulty_class' => $diff_class
         ];
     }
 
@@ -282,6 +451,8 @@ try {
 
     echo json_encode([
         'success' => true,
+        'is_admin' => $is_admin,
+        'timestamp' => time(),
         'summary' => [
             'total_students' => $total_students,
             'active_learners' => $active_learners_count,
@@ -291,10 +462,10 @@ try {
             'total_study_time' => ($study_hours > 0) ? "{$study_hours}h {$study_minutes}m" : "{$study_minutes}m"
         ],
         'student_summaries' => $student_summaries,
-        'matrix_rows' => $matrix_rows
+        'matrix_rows' => $matrix_rows,
+        'lesson_insights' => $lesson_insights
     ]);
 
 } catch (PDOException $e) {
     echo json_encode(['success' => false, 'message' => 'Database error: ' . $e->getMessage()]);
 }
-?>

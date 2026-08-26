@@ -81,6 +81,13 @@ try {
     $completed = false;
     $next_unlocked_lesson = null;
 
+    // Fetch course information for this lesson
+    $stmt = $pdo->prepare("SELECT course_id, sort_order FROM lessons WHERE id = ?");
+    $stmt->execute([$lesson_id]);
+    $curr_info = $stmt->fetch();
+    $c_id = $curr_info['course_id'] ?? '';
+    $c_sort = (int)($curr_info['sort_order'] ?? 0);
+
     if ($progress_percent >= 90) {
         $stmt = $pdo->prepare("SELECT COUNT(*) FROM completed_lessons WHERE user_id = ? AND lesson_id = ?");
         $stmt->execute([$user_id, $lesson_id]);
@@ -93,14 +100,7 @@ try {
         $completed = true;
 
         // Find next lesson in sort_order to notify frontend for instant unlock
-        $stmt = $pdo->prepare("SELECT course_id, sort_order FROM lessons WHERE id = ?");
-        $stmt->execute([$lesson_id]);
-        $curr_info = $stmt->fetch();
-
-        if ($curr_info) {
-            $c_id = $curr_info['course_id'];
-            $c_sort = (int) $curr_info['sort_order'];
-
+        if (!empty($c_id)) {
             $stmt = $pdo->prepare("SELECT id, title FROM lessons WHERE course_id = ? AND sort_order > ? ORDER BY sort_order ASC LIMIT 1");
             $stmt->execute([$c_id, $c_sort]);
             $next = $stmt->fetch();
@@ -114,12 +114,37 @@ try {
         }
     }
 
+    // Calculate real-time course-wide progress
+    $course_total_lessons = 0;
+    $course_completed_lessons = 0;
+    $course_progress_percent = 0;
+    $is_course_completed = false;
+
+    if (!empty($c_id)) {
+        $totStmt = $pdo->prepare("SELECT COUNT(*) FROM lessons WHERE course_id = ?");
+        $totStmt->execute([$c_id]);
+        $course_total_lessons = (int)$totStmt->fetchColumn();
+
+        $compStmt = $pdo->prepare("SELECT COUNT(DISTINCT cl.lesson_id) FROM completed_lessons cl INNER JOIN lessons l ON cl.lesson_id = l.id WHERE cl.user_id = ? AND l.course_id = ?");
+        $compStmt->execute([$user_id, $c_id]);
+        $course_completed_lessons = (int)$compStmt->fetchColumn();
+
+        $course_progress_percent = ($course_total_lessons > 0) ? (int)round(($course_completed_lessons / $course_total_lessons) * 100) : 0;
+        if ($course_progress_percent > 100) $course_progress_percent = 100;
+        $is_course_completed = ($course_completed_lessons >= $course_total_lessons && $course_total_lessons > 0);
+    }
+
     echo json_encode([
         'success' => true,
         'lesson_id' => $lesson_id,
+        'course_id' => $c_id,
         'progress_percent' => $progress_percent,
         'completed' => $completed,
-        'next_unlocked_lesson' => $next_unlocked_lesson
+        'next_unlocked_lesson' => $next_unlocked_lesson,
+        'course_total_lessons' => $course_total_lessons,
+        'course_completed_lessons' => $course_completed_lessons,
+        'course_progress_percent' => $course_progress_percent,
+        'is_course_completed' => $is_course_completed
     ]);
 } catch (PDOException $e) {
     echo json_encode(['success' => false, 'message' => 'Database error: ' . $e->getMessage()]);

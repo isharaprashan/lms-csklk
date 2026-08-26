@@ -54,6 +54,15 @@ $primary_theme_color = $is_super_admin ? '#0b4528' : '#0f4c81';
 $success_message = '';
 $error_message = '';
 
+if (!empty($_SESSION['flash_success'])) {
+    $success_message = $_SESSION['flash_success'];
+    unset($_SESSION['flash_success']);
+}
+if (!empty($_SESSION['flash_error'])) {
+    $error_message = $_SESSION['flash_error'];
+    unset($_SESSION['flash_error']);
+}
+
 // Handle POST actions
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     $action = $_POST['action'];
@@ -130,6 +139,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         } else {
             $error_message = "Invalid student user ID.";
         }
+    }
+
+    // Post-Redirect-Get (PRG) pattern: Redirect non-AJAX POST requests to prevent form resubmission on page refresh
+    $is_ajax_req = (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest')
+                   || (isset($_SERVER['CONTENT_TYPE']) && strpos($_SERVER['CONTENT_TYPE'], 'application/json') !== false);
+    if (!$is_ajax_req) {
+        if (!empty($success_message)) {
+            $_SESSION['flash_success'] = $success_message;
+        }
+        if (!empty($error_message)) {
+            $_SESSION['flash_error'] = $error_message;
+        }
+        $search_query = trim($_GET['search'] ?? '');
+        $redirectUrl = 'students.php' . (!empty($search_query) ? '?search=' . urlencode($search_query) : '');
+        header("Location: " . $redirectUrl);
+        exit;
     }
 }
 
@@ -235,6 +260,17 @@ $inactive_students = $total_students - $active_students;
             </div>
 
             <div class="d-flex align-items-center gap-2.5">
+                <!-- Live Admin Notification Bell Dropdown -->
+                <?php 
+                  $unread_count = 0;
+                  try {
+                    $stmtNotif = $pdo->prepare("SELECT COUNT(*) FROM notifications WHERE user_id = ? AND is_read = 0");
+                    $stmtNotif->execute([$_SESSION['user_id']]);
+                    $unread_count = (int)$stmtNotif->fetchColumn();
+                  } catch(Exception $e) {}
+                  include __DIR__ . '/../includes/notification_dropdown.php';
+                ?>
+
                 <a href="index.php" class="btn btn-sm btn-outline-primary rounded-pill px-3 fw-semibold">
                     <i class="bi bi-speedometer2 me-1"></i> Dashboard
                 </a>

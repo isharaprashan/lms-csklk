@@ -34,3 +34,44 @@ function get_lms_sid() {
     }
     return session_id();
 }
+
+function enforce_active_user_session($pdo = null) {
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        init_lms_session();
+    }
+    if (!empty($_SESSION['user_id'])) {
+        try {
+            if (!$pdo && function_exists('getDBConnection')) {
+                $pdo = getDBConnection();
+            }
+            if ($pdo) {
+                $stmt = $pdo->prepare("SELECT status, role FROM users WHERE id = ?");
+                $stmt->execute([$_SESSION['user_id']]);
+                $u = $stmt->fetch();
+                if (!$u || $u['status'] === 'inactive') {
+                    $_SESSION = [];
+                    if (session_status() === PHP_SESSION_ACTIVE) {
+                        session_destroy();
+                    }
+                    $isAjax = (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest') 
+                           || (isset($_SERVER['HTTP_ACCEPT']) && strpos($_SERVER['HTTP_ACCEPT'], 'application/json') !== false);
+                    if ($isAjax) {
+                        header('Content-Type: application/json');
+                        http_response_code(403);
+                        echo json_encode([
+                            'success' => false,
+                            'logged_in' => false,
+                            'account_inactive' => true,
+                            'redirect' => 'login.php?error=account_inactive',
+                            'message' => 'Your account is deactivated.'
+                        ]);
+                        exit;
+                    } else {
+                        header("Location: login.php?error=account_inactive");
+                        exit;
+                    }
+                }
+            }
+        } catch (Exception $e) {}
+    }
+}

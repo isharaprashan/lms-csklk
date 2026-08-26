@@ -58,6 +58,23 @@ try {
         exit;
     }
     
+    // Handle local video upload if provided
+    if (isset($_FILES['video_file']) && $_FILES['video_file']['error'] === UPLOAD_ERR_OK) {
+        $v_upload_dir = __DIR__ . '/../uploads/lesson_videos/';
+        if (!is_dir($v_upload_dir)) {
+            @mkdir($v_upload_dir, 0777, true);
+        }
+        $v_orig = $_FILES['video_file']['name'];
+        $v_ext = strtolower(pathinfo($v_orig, PATHINFO_EXTENSION));
+        $allowed_v_exts = ['mp4', 'webm', 'ogg', 'mov', 'mkv', 'avi'];
+        if (in_array($v_ext, $allowed_v_exts)) {
+            $v_safe_name = 'video_' . preg_replace('/[^a-z0-9]/', '', strtolower($lesson_id)) . '_' . time() . '.' . $v_ext;
+            if (move_uploaded_file($_FILES['video_file']['tmp_name'], $v_upload_dir . $v_safe_name)) {
+                $video_url = 'uploads/lesson_videos/' . $v_safe_name;
+            }
+        }
+    }
+
     // Update lesson details
     $stmt = $pdo->prepare("UPDATE lessons SET 
         title = ?, 

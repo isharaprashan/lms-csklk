@@ -87,6 +87,13 @@ try {
     $user = $stmt->fetch();
 
     if ($user) {
+        // Check if account is inactive
+        if (isset($user['status']) && $user['status'] === 'inactive') {
+            $_SESSION['auth_error'] = function_exists('__') ? __('account_inactive_error', 'Your account has been deactivated by system administrators. Access is disabled.') : 'Your account has been deactivated by system administrators. Access is disabled.';
+            header("Location: login.php?error=account_inactive");
+            exit;
+        }
+
         // User exists -> Update Google credentials & mark verified
         $updateSql = "UPDATE users SET google_id = ?, auth_provider = 'google', email_verified = 1";
         $updateParams = [$googleId];

@@ -384,6 +384,7 @@ return [
     'challenging' => 'අභියෝගාත්මක',
 
     // Certificate Request System
+    'account_inactive_error' => 'පරිපාලක විසින් ඔබගේ ගිණුම අක්‍රිය කර ඇත. ඔබට පද්ධතියට ප්‍රවේශ විය නොහැක.',
     'request_certificate' => 'සහතිකය ඉල්ලුම් කරන්න',
     'certificate_application' => 'නිල පාඨමාලා සහතිකපත් අයදුම්පත',
     'certificate_requested' => 'සහතිකය ඉල්ලුම් කර ඇත',
@@ -510,6 +511,8 @@ return [
     'drag_to_reorder' => 'අනුපිළිවෙල වෙනස් කිරීමට අදින්න හෝ ඊතල භාවිතා කරන්න',
     'no_banners_found' => 'මේ අවස්ථාවේ සක්‍රීය ප්‍රවර්ධන බැනර් නොමැත.',
     'recently' => 'මෑතකදී',
-    'click_to_view_details' => 'සම්පූර්ණ විස්තර බැලීමට ක්ලික් කරන්න'
+    'click_to_view_details' => 'සම්පූර්ණ විස්තර බැලීමට ක්ලික් කරන්න',
+    'phone_number' => 'දුරකථන අංකය',
+    'address' => 'ලිපිනය'
 ];
 ?>

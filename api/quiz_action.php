@@ -48,6 +48,46 @@ try {
 
     $total_questions = count($questions);
 
+    // Verify lesson is unlocked for student access
+    $user_role = $_SESSION['user_role'] ?? '';
+    if (empty($user_role) || !in_array($user_role, ['student', 'teacher', 'admin', 'super_admin'])) {
+        $stmt = $pdo->prepare("SELECT role FROM users WHERE id = ?");
+        $stmt->execute([$user_id]);
+        $user_role = $stmt->fetchColumn() ?: 'student';
+    }
+    $is_admin_or_teacher = in_array($user_role, ['admin', 'super_admin', 'teacher']);
+
+    if (!$is_admin_or_teacher && !empty($lesson_id)) {
+        $stmt = $pdo->prepare("SELECT id FROM lessons WHERE course_id = ? ORDER BY sort_order ASC, id ASC");
+        $stmt->execute([$course_id]);
+        $course_lessons = $stmt->fetchAll();
+
+        $stmt = $pdo->prepare("SELECT lesson_id FROM completed_lessons WHERE user_id = ?");
+        $stmt->execute([$user_id]);
+        $comp = $stmt->fetchAll(PDO::FETCH_COLUMN);
+
+        $stmt = $pdo->prepare("SELECT lp.lesson_id FROM lesson_progress lp INNER JOIN lessons l ON l.id = lp.lesson_id WHERE lp.user_id = ? AND l.course_id = ? AND (lp.completed = 1 OR lp.progress_percent >= 90)");
+        $stmt->execute([$user_id, $course_id]);
+        $watched = array_unique(array_merge($comp ?? [], $stmt->fetchAll(PDO::FETCH_COLUMN)));
+
+        $unlocked_ids = [];
+        foreach ($course_lessons as $idx => $l) {
+            if ($idx === 0) {
+                $unlocked_ids[] = $l['id'];
+            } else {
+                $prev_l = $course_lessons[$idx - 1];
+                if (in_array($prev_l['id'], $watched)) {
+                    $unlocked_ids[] = $l['id'];
+                }
+            }
+        }
+
+        if (!in_array($lesson_id, $unlocked_ids)) {
+            echo json_encode(['success' => false, 'message' => __('quiz_locked', 'This quiz is locked because the corresponding lesson is not unlocked yet.')]);
+            exit;
+        }
+    }
+
     // Fetch all attempts for user & course & lesson ordered by attempt_number DESC
     if (!empty($lesson_id)) {
         $stmt = $pdo->prepare("SELECT * FROM quiz_attempts WHERE user_id = ? AND course_id = ? AND lesson_id = ? ORDER BY attempt_number DESC");

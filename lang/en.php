@@ -395,6 +395,7 @@ return [
     'challenging' => 'Challenging',
 
     // Certificate Request System
+    'account_inactive_error' => 'Your account has been deactivated by system administrators. You cannot log in or use the system.',
     'request_certificate' => 'Request Certificate',
     'certificate_application' => 'Official Course Certificate Application',
     'certificate_requested' => 'Certificate Requested',
@@ -518,6 +519,8 @@ return [
     'drag_to_reorder' => 'Drag or use arrows to change display order',
     'no_banners_found' => 'No active promotional banners at this time.',
     'recently' => 'Recently',
-    'click_to_view_details' => 'Click to view full announcement details'
+    'click_to_view_details' => 'Click to view full announcement details',
+    'phone_number' => 'Phone Number',
+    'address' => 'Address'
 ];
 ?>

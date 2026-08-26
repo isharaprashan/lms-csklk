@@ -246,12 +246,14 @@ try {
 
                 $student_lesson_details[] = $lesson_detail;
 
+                $resolved_student_avatar = get_user_avatar($enr['student_avatar'], $enr['student_name'], '0f4c81', 'fff');
+
                 $matrix_rows[] = [
                     'student_id' => $uid,
                     'student_name' => $enr['student_name'],
                     'student_email' => $enr['student_email'],
                     'student_academic_id' => $enr['academic_id'],
-                    'student_avatar' => $enr['student_avatar'],
+                    'student_avatar' => $resolved_student_avatar,
                     'course_id' => $cid,
                     'course_title' => $enr['course_title'],
                     'lesson_id' => $lid,
@@ -292,12 +294,14 @@ try {
                 $status_badge_class = 'bg-secondary text-white';
             }
 
+            $resolved_student_avatar = get_user_avatar($enr['student_avatar'], $enr['student_name'], '0f4c81', 'fff');
+
             $student_summaries[] = [
                 'student_id' => $uid,
                 'student_name' => $enr['student_name'],
                 'student_email' => $enr['student_email'],
                 'student_academic_id' => $enr['academic_id'] ?: 'N/A',
-                'student_avatar' => $enr['student_avatar'],
+                'student_avatar' => $resolved_student_avatar,
                 'course_id' => $cid,
                 'course_title' => $enr['course_title'],
                 'total_lessons' => $total_lessons_count,
@@ -518,9 +522,30 @@ try {
       padding: 1rem 1.25rem;
       vertical-align: middle;
       border-bottom: 1px solid #f1f5f9;
-    }
     .custom-table tr:hover td {
       background-color: #f8fafc;
+    }
+    .pulse-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: #10b981;
+      display: inline-block;
+      box-shadow: 0 0 0 rgba(16, 185, 129, 0.4);
+      animation: pulseLive 2s infinite;
+    }
+    @keyframes pulseLive {
+      0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+      70% { transform: scale(1); box-shadow: 0 0 0 7px rgba(16, 185, 129, 0); }
+      100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+    }
+    .spin-anim {
+      display: inline-block;
+      animation: spinSync 0.75s linear infinite;
+    }
+    @keyframes spinSync {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
     }
     .modal-content {
       border-radius: 20px;
@@ -547,7 +572,14 @@ try {
           </h2>
           <p class="text-muted fs-8 mb-0"><?php echo __('analytics_subtitle', 'Monitor real-time video watch completion, lesson progress, quiz results, and student learning records.'); ?></p>
         </div>
-        <div class="d-flex align-items-center gap-2">
+        <div class="d-flex align-items-center gap-2 flex-wrap">
+          <!-- Real-Time Live Sync Status Badge -->
+          <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 px-3 py-1.5 rounded-pill fs-8 fw-semibold d-inline-flex align-items-center gap-1.5 shadow-xs" title="Auto-synchronizing student learning progress and quiz submissions">
+            <span class="pulse-dot"></span> Live Sync <span class="d-none d-sm-inline text-muted" id="last-sync-time">(Just now)</span>
+          </span>
+          <button id="btn-manual-sync" onclick="fetchLiveAnalytics(true)" class="btn btn-outline-primary btn-sm px-3 py-1.5 rounded-pill fw-semibold shadow-xs d-flex align-items-center gap-1.5" title="Force instant real-time data sync">
+            <i class="bi bi-arrow-repeat" id="sync-icon"></i> <span>Sync Now</span>
+          </button>
           <button onclick="exportGradebookCSV()" class="btn btn-success btn-sm px-3.5 py-1.5 rounded-pill shadow-sm fw-semibold text-white d-flex align-items-center gap-1.5">
             <i class="bi bi-file-earmark-spreadsheet-fill"></i>
             <span><?php echo __('export_csv', 'Export Gradebook (CSV)'); ?></span>
@@ -566,8 +598,8 @@ try {
             <div class="d-flex justify-content-between align-items-center">
               <div>
                 <small class="text-muted fw-bold text-uppercase fs-9 tracking-wider"><?php echo __('kpi_total_enrolled', 'Total Enrolled Students'); ?></small>
-                <h3 class="fw-bold text-dark mb-0 mt-1"><?php echo number_format($total_students); ?></h3>
-                <small class="text-success fs-9 fw-semibold"><i class="bi bi-person-check-fill me-1"></i><?php echo $active_learners_count; ?> <?php echo __('kpi_active_students', 'Active Learners'); ?></small>
+                <h3 class="fw-bold text-dark mb-0 mt-1" id="kpi-total-students"><?php echo number_format($total_students); ?></h3>
+                <small class="text-success fs-9 fw-semibold"><i class="bi bi-person-check-fill me-1"></i><span id="kpi-active-learners"><?php echo $active_learners_count; ?></span> <?php echo __('kpi_active_students', 'Active Learners'); ?></small>
               </div>
               <div class="kpi-icon-box bg-primary bg-opacity-10 text-primary">
                 <i class="bi bi-people-fill"></i>
@@ -582,9 +614,9 @@ try {
             <div class="d-flex justify-content-between align-items-center">
               <div>
                 <small class="text-muted fw-bold text-uppercase fs-9 tracking-wider"><?php echo __('kpi_course_completion', 'Avg Course Completion'); ?></small>
-                <h3 class="fw-bold text-success mb-0 mt-1"><?php echo $avg_course_completion; ?>%</h3>
+                <h3 class="fw-bold text-success mb-0 mt-1" id="kpi-course-completion"><?php echo $avg_course_completion; ?>%</h3>
                 <div class="progress mt-1.5" style="height: 4px; width: 100px;">
-                  <div class="progress-bar bg-success rounded-pill" style="width: <?php echo $avg_course_completion; ?>%;"></div>
+                  <div class="progress-bar bg-success rounded-pill" id="kpi-completion-bar" style="width: <?php echo $avg_course_completion; ?>%;"></div>
                 </div>
               </div>
               <div class="kpi-icon-box bg-success bg-opacity-10 text-success">
@@ -600,8 +632,8 @@ try {
             <div class="d-flex justify-content-between align-items-center">
               <div>
                 <small class="text-muted fw-bold text-uppercase fs-9 tracking-wider"><?php echo __('kpi_avg_quiz_score', 'Avg Quiz Score'); ?></small>
-                <h3 class="fw-bold text-warning mb-0 mt-1"><?php echo $avg_quiz_score_overall; ?>%</h3>
-                <small class="text-muted fs-9 fw-semibold"><i class="bi bi-award-fill text-warning me-1"></i><?php echo $quiz_pass_rate_overall; ?>% <?php echo __('kpi_quiz_pass_rate', 'Pass Rate'); ?></small>
+                <h3 class="fw-bold text-warning mb-0 mt-1" id="kpi-avg-score"><?php echo $avg_quiz_score_overall; ?>%</h3>
+                <small class="text-muted fs-9 fw-semibold"><i class="bi bi-award-fill text-warning me-1"></i><span id="kpi-pass-rate"><?php echo $quiz_pass_rate_overall; ?></span>% <?php echo __('kpi_quiz_pass_rate', 'Pass Rate'); ?></small>
               </div>
               <div class="kpi-icon-box bg-warning bg-opacity-10 text-warning">
                 <i class="bi bi-trophy-fill"></i>
@@ -616,7 +648,7 @@ try {
             <div class="d-flex justify-content-between align-items-center">
               <div>
                 <small class="text-muted fw-bold text-uppercase fs-9 tracking-wider"><?php echo __('kpi_total_study_time', 'Total Video Watch Time'); ?></small>
-                <h3 class="fw-bold text-dark mb-0 mt-1" style="color: #6f42c1 !important;"><?php echo $study_time_display; ?></h3>
+                <h3 class="fw-bold text-dark mb-0 mt-1" id="kpi-study-time" style="color: #6f42c1 !important;"><?php echo $study_time_display; ?></h3>
                 <small class="text-muted fs-9"><i class="bi bi-clock-history me-1"></i>Logged Study Progress</small>
               </div>
               <div class="kpi-icon-box bg-opacity-10" style="background-color: rgba(111, 66, 193, 0.1); color: #6f42c1;">
@@ -664,19 +696,19 @@ try {
           <li class="nav-item" role="presentation">
             <button class="nav-link active d-flex align-items-center gap-2" id="roster-tab" data-bs-toggle="tab" data-bs-target="#roster-pane" type="button" role="tab">
               <i class="bi bi-person-lines-fill"></i>
-              <span><?php echo __('tab_student_roster', 'Student Gradebook'); ?> (<?php echo count($student_summaries); ?>)</span>
+              <span><?php echo __('tab_student_roster', 'Student Gradebook'); ?> (<span id="tab-roster-count"><?php echo count($student_summaries); ?></span>)</span>
             </button>
           </li>
           <li class="nav-item" role="presentation">
             <button class="nav-link d-flex align-items-center gap-2" id="matrix-tab" data-bs-toggle="tab" data-bs-target="#matrix-pane" type="button" role="tab">
               <i class="bi bi-grid-3x3-gap-fill"></i>
-              <span><?php echo __('tab_lesson_matrix', 'Granular Lesson Matrix'); ?> (<?php echo count($matrix_rows); ?>)</span>
+              <span><?php echo __('tab_lesson_matrix', 'Granular Lesson Matrix'); ?> (<span id="tab-matrix-count"><?php echo count($matrix_rows); ?></span>)</span>
             </button>
           </li>
           <li class="nav-item" role="presentation">
             <button class="nav-link d-flex align-items-center gap-2" id="insights-tab" data-bs-toggle="tab" data-bs-target="#insights-pane" type="button" role="tab">
               <i class="bi bi-bar-chart-steps"></i>
-              <span><?php echo __('tab_course_insights', 'Course Insights & Drop-off'); ?> (<?php echo count($lesson_insights); ?>)</span>
+              <span><?php echo __('tab_course_insights', 'Course Insights & Drop-off'); ?> (<span id="tab-insights-count"><?php echo count($lesson_insights); ?></span>)</span>
             </button>
           </li>
         </ul>
@@ -700,7 +732,7 @@ try {
                     <th scope="col" class="text-center" style="min-width: 110px;"><?php echo __('actions', 'Actions'); ?></th>
                   </tr>
                 </thead>
-                <tbody class="fs-8">
+                <tbody class="fs-8" id="roster-tbody">
                   <?php if (empty($student_summaries)): ?>
                     <tr>
                       <td colspan="8" class="text-center py-5 text-muted">
@@ -720,7 +752,9 @@ try {
                         <!-- Student Information -->
                         <td>
                           <div class="d-flex align-items-center gap-2.5">
-                            <img src="<?php echo htmlspecialchars(get_user_avatar($s['student_avatar'], $s['student_name'])); ?>" class="rounded-circle border" style="width: 38px; height: 38px; object-fit: cover;" alt="Avatar">
+                            <img src="<?php echo htmlspecialchars($s['student_avatar']); ?>"
+                                 onerror="this.onerror=null; this.src='https://ui-avatars.com/api/?name=<?php echo urlencode($s['student_name']); ?>&background=0f4c81&color=fff';"
+                                 class="rounded-circle border" style="width: 38px; height: 38px; object-fit: cover;" alt="Avatar">
                             <div>
                               <div class="fw-bold text-dark text-truncate" style="max-width: 170px;"><?php echo htmlspecialchars($s['student_name']); ?></div>
                               <div class="text-muted fs-9 text-truncate" style="max-width: 170px;"><?php echo htmlspecialchars($s['student_email']); ?></div>
@@ -810,7 +844,7 @@ try {
                     <th scope="col" class="text-center" style="min-width: 140px;">Module Status</th>
                   </tr>
                 </thead>
-                <tbody class="fs-8">
+                <tbody class="fs-8" id="matrix-tbody">
                   <?php if (empty($matrix_rows)): ?>
                     <tr>
                       <td colspan="5" class="text-center py-5 text-muted">
@@ -841,7 +875,9 @@ try {
                         <!-- Student Info -->
                         <td>
                           <div class="d-flex align-items-center gap-2.5">
-                            <img src="<?php echo htmlspecialchars(get_user_avatar($row['student_avatar'], $row['student_name'])); ?>" class="rounded-circle border" style="width: 36px; height: 36px; object-fit: cover;" alt="Avatar">
+                            <img src="<?php echo htmlspecialchars($row['student_avatar']); ?>"
+                                 onerror="this.onerror=null; this.src='https://ui-avatars.com/api/?name=<?php echo urlencode($row['student_name']); ?>&background=0f4c81&color=fff';"
+                                 class="rounded-circle border" style="width: 36px; height: 36px; object-fit: cover;" alt="Avatar">
                             <div>
                               <div class="fw-bold text-dark text-truncate" style="max-width: 160px;"><?php echo htmlspecialchars($row['student_name']); ?></div>
                               <small class="text-muted fs-9"><?php echo htmlspecialchars($row['student_academic_id']); ?></small>
@@ -943,7 +979,7 @@ try {
                     <th scope="col" class="text-center" style="min-width: 160px;"><?php echo __('difficulty_level', 'Difficulty Insight'); ?></th>
                   </tr>
                 </thead>
-                <tbody class="fs-8">
+                <tbody class="fs-8" id="insights-tbody">
                   <?php if (empty($lesson_insights)): ?>
                     <tr>
                       <td colspan="6" class="text-center py-5 text-muted">
@@ -1112,10 +1148,14 @@ try {
   <script src="assets/js/bootstrap.bundle.min.js"></script>
   <!-- Modern Notification System JS Client -->
   <script src="assets/js/notifications.js"></script>
+  <!-- Real-Time Analytics Engine -->
+  <script src="assets/js/student-analytics-realtime.js"></script>
 
   <!-- Data Payload for Client-Side Interactivity -->
   <script>
-    const STUDENT_SUMMARIES = <?php echo json_encode($student_summaries); ?>;
+    window.STUDENT_SUMMARIES = <?php echo json_encode($student_summaries); ?>;
+    window.MATRIX_ROWS = <?php echo json_encode($matrix_rows); ?>;
+    window.LESSON_INSIGHTS = <?php echo json_encode($lesson_insights); ?>;
 
     // Filter Logic
     document.addEventListener('DOMContentLoaded', function () {
@@ -1124,9 +1164,22 @@ try {
       const statusFilter = document.getElementById('status-filter-select');
 
       function filterAllTables() {
-        const query = searchInput.value.toLowerCase().trim();
-        const selCourse = courseFilter.value.toLowerCase().trim();
-        const selStatus = statusFilter.value.trim();
+        const query = (searchInput ? searchInput.value : '').toLowerCase().trim();
+        const selCourse = (courseFilter ? courseFilter.value : '').toLowerCase().trim();
+        const selStatus = statusFilter ? statusFilter.value.trim() : '';
+
+        let visibleRosterCount = 0;
+        let visibleMatrixCount = 0;
+        let visibleInsightsCount = 0;
+
+        // Dynamic KPI Accumulators
+        let kpiStudentsSet = new Set();
+        let kpiActiveSet = new Set();
+        let kpiProgressSum = 0;
+        let kpiProgressCount = 0;
+        let kpiQuizScores = [];
+        let kpiQuizPassCount = 0;
+        let kpiStudySeconds = 0;
 
         // 1. Filter Roster Table
         document.querySelectorAll('.roster-row').forEach(row => {
@@ -1140,7 +1193,12 @@ try {
           const matchesCourse = !selCourse || course === selCourse;
           const matchesStatus = !selStatus || status === selStatus;
 
-          row.style.display = (matchesSearch && matchesCourse && matchesStatus) ? '' : 'none';
+          const isVisible = matchesSearch && matchesCourse && matchesStatus;
+          row.style.display = isVisible ? '' : 'none';
+
+          if (isVisible) {
+            visibleRosterCount++;
+          }
         });
 
         // 2. Filter Matrix Table
@@ -1156,7 +1214,12 @@ try {
           const matchesCourse = !selCourse || course === selCourse;
           const matchesStatus = !selStatus || status === selStatus;
 
-          row.style.display = (matchesSearch && matchesCourse && matchesStatus) ? '' : 'none';
+          const isVisible = matchesSearch && matchesCourse && matchesStatus;
+          row.style.display = isVisible ? '' : 'none';
+
+          if (isVisible) {
+            visibleMatrixCount++;
+          }
         });
 
         // 3. Filter Insights Table
@@ -1167,13 +1230,86 @@ try {
           const matchesSearch = !query || course.includes(query) || lesson.includes(query);
           const matchesCourse = !selCourse || course === selCourse;
 
-          row.style.display = (matchesSearch && matchesCourse) ? '' : 'none';
+          const isVisible = matchesSearch && matchesCourse;
+          row.style.display = isVisible ? '' : 'none';
+
+          if (isVisible) {
+            visibleInsightsCount++;
+          }
         });
+
+        // 4. Update Tab Counts
+        const rosterCountEl = document.getElementById('tab-roster-count');
+        const matrixCountEl = document.getElementById('tab-matrix-count');
+        const insightsCountEl = document.getElementById('tab-insights-count');
+        if (rosterCountEl) rosterCountEl.textContent = visibleRosterCount;
+        if (matrixCountEl) matrixCountEl.textContent = visibleMatrixCount;
+        if (insightsCountEl) insightsCountEl.textContent = visibleInsightsCount;
+
+        // 5. Update Dynamic KPI Summary Cards based on filtered student summaries
+        const summaries = window.STUDENT_SUMMARIES || [];
+        summaries.forEach(s => {
+          const courseMatch = !selCourse || (s.course_title || '').toLowerCase() === selCourse;
+          const statusMatch = !selStatus || s.learning_status === selStatus;
+          const searchMatch = !query || (s.student_name || '').toLowerCase().includes(query) || (s.student_email || '').toLowerCase().includes(query) || (s.student_academic_id || '').toLowerCase().includes(query);
+
+          if (courseMatch && statusMatch && searchMatch) {
+            kpiStudentsSet.add(s.student_id);
+            if (s.total_watch_seconds > 0 || s.passed_quizzes > 0 || s.finalized_quizzes > 0) {
+              kpiActiveSet.add(s.student_id);
+            }
+            kpiProgressSum += (s.overall_progress || 0);
+            kpiProgressCount++;
+            kpiStudySeconds += (s.total_watch_seconds || 0);
+
+            if (s.avg_quiz_score !== null && s.avg_quiz_score !== undefined) {
+              kpiQuizScores.push(s.avg_quiz_score);
+            }
+            if (s.passed_quizzes > 0) {
+              kpiQuizPassCount += s.passed_quizzes;
+            }
+          }
+        });
+
+        const dynTotalStudents = kpiStudentsSet.size;
+        const dynActiveLearners = kpiActiveSet.size;
+        const dynAvgProgress = kpiProgressCount > 0 ? Math.round(kpiProgressSum / kpiProgressCount) : 0;
+        const dynAvgScore = kpiQuizScores.length > 0 ? Math.round(kpiQuizScores.reduce((a, b) => a + b, 0) / kpiQuizScores.length) : 0;
+        const dynPassRate = kpiQuizScores.length > 0 ? Math.round((kpiQuizPassCount / kpiQuizScores.length) * 100) : 0;
+        
+        const studyHrs = Math.floor(kpiStudySeconds / 3600);
+        const studyMins = Math.round((kpiStudySeconds % 3600) / 60);
+        const dynStudyDisplay = studyHrs > 0 ? `${studyHrs}h ${studyMins}m` : `${studyMins}m`;
+
+        const totalStudentsEl = document.getElementById('kpi-total-students');
+        const activeLearnersEl = document.getElementById('kpi-active-learners');
+        const courseCompletionEl = document.getElementById('kpi-course-completion');
+        const completionBarEl = document.getElementById('kpi-completion-bar');
+        const avgScoreEl = document.getElementById('kpi-avg-score');
+        const passRateEl = document.getElementById('kpi-pass-rate');
+        const studyTimeEl = document.getElementById('kpi-study-time');
+
+        if (totalStudentsEl) totalStudentsEl.textContent = dynTotalStudents;
+        if (activeLearnersEl) activeLearnersEl.textContent = dynActiveLearners;
+        if (courseCompletionEl) courseCompletionEl.textContent = dynAvgProgress + '%';
+        if (completionBarEl) completionBarEl.style.width = dynAvgProgress + '%';
+        if (avgScoreEl) avgScoreEl.textContent = dynAvgScore + '%';
+        if (passRateEl) passRateEl.textContent = dynPassRate;
+        if (studyTimeEl) studyTimeEl.textContent = dynStudyDisplay;
       }
+
+      window.filterAllTables = filterAllTables;
 
       if (searchInput) searchInput.addEventListener('input', filterAllTables);
       if (courseFilter) courseFilter.addEventListener('change', filterAllTables);
       if (statusFilter) statusFilter.addEventListener('change', filterAllTables);
+
+      // Start Real-Time Background Polling Engine
+      initStudentAnalyticsRealtime({
+        endpoint: 'api/get_student_analytics.php',
+        isAdmin: false,
+        pollInterval: 8000
+      });
     });
 
     // Open Student Learning Dossier Modal
@@ -1181,7 +1317,14 @@ try {
       const student = STUDENT_SUMMARIES[index];
       if (!student) return;
 
-      document.getElementById('modal-student-avatar').src = student.student_avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&h=100&fit=crop';
+      const defaultAvatar = 'https://ui-avatars.com/api/?name=' + encodeURIComponent(student.student_name || 'Student') + '&background=0f4c81&color=fff';
+      const avatarImg = document.getElementById('modal-student-avatar');
+      avatarImg.src = student.student_avatar || defaultAvatar;
+      avatarImg.onerror = function() {
+        this.onerror = null;
+        this.src = defaultAvatar;
+      };
+
       document.getElementById('modal-student-name').textContent = student.student_name + (student.student_academic_id !== 'N/A' ? ' (' + student.student_academic_id + ')' : '');
       document.getElementById('modal-student-email').textContent = student.student_email;
       document.getElementById('modal-course-title').textContent = student.course_title;

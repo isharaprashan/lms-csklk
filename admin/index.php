@@ -86,6 +86,15 @@ $csrf_token = $_SESSION['csrf_token'];
 $success_message = '';
 $error_message = '';
 
+if (!empty($_SESSION['flash_success'])) {
+  $success_message = $_SESSION['flash_success'];
+  unset($_SESSION['flash_success']);
+}
+if (!empty($_SESSION['flash_error'])) {
+  $error_message = $_SESSION['flash_error'];
+  unset($_SESSION['flash_error']);
+}
+
 try {
   $pdo = getDBConnection();
 
@@ -1072,6 +1081,22 @@ try {
     $success_message = 'Google Sign-In & OAuth settings updated successfully!';
   }
 
+  // Post-Redirect-Get (PRG) pattern: Redirect non-AJAX POST requests to prevent form resubmission on page refresh
+  if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $is_ajax_req = (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest')
+                   || (isset($_SERVER['CONTENT_TYPE']) && strpos($_SERVER['CONTENT_TYPE'], 'application/json') !== false);
+    if (!$is_ajax_req) {
+      if (!empty($success_message)) {
+        $_SESSION['flash_success'] = $success_message;
+      }
+      if (!empty($error_message)) {
+        $_SESSION['flash_error'] = $error_message;
+      }
+      header("Location: " . $_SERVER['REQUEST_URI']);
+      exit;
+    }
+  }
+
   // Fetch all teachers
   $stmt = $pdo->query("SELECT u.*, (SELECT COUNT(*) FROM courses c WHERE c.tutor_id = u.id) as teacher_courses_count FROM users u WHERE u.role = 'teacher' ORDER BY CASE WHEN u.status = 'pending' THEN 1 ELSE 2 END, u.created_at DESC");
   $teachers = $stmt->fetchAll();
@@ -1585,6 +1610,17 @@ try {
       </div>
 
       <div class="d-flex align-items-center gap-3">
+        <!-- Live Admin Notification Bell Dropdown -->
+        <?php 
+          $unread_count = 0;
+          try {
+            $stmtNotif = $pdo->prepare("SELECT COUNT(*) FROM notifications WHERE user_id = ? AND is_read = 0");
+            $stmtNotif->execute([$_SESSION['user_id']]);
+            $unread_count = (int)$stmtNotif->fetchColumn();
+          } catch(Exception $e) {}
+          include __DIR__ . '/../includes/notification_dropdown.php';
+        ?>
+
         <!-- User Profile Badge -->
         <div class="d-flex align-items-center gap-2.5">
           <img src="<?php echo htmlspecialchars($current_admin_avatar); ?>"

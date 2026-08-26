@@ -88,6 +88,16 @@ function ensureMigrations($pdo)
     } catch (PDOException $e) {
         $pdo->exec("ALTER TABLE users ADD COLUMN dob DATE NULL AFTER nic");
     }
+    try {
+        $pdo->query("SELECT phone FROM users LIMIT 1");
+    } catch (PDOException $e) {
+        $pdo->exec("ALTER TABLE users ADD COLUMN phone VARCHAR(30) NULL AFTER dob");
+    }
+    try {
+        $pdo->query("SELECT address FROM users LIMIT 1");
+    } catch (PDOException $e) {
+        $pdo->exec("ALTER TABLE users ADD COLUMN address TEXT NULL AFTER phone");
+    }
 
     // 3.1.1 Check and add Google OAuth & OTP verification columns to 'users'
     $isNewEmailVerifiedColumn = false;
@@ -839,6 +849,8 @@ function initializeDatabase()
                 `qualifications` VARCHAR(255) NULL,
                 `nic` VARCHAR(20) NULL,
                 `dob` DATE NULL,
+                `phone` VARCHAR(30) NULL,
+                `address` TEXT NULL,
                 `google_id` VARCHAR(255) NULL UNIQUE,
                 `auth_provider` ENUM('local', 'google') DEFAULT 'local',
                 `email_verified` TINYINT(1) DEFAULT 0,
@@ -1232,7 +1244,7 @@ function get_site_favicon()
 }
 
 // Global Helper function to retrieve user profile picture or initial letters default avatar URL
-function get_user_avatar($avatar = null, $name = 'User', $background = '0f4c81', $color = 'fff')
+function get_user_avatar($avatar = null, $name = 'User', $background = '0f4c81', $color = 'fff', $prefix = '')
 {
     if (!empty($avatar)) {
         $avatar = trim($avatar);
@@ -1241,7 +1253,13 @@ function get_user_avatar($avatar = null, $name = 'User', $background = '0f4c81',
         }
         $clean_path = ltrim($avatar, '/');
         if (file_exists(__DIR__ . '/../' . $clean_path)) {
-            return $clean_path;
+            return $prefix . $clean_path;
+        }
+        if (file_exists(__DIR__ . '/../admin/' . $clean_path)) {
+            return $prefix . 'admin/' . $clean_path;
+        }
+        if (strpos($clean_path, 'uploads/') === 0 || strpos($clean_path, 'upload/') === 0 || strpos($clean_path, 'assets/') === 0) {
+            return $prefix . $clean_path;
         }
     }
     $displayName = !empty($name) ? trim($name) : 'User';
@@ -1292,5 +1310,94 @@ function get_register_page_image()
 
     $register_img = 'https://images.unsplash.com/photo-1523240795612-9a054b0db644?w=1600&auto=format&fit=crop&q=85';
     return $register_img;
+}
+
+/**
+ * Check if a student has completed all quizzes for a specific course
+ *
+ * @param PDO $pdo
+ * @param int $user_id
+ * @param string $course_id
+ * @return array ['all_completed' => bool, 'total_quizzes' => int, 'completed_quizzes' => int, 'missing_quiz_titles' => array]
+ */
+function check_course_quizzes_completed($pdo, $user_id, $course_id) {
+    if (!$pdo || empty($user_id) || empty($course_id)) {
+        return [
+            'all_completed' => true,
+            'total_quizzes' => 0,
+            'completed_quizzes' => 0,
+            'missing_quiz_titles' => []
+        ];
+    }
+
+    // 1. Fetch all distinct quiz groups in this course
+    $quizLessonsStmt = $pdo->prepare("SELECT DISTINCT lesson_id FROM quizzes WHERE course_id = ? AND lesson_id IS NOT NULL AND lesson_id != ''");
+    $quizLessonsStmt->execute([$course_id]);
+    $lesson_quiz_ids = $quizLessonsStmt->fetchAll(PDO::FETCH_COLUMN);
+
+    $courseWideQuizStmt = $pdo->prepare("SELECT COUNT(*) FROM quizzes WHERE course_id = ? AND (lesson_id IS NULL OR lesson_id = '')");
+    $courseWideQuizStmt->execute([$course_id]);
+    $has_course_wide_quiz = ((int)$courseWideQuizStmt->fetchColumn() > 0);
+
+    $total_quizzes = count($lesson_quiz_ids) + ($has_course_wide_quiz ? 1 : 0);
+
+    // If no quizzes exist for this course, it is satisfied
+    if ($total_quizzes === 0) {
+        return [
+            'all_completed' => true,
+            'total_quizzes' => 0,
+            'completed_quizzes' => 0,
+            'missing_quiz_titles' => []
+        ];
+    }
+
+    $completed_quizzes_count = 0;
+    $missing_quiz_titles = [];
+
+    // 2. Check each lesson-level quiz
+    if (!empty($lesson_quiz_ids)) {
+        foreach ($lesson_quiz_ids as $l_id) {
+            $checkStmt = $pdo->prepare("SELECT COUNT(*) FROM quiz_attempts WHERE user_id = ? AND course_id = ? AND lesson_id = ? AND status IN ('completed', 'finalized')");
+            $checkStmt->execute([$user_id, $course_id, $l_id]);
+            $isDone = ((int)$checkStmt->fetchColumn() > 0);
+
+            if ($isDone) {
+                $completed_quizzes_count++;
+            } else {
+                $lTitleStmt = $pdo->prepare("SELECT title FROM lessons WHERE id = ?");
+                $lTitleStmt->execute([$l_id]);
+                $title = $lTitleStmt->fetchColumn() ?: "Lesson Quiz";
+                $missing_quiz_titles[] = $title;
+            }
+        }
+    }
+
+    // 3. Check course-wide quiz if present
+    if ($has_course_wide_quiz) {
+        $checkCwStmt = $pdo->prepare("SELECT COUNT(*) FROM quiz_attempts WHERE user_id = ? AND course_id = ? AND (lesson_id IS NULL OR lesson_id = '') AND status IN ('completed', 'finalized')");
+        $checkCwStmt->execute([$user_id, $course_id]);
+        $isCwDone = ((int)$checkCwStmt->fetchColumn() > 0);
+
+        if (!$isCwDone) {
+            $resCwStmt = $pdo->prepare("SELECT COUNT(*) FROM quiz_results WHERE user_id = ? AND course_id = ? AND (status IN ('completed', 'finalized') OR score > 0)");
+            $resCwStmt->execute([$user_id, $course_id]);
+            $isCwDone = ((int)$resCwStmt->fetchColumn() > 0);
+        }
+
+        if ($isCwDone) {
+            $completed_quizzes_count++;
+        } else {
+            $missing_quiz_titles[] = "Final Course Assessment Quiz";
+        }
+    }
+
+    $all_completed = ($completed_quizzes_count >= $total_quizzes);
+
+    return [
+        'all_completed' => $all_completed,
+        'total_quizzes' => $total_quizzes,
+        'completed_quizzes' => $completed_quizzes_count,
+        'missing_quiz_titles' => $missing_quiz_titles
+    ];
 }
 ?>

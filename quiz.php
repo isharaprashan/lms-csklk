@@ -84,18 +84,16 @@ try {
     $stmt->execute([$course_id]);
     $lessons_with_quizzes = $stmt->fetchAll(PDO::FETCH_COLUMN);
 
-    // Determine unlocked lessons (Lesson 1 is unlocked; subsequent require previous lesson reviewed to 100% AND previous quiz finalized)
+    // Determine unlocked lessons (Lesson 1 is unlocked; subsequent require previous lesson watched/completed)
     $unlocked_lessons = [];
     foreach ($course_lessons as $index => $l) {
         if ($is_teacher || $is_admin || $index === 0) {
             $unlocked_lessons[] = $l['id'];
         } else {
             $prev_l = $course_lessons[$index - 1];
-            $prev_watched = in_array($prev_l['id'], $watched_lessons);
-            $prev_has_quiz = in_array($prev_l['id'], $lessons_with_quizzes);
-            $prev_quiz_done = !$prev_has_quiz || in_array($prev_l['id'], $finalized_quiz_lessons);
+            $prev_watched = in_array($prev_l['id'], $watched_lessons) || in_array($prev_l['id'], $completed_lessons);
 
-            if ($prev_watched && $prev_quiz_done) {
+            if ($prev_watched) {
                 $unlocked_lessons[] = $l['id'];
             }
         }
@@ -110,9 +108,10 @@ try {
         }
     }
 
-    $is_current_lesson_watched = in_array($lesson_id, $watched_lessons);
+    $is_current_lesson_watched = in_array($lesson_id, $watched_lessons) || in_array($lesson_id, $completed_lessons) || $is_admin || $is_teacher;
+    $is_next_lesson_unlocked = ($next_lesson && in_array($next_lesson['id'], $unlocked_lessons));
 
-    // Check if the requested lesson quiz is locked
+    // Check if the requested lesson quiz is locked (Quiz is accessible ONLY if the corresponding lesson is unlocked)
     $is_lesson_locked = (!in_array($lesson_id, $unlocked_lessons) && !$is_admin && !$is_teacher);
 
     if ($is_lesson_locked) {
@@ -751,6 +750,7 @@ try {
         const LESSON_ID = <?php echo json_encode($lesson_id); ?>;
         const NEXT_LESSON = <?php echo json_encode($next_lesson); ?>;
         const IS_CURRENT_LESSON_WATCHED = <?php echo json_encode($is_current_lesson_watched); ?>;
+        const IS_NEXT_LESSON_UNLOCKED = <?php echo json_encode($is_next_lesson_unlocked); ?>;
         let timerInterval = null;
         let remainingSeconds = 30;
         let maxQuestionTimer = 30;
@@ -1090,27 +1090,32 @@ try {
 
                             ${NEXT_LESSON ? `
                                 <div class="p-3 bg-light rounded-4 border mt-2">
-                                    ${IS_CURRENT_LESSON_WATCHED ? `
+                                    ${IS_NEXT_LESSON_UNLOCKED ? `
                                         <div class="d-flex align-items-center justify-content-center gap-2 mb-2">
                                             <i class="bi bi-unlock-fill fs-5 text-warning"></i>
-                                            <h6 class="fw-bold mb-0 text-dark">Next Lesson Quiz Unlocked!</h6>
+                                            <h6 class="fw-bold mb-0 text-dark">Next Lesson Unlocked!</h6>
                                         </div>
                                         <p class="text-muted fs-8 mb-3">
-                                            You have finalized this quiz and reviewed the lesson to 100%. Proceed to <strong>${escapeHtml(NEXT_LESSON.title)}</strong> quiz.
+                                            You have finalized this quiz and the next lesson is unlocked. Proceed to <strong>${escapeHtml(NEXT_LESSON.title)}</strong>.
                                         </p>
-                                        <a href="quiz.php?course_id=${encodeURIComponent(COURSE_ID)}&lesson_id=${encodeURIComponent(NEXT_LESSON.id)}" class="btn btn-primary px-4 py-2.5 rounded-pill fw-bold shadow-sm" style="background-color: #0f4c81;">
-                                            Start Next Quiz <i class="bi bi-arrow-right ms-1"></i>
-                                        </a>
+                                        <div class="d-flex flex-wrap gap-2 justify-content-center">
+                                            <a href="watch_lesson.php?course_id=${encodeURIComponent(COURSE_ID)}&lesson_id=${encodeURIComponent(NEXT_LESSON.id)}" class="btn btn-primary px-4 py-2.5 rounded-pill fw-bold shadow-sm" style="background-color: #0f4c81;">
+                                                <i class="bi bi-play-circle-fill me-1"></i> Watch Next Lesson
+                                            </a>
+                                            <a href="quiz.php?course_id=${encodeURIComponent(COURSE_ID)}&lesson_id=${encodeURIComponent(NEXT_LESSON.id)}" class="btn btn-outline-primary px-4 py-2.5 rounded-pill fw-bold">
+                                                Start Next Quiz <i class="bi bi-arrow-right ms-1"></i>
+                                            </a>
+                                        </div>
                                     ` : `
                                         <div class="d-flex align-items-center justify-content-center gap-2 mb-2">
-                                            <i class="bi bi-play-circle-fill fs-5 text-primary"></i>
-                                            <h6 class="fw-bold mb-0 text-dark">Quiz Marks Finalized! Review Lesson Video to 100%</h6>
+                                            <i class="bi bi-lock-fill fs-5 text-warning"></i>
+                                            <h6 class="fw-bold mb-0 text-dark">Next Lesson is Locked</h6>
                                         </div>
                                         <p class="text-muted fs-8 mb-3">
-                                            Your quiz marks are saved. To unlock the next quiz, please make sure you have reviewed this lesson video completely (100%).
+                                            Your quiz marks are saved. To unlock the next lesson and its quiz, you must complete reviewing the current lesson video (100%).
                                         </p>
                                         <a href="watch_lesson.php?course_id=${encodeURIComponent(COURSE_ID)}&lesson_id=${encodeURIComponent(LESSON_ID)}" class="btn btn-warning px-4 py-2.5 rounded-pill fw-bold shadow-sm text-dark">
-                                            <i class="bi bi-play-fill me-1"></i> Complete Lesson Video (100%)
+                                            <i class="bi bi-play-fill me-1"></i> Complete Current Lesson (100%)
                                         </a>
                                     `}
                                 </div>

@@ -57,6 +57,15 @@ $success_message = '';
 $error_message = '';
 $test_result = null;
 
+if (!empty($_SESSION['flash_success'])) {
+    $success_message = $_SESSION['flash_success'];
+    unset($_SESSION['flash_success']);
+}
+if (!empty($_SESSION['flash_error'])) {
+    $error_message = $_SESSION['flash_error'];
+    unset($_SESSION['flash_error']);
+}
+
 // 1. Handle Form Actions (Save Settings & Send Test Email)
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = trim($_POST['action'] ?? '');
@@ -181,6 +190,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
         }
+    }
+
+    if (!$is_ajax) {
+        if (!empty($success_message)) {
+            $_SESSION['flash_success'] = $success_message;
+        }
+        if (!empty($error_message)) {
+            $_SESSION['flash_error'] = $error_message;
+        }
+        header("Location: " . $_SERVER['REQUEST_URI']);
+        exit;
     }
 }
 

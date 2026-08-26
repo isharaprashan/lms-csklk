@@ -26,6 +26,12 @@ try {
         exit;
     }
 
+    // Keep session in sync with latest user record
+    $_SESSION['user_name'] = $student['name'];
+    $_SESSION['user_email'] = $student['email'];
+    $_SESSION['user_avatar'] = $student['avatar'];
+    $_SESSION['user_role'] = $student['role'];
+
     if ($student['role'] === 'teacher' && $student['status'] === 'pending') {
         header("Location: pending_approval.php");
         exit;
@@ -90,6 +96,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'update_profile') {
         $name = trim($_POST['name'] ?? '');
         $email = trim($_POST['email'] ?? '');
+        $phone = trim($_POST['phone'] ?? '');
+        $address = trim($_POST['address'] ?? '');
         $bio = trim($_POST['bio'] ?? '');
         $nic = trim($_POST['nic'] ?? '');
         $dob = trim($_POST['dob'] ?? '');
@@ -136,11 +144,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
 
                     if (empty($error)) {
-                        $update_stmt = $pdo->prepare("UPDATE users SET name = ?, email = ?, avatar = ?, bio = ?, nic = ?, dob = ?, subject = ?, qualifications = ? WHERE id = ?");
+                        $update_stmt = $pdo->prepare("UPDATE users SET name = ?, email = ?, avatar = ?, phone = ?, address = ?, bio = ?, nic = ?, dob = ?, subject = ?, qualifications = ? WHERE id = ?");
                         $update_stmt->execute([
                             $name,
                             $email,
                             $avatar,
+                            empty($phone) ? null : $phone,
+                            empty($address) ? null : $address,
                             empty($bio) ? null : $bio,
                             empty($nic) ? null : $nic,
                             empty($dob) ? null : $dob,
@@ -153,6 +163,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $stmt = $pdo->prepare("SELECT * FROM users WHERE id = ?");
                         $stmt->execute([$user_id]);
                         $student = $stmt->fetch();
+
+                        if ($student) {
+                            $_SESSION['user_name'] = $student['name'];
+                            $_SESSION['user_email'] = $student['email'];
+                            $_SESSION['user_avatar'] = $student['avatar'];
+                            $_SESSION['user_role'] = $student['role'];
+                        }
 
                         $success = 'Profile details updated successfully!';
                     }
@@ -404,6 +421,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
               <input type="hidden" name="action" value="update_profile">
               <input type="hidden" name="name" value="<?php echo htmlspecialchars($student['name']); ?>">
               <input type="hidden" name="email" value="<?php echo htmlspecialchars($student['email']); ?>">
+              <input type="hidden" name="phone" value="<?php echo htmlspecialchars($student['phone'] ?? ''); ?>">
+              <input type="hidden" name="address" value="<?php echo htmlspecialchars($student['address'] ?? ''); ?>">
               <input type="hidden" name="bio" value="<?php echo htmlspecialchars($student['bio'] ?? ''); ?>">
               <input type="hidden" name="nic" value="<?php echo htmlspecialchars($student['nic'] ?? ''); ?>">
               <input type="hidden" name="dob" value="<?php echo htmlspecialchars($student['dob'] ?? ''); ?>">
@@ -437,6 +456,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <!-- Professional Profile Section -->
             <div class="text-start border-top pt-3 mt-3">
               <h6 class="fw-bold text-dark mb-2 fs-7"><i class="bi bi-person-badge text-primary me-2"></i><?php echo __('profile_credentials', 'Profile Credentials'); ?></h6>
+              <div class="mb-2 fs-8">
+                <span class="text-secondary fw-semibold"><?php echo __('phone_number', 'Phone Number'); ?>:</span>
+                <span class="text-dark float-end"><?php echo htmlspecialchars($student['phone'] ?? __('not_provided', 'Not provided')); ?></span>
+              </div>
               <div class="mb-2 fs-8">
                 <span class="text-secondary fw-semibold"><?php echo __('nic', 'NIC'); ?>:</span>
                 <span class="text-dark float-end"><?php echo htmlspecialchars($student['nic'] ?? __('not_provided', 'Not provided')); ?></span>
@@ -502,20 +525,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <h5 class="fw-bold text-dark mb-3 fs-6"><i class="bi bi-card-text text-primary me-2"></i><?php echo __('personal_information', 'Personal Information'); ?></h5>
                 <div class="row g-3 mb-4">
                   <div class="col-md-6">
-                    <label for="profile-name" class="form-label fw-semibold text-secondary fs-8"><?php echo __('full_name', 'Full Name'); ?></label>
+                    <label for="profile-name" class="form-label fw-semibold text-secondary fs-8"><?php echo __('full_name', 'Full Name'); ?> <span class="text-danger">*</span></label>
                     <input type="text" name="name" id="profile-name" class="form-control" placeholder="Your Name" value="<?php echo htmlspecialchars($student['name']); ?>" required>
                   </div>
                   <div class="col-md-6">
-                    <label for="profile-email" class="form-label fw-semibold text-secondary fs-8"><?php echo __('email_address', 'Email Address'); ?></label>
+                    <label for="profile-email" class="form-label fw-semibold text-secondary fs-8"><?php echo __('email_address', 'Email Address'); ?> <span class="text-danger">*</span></label>
                     <input type="email" name="email" id="profile-email" class="form-control" placeholder="name@domain.com" value="<?php echo htmlspecialchars($student['email']); ?>" required>
                   </div>
                   <div class="col-md-6">
-                    <label for="profile-nic" class="form-label fw-semibold text-secondary fs-8"><?php echo __('nic_number', 'National Identity Card (NIC)'); ?></label>
+                    <label for="profile-phone" class="form-label fw-semibold text-secondary fs-8"><i class="bi bi-telephone text-primary me-1"></i><?php echo __('phone_number', 'Phone Number'); ?></label>
+                    <input type="tel" name="phone" id="profile-phone" class="form-control" placeholder="e.g. +94 77 123 4567" value="<?php echo htmlspecialchars($student['phone'] ?? ''); ?>">
+                  </div>
+                  <div class="col-md-6">
+                    <label for="profile-nic" class="form-label fw-semibold text-secondary fs-8"><i class="bi bi-credit-card-2-front text-primary me-1"></i><?php echo __('nic_number', 'National Identity Card (NIC)'); ?></label>
                     <input type="text" name="nic" id="profile-nic" class="form-control" placeholder="e.g. 199912345678 or 991234567V" value="<?php echo htmlspecialchars($student['nic'] ?? ''); ?>">
                   </div>
                   <div class="col-md-6">
-                    <label for="profile-dob" class="form-label fw-semibold text-secondary fs-8"><?php echo __('date_of_birth', 'Date of Birth'); ?></label>
+                    <label for="profile-dob" class="form-label fw-semibold text-secondary fs-8"><i class="bi bi-calendar-event text-primary me-1"></i><?php echo __('date_of_birth', 'Date of Birth'); ?></label>
                     <input type="date" name="dob" id="profile-dob" class="form-control" value="<?php echo htmlspecialchars($student['dob'] ?? ''); ?>">
+                  </div>
+                  <div class="col-md-6">
+                    <label for="profile-address" class="form-label fw-semibold text-secondary fs-8"><i class="bi bi-geo-alt text-primary me-1"></i><?php echo __('address', 'Address'); ?></label>
+                    <input type="text" name="address" id="profile-address" class="form-control" placeholder="e.g. No 123, Galle Road, Colombo" value="<?php echo htmlspecialchars($student['address'] ?? ''); ?>">
                   </div>
                 </div>
 

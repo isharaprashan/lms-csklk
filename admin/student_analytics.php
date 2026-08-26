@@ -255,12 +255,14 @@ try {
 
             $student_lesson_details[] = $lesson_detail;
 
+            $resolved_student_avatar = get_user_avatar($enr['student_avatar'], $enr['student_name'], '0f4c81', 'fff', '../');
+
             $matrix_rows[] = [
                 'student_id' => $uid,
                 'student_name' => $enr['student_name'],
                 'student_email' => $enr['student_email'],
                 'student_academic_id' => $enr['academic_id'],
-                'student_avatar' => $enr['student_avatar'],
+                'student_avatar' => $resolved_student_avatar,
                 'tutor_id' => $tut_id,
                 'tutor_name' => $tut_name,
                 'course_id' => $cid,
@@ -303,12 +305,14 @@ try {
             $status_badge_class = 'bg-secondary text-white';
         }
 
+        $resolved_student_avatar = get_user_avatar($enr['student_avatar'], $enr['student_name'], '0f4c81', 'fff', '../');
+
         $student_summaries[] = [
             'student_id' => $uid,
             'student_name' => $enr['student_name'],
             'student_email' => $enr['student_email'],
             'student_academic_id' => $enr['academic_id'] ?: 'N/A',
-            'student_avatar' => $enr['student_avatar'],
+            'student_avatar' => $resolved_student_avatar,
             'tutor_id' => $tut_id,
             'tutor_name' => $tut_name,
             'course_id' => $cid,
@@ -533,6 +537,28 @@ try {
     .custom-table tr:hover td {
       background-color: #f8fafc;
     }
+    .pulse-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: #10b981;
+      display: inline-block;
+      box-shadow: 0 0 0 rgba(16, 185, 129, 0.4);
+      animation: pulseLive 2s infinite;
+    }
+    @keyframes pulseLive {
+      0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+      70% { transform: scale(1); box-shadow: 0 0 0 7px rgba(16, 185, 129, 0); }
+      100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+    }
+    .spin-anim {
+      display: inline-block;
+      animation: spinSync 0.75s linear infinite;
+    }
+    @keyframes spinSync {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
     .modal-content {
       border-radius: 20px;
       border: none;
@@ -597,7 +623,14 @@ try {
           </h2>
           <p class="text-muted fs-8 mb-0">Review learning completion, syllabus progress, and quiz evaluation across all lecturers and courses.</p>
         </div>
-        <div class="d-flex align-items-center gap-2">
+        <div class="d-flex align-items-center gap-2 flex-wrap">
+          <!-- Real-Time Live Sync Status Badge -->
+          <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 px-3 py-1.5 rounded-pill fs-8 fw-semibold d-inline-flex align-items-center gap-1.5 shadow-xs" title="Auto-synchronizing student learning progress and quiz submissions">
+            <span class="pulse-dot"></span> Live Sync <span class="d-none d-sm-inline text-muted" id="last-sync-time">(Just now)</span>
+          </span>
+          <button id="btn-manual-sync" onclick="fetchLiveAnalytics(true)" class="btn btn-outline-primary btn-sm px-3 py-1.5 rounded-pill fw-semibold shadow-xs d-flex align-items-center gap-1.5" title="Force instant real-time data sync">
+            <i class="bi bi-arrow-repeat" id="sync-icon"></i> <span>Sync Now</span>
+          </button>
           <button onclick="exportGradebookCSV()" class="btn btn-success btn-sm px-3.5 py-1.5 rounded-pill shadow-sm fw-semibold text-white d-flex align-items-center gap-1.5">
             <i class="bi bi-file-earmark-spreadsheet-fill"></i>
             <span>Export Gradebook (CSV)</span>
@@ -770,7 +803,7 @@ try {
                     <th scope="col" class="text-center" style="min-width: 110px;">Actions</th>
                   </tr>
                 </thead>
-                <tbody class="fs-8">
+                <tbody class="fs-8" id="roster-tbody">
                   <?php if (empty($student_summaries)): ?>
                     <tr>
                       <td colspan="9" class="text-center py-5 text-muted">
@@ -792,7 +825,9 @@ try {
                         <!-- Student Information -->
                         <td>
                           <div class="d-flex align-items-center gap-2.5">
-                            <img src="<?php echo htmlspecialchars(get_user_avatar($s['student_avatar'], $s['student_name'])); ?>" class="rounded-circle border" style="width: 38px; height: 38px; object-fit: cover;" alt="Avatar">
+                            <img src="<?php echo htmlspecialchars($s['student_avatar']); ?>"
+                                 onerror="this.onerror=null; this.src='https://ui-avatars.com/api/?name=<?php echo urlencode($s['student_name']); ?>&background=0f4c81&color=fff';"
+                                 class="rounded-circle border" style="width: 38px; height: 38px; object-fit: cover;" alt="Avatar">
                             <div>
                               <div class="fw-bold text-dark text-truncate" style="max-width: 170px;"><?php echo htmlspecialchars($s['student_name']); ?></div>
                               <div class="text-muted fs-9 text-truncate" style="max-width: 170px;"><?php echo htmlspecialchars($s['student_email']); ?></div>
@@ -891,7 +926,7 @@ try {
                     <th scope="col" class="text-center" style="min-width: 140px;">Module Status</th>
                   </tr>
                 </thead>
-                <tbody class="fs-8">
+                <tbody class="fs-8" id="matrix-tbody">
                   <?php if (empty($matrix_rows)): ?>
                     <tr>
                       <td colspan="6" class="text-center py-5 text-muted">
@@ -924,7 +959,9 @@ try {
                         <!-- Student Info -->
                         <td>
                           <div class="d-flex align-items-center gap-2.5">
-                            <img src="<?php echo htmlspecialchars(get_user_avatar($row['student_avatar'], $row['student_name'])); ?>" class="rounded-circle border" style="width: 36px; height: 36px; object-fit: cover;" alt="Avatar">
+                            <img src="<?php echo htmlspecialchars($row['student_avatar']); ?>"
+                                 onerror="this.onerror=null; this.src='https://ui-avatars.com/api/?name=<?php echo urlencode($row['student_name']); ?>&background=0f4c81&color=fff';"
+                                 class="rounded-circle border" style="width: 36px; height: 36px; object-fit: cover;" alt="Avatar">
                             <div>
                               <div class="fw-bold text-dark text-truncate" style="max-width: 160px;"><?php echo htmlspecialchars($row['student_name']); ?></div>
                               <small class="text-muted fs-9"><?php echo htmlspecialchars($row['student_academic_id']); ?></small>
@@ -1034,7 +1071,7 @@ try {
                     <th scope="col" class="text-center" style="min-width: 150px;">Difficulty Insight</th>
                   </tr>
                 </thead>
-                <tbody class="fs-8">
+                <tbody class="fs-8" id="insights-tbody">
                   <?php if (empty($lesson_insights)): ?>
                     <tr>
                       <td colspan="7" class="text-center py-5 text-muted">
@@ -1217,11 +1254,14 @@ try {
   <!-- Local Bootstrap JS -->
   <script src="../assets/js/bootstrap.bundle.min.js"></script>
 
+  <!-- Real-Time Analytics Engine -->
+  <script src="../assets/js/student-analytics-realtime.js"></script>
+
   <!-- Data Payload for Client-Side Interactivity -->
   <script>
-    const STUDENT_SUMMARIES = <?php echo json_encode($student_summaries); ?>;
-    const MATRIX_ROWS = <?php echo json_encode($matrix_rows); ?>;
-    const LESSON_INSIGHTS = <?php echo json_encode($lesson_insights); ?>;
+    window.STUDENT_SUMMARIES = <?php echo json_encode($student_summaries); ?>;
+    window.MATRIX_ROWS = <?php echo json_encode($matrix_rows); ?>;
+    window.LESSON_INSIGHTS = <?php echo json_encode($lesson_insights); ?>;
 
     // Filter Logic with Lecturer & Course Dynamic Sync
     document.addEventListener('DOMContentLoaded', function () {
@@ -1255,10 +1295,10 @@ try {
       });
 
       function filterAllTables() {
-        const query = searchInput.value.toLowerCase().trim();
-        const selTutorId = teacherFilter.value;
-        const selCourse = courseFilter.value.toLowerCase().trim();
-        const selStatus = statusFilter.value.trim();
+        const query = (searchInput ? searchInput.value : '').toLowerCase().trim();
+        const selTutorId = teacherFilter ? teacherFilter.value : '';
+        const selCourse = (courseFilter ? courseFilter.value : '').toLowerCase().trim();
+        const selStatus = statusFilter ? statusFilter.value.trim() : '';
 
         let visibleRosterCount = 0;
         let visibleMatrixCount = 0;
@@ -1340,27 +1380,31 @@ try {
         });
 
         // 4. Update Tab Counts
-        document.getElementById('tab-roster-count').textContent = visibleRosterCount;
-        document.getElementById('tab-matrix-count').textContent = visibleMatrixCount;
-        document.getElementById('tab-insights-count').textContent = visibleInsightsCount;
+        const rosterCountEl = document.getElementById('tab-roster-count');
+        const matrixCountEl = document.getElementById('tab-matrix-count');
+        const insightsCountEl = document.getElementById('tab-insights-count');
+        if (rosterCountEl) rosterCountEl.textContent = visibleRosterCount;
+        if (matrixCountEl) matrixCountEl.textContent = visibleMatrixCount;
+        if (insightsCountEl) insightsCountEl.textContent = visibleInsightsCount;
 
         // 5. Update Dynamic KPI Summary Cards based on filtered student summaries
-        STUDENT_SUMMARIES.forEach(s => {
+        const summaries = window.STUDENT_SUMMARIES || [];
+        summaries.forEach(s => {
           const tutorMatch = !selTutorId || String(s.tutor_id) === selTutorId;
-          const courseMatch = !selCourse || s.course_title.toLowerCase() === selCourse;
+          const courseMatch = !selCourse || (s.course_title || '').toLowerCase() === selCourse;
           const statusMatch = !selStatus || s.learning_status === selStatus;
-          const searchMatch = !query || s.student_name.toLowerCase().includes(query) || s.student_email.toLowerCase().includes(query) || s.student_academic_id.toLowerCase().includes(query) || s.tutor_name.toLowerCase().includes(query);
+          const searchMatch = !query || (s.student_name || '').toLowerCase().includes(query) || (s.student_email || '').toLowerCase().includes(query) || (s.student_academic_id || '').toLowerCase().includes(query) || (s.tutor_name || '').toLowerCase().includes(query);
 
           if (tutorMatch && courseMatch && statusMatch && searchMatch) {
             kpiStudentsSet.add(s.student_id);
             if (s.total_watch_seconds > 0 || s.passed_quizzes > 0 || s.finalized_quizzes > 0) {
               kpiActiveSet.add(s.student_id);
             }
-            kpiProgressSum += s.overall_progress;
+            kpiProgressSum += (s.overall_progress || 0);
             kpiProgressCount++;
-            kpiStudySeconds += s.total_watch_seconds;
+            kpiStudySeconds += (s.total_watch_seconds || 0);
 
-            if (s.avg_quiz_score !== null) {
+            if (s.avg_quiz_score !== null && s.avg_quiz_score !== undefined) {
               kpiQuizScores.push(s.avg_quiz_score);
             }
             if (s.passed_quizzes > 0) {
@@ -1378,17 +1422,33 @@ try {
         const studyMins = Math.round((kpiStudySeconds % 3600) / 60);
         const dynStudyDisplay = studyHrs > 0 ? `${studyHrs}h ${studyMins}m` : `${studyMins}m`;
 
-        document.getElementById('kpi-total-students').textContent = dynTotalStudents;
-        document.getElementById('kpi-active-learners').textContent = dynActiveLearners;
-        document.getElementById('kpi-course-completion').textContent = dynAvgProgress + '%';
-        document.getElementById('kpi-completion-bar').style.width = dynAvgProgress + '%';
-        document.getElementById('kpi-avg-score').textContent = dynAvgScore + '%';
-        document.getElementById('kpi-study-time').textContent = dynStudyDisplay;
+        const totalStudentsEl = document.getElementById('kpi-total-students');
+        const activeLearnersEl = document.getElementById('kpi-active-learners');
+        const courseCompletionEl = document.getElementById('kpi-course-completion');
+        const completionBarEl = document.getElementById('kpi-completion-bar');
+        const avgScoreEl = document.getElementById('kpi-avg-score');
+        const studyTimeEl = document.getElementById('kpi-study-time');
+
+        if (totalStudentsEl) totalStudentsEl.textContent = dynTotalStudents;
+        if (activeLearnersEl) activeLearnersEl.textContent = dynActiveLearners;
+        if (courseCompletionEl) courseCompletionEl.textContent = dynAvgProgress + '%';
+        if (completionBarEl) completionBarEl.style.width = dynAvgProgress + '%';
+        if (avgScoreEl) avgScoreEl.textContent = dynAvgScore + '%';
+        if (studyTimeEl) studyTimeEl.textContent = dynStudyDisplay;
       }
+
+      window.filterAllTables = filterAllTables;
 
       if (searchInput) searchInput.addEventListener('input', filterAllTables);
       if (courseFilter) courseFilter.addEventListener('change', filterAllTables);
       if (statusFilter) statusFilter.addEventListener('change', filterAllTables);
+
+      // Start Real-Time Background Polling Engine
+      initStudentAnalyticsRealtime({
+        endpoint: '../api/get_student_analytics.php',
+        isAdmin: true,
+        pollInterval: 8000
+      });
     });
 
     // Open Student Learning Dossier Modal
@@ -1396,7 +1456,14 @@ try {
       const student = STUDENT_SUMMARIES[index];
       if (!student) return;
 
-      document.getElementById('modal-student-avatar').src = student.student_avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&h=100&fit=crop';
+      const defaultAvatar = 'https://ui-avatars.com/api/?name=' + encodeURIComponent(student.student_name || 'Student') + '&background=0f4c81&color=fff';
+      const avatarImg = document.getElementById('modal-student-avatar');
+      avatarImg.src = student.student_avatar || defaultAvatar;
+      avatarImg.onerror = function() {
+        this.onerror = null;
+        this.src = defaultAvatar;
+      };
+
       document.getElementById('modal-student-name').textContent = student.student_name + (student.student_academic_id !== 'N/A' ? ' (' + student.student_academic_id + ')' : '');
       document.getElementById('modal-student-email').textContent = student.student_email;
       document.getElementById('modal-course-title').textContent = student.course_title;

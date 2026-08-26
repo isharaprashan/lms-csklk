@@ -1127,8 +1127,15 @@ try {
                   <input type="text" class="form-control" id="edit-lesson-duration" name="duration" required>
                 </div>
                 <div class="col-12">
-                  <label for="edit-lesson-video" class="form-label fw-semibold text-secondary">Video URL (YouTube or MP4)</label>
-                  <input type="text" class="form-control" id="edit-lesson-video" name="video_url" required>
+                  <label for="edit-lesson-video-file" class="form-label fw-semibold text-secondary d-flex align-items-center justify-content-between">
+                    <span><i class="bi bi-file-earmark-play text-primary me-1"></i>Upload Local Video (MP4 / WebM)</span>
+                    <small class="text-muted fw-normal">Optional</small>
+                  </label>
+                  <input type="file" class="form-control" id="edit-lesson-video-file" name="video_file" accept="video/mp4,video/webm,video/ogg,video/quicktime,.mp4,.webm,.mov">
+                </div>
+                <div class="col-12">
+                  <label for="edit-lesson-video" class="form-label fw-semibold text-secondary">Local Video Path or URL</label>
+                  <input type="text" class="form-control" id="edit-lesson-video" name="video_url" placeholder="e.g. uploads/class.mp4" required>
                 </div>
                 <div class="col-12">
                   <label for="edit-lesson-content" class="form-label fw-semibold text-secondary">Lesson Content / Notes</label>
@@ -1192,8 +1199,15 @@ try {
                   <input type="text" class="form-control" id="lesson-duration" name="duration" placeholder="e.g. 15 mins" required>
                 </div>
                 <div class="col-12">
-                  <label for="lesson-video" class="form-label fw-semibold text-secondary">Video URL (YouTube or MP4)</label>
-                  <input type="text" class="form-control" id="lesson-video" name="video_url" placeholder="e.g. uploads/class.mp4 or https://www.youtube.com/watch?v=...">
+                  <label for="lesson-video-file" class="form-label fw-semibold text-secondary d-flex align-items-center justify-content-between">
+                    <span><i class="bi bi-file-earmark-play text-primary me-1"></i>Upload Local Video (MP4 / WebM)</span>
+                    <small class="text-muted fw-normal">Optional</small>
+                  </label>
+                  <input type="file" class="form-control" id="lesson-video-file" name="video_file" accept="video/mp4,video/webm,video/ogg,video/quicktime,.mp4,.webm,.mov">
+                </div>
+                <div class="col-12">
+                  <label for="lesson-video" class="form-label fw-semibold text-secondary">Local Video Path or URL</label>
+                  <input type="text" class="form-control" id="lesson-video" name="video_url" placeholder="e.g. uploads/class.mp4">
                 </div>
                 <div class="col-12">
                   <label for="lesson-content" class="form-label fw-semibold text-secondary">Lesson Content / Notes</label>

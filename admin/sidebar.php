@@ -181,9 +181,7 @@ $sidebar_text = $is_super_admin ? '#a3cfbb' : '#94a3b8';
         <i class="bi bi-people-fill text-warning"></i>
         <span>Teacher Requests</span>
       </div>
-      <?php if ($pending_teachers_count > 0): ?>
-        <span class="badge bg-danger rounded-pill px-2 py-0.5 fs-9"><?php echo $pending_teachers_count; ?></span>
-      <?php endif; ?>
+      <span class="badge bg-danger rounded-pill px-2 py-0.5 fs-9" id="badge-pending-teachers" style="<?php echo ($pending_teachers_count > 0) ? '' : 'display: none;'; ?>"><?php echo ($pending_teachers_count > 99) ? '99+' : $pending_teachers_count; ?></span>
     </a>
 
     <!-- Registered Students Directory -->
@@ -208,9 +206,7 @@ $sidebar_text = $is_super_admin ? '#a3cfbb' : '#94a3b8';
         <i class="bi bi-award-fill text-warning"></i>
         <span>Course Certificates</span>
       </div>
-      <?php if ($pending_cert_count > 0): ?>
-        <span class="badge bg-warning text-dark rounded-pill px-2 py-0.5 fs-9 fw-bold"><?php echo $pending_cert_count; ?></span>
-      <?php endif; ?>
+      <span class="badge bg-warning text-dark rounded-pill px-2 py-0.5 fs-9 fw-bold" id="badge-pending-certificates" style="<?php echo ($pending_cert_count > 0) ? '' : 'display: none;'; ?>"><?php echo ($pending_cert_count > 99) ? '99+' : $pending_cert_count; ?></span>
     </a>
 
     <!-- Course Approvals / Requests -->
@@ -219,9 +215,7 @@ $sidebar_text = $is_super_admin ? '#a3cfbb' : '#94a3b8';
         <i class="bi bi-journal-check text-primary"></i>
         <span>Course Requests</span>
       </div>
-      <?php if ($pending_courses_count > 0): ?>
-        <span class="badge bg-danger rounded-pill px-2 py-0.5 fs-9"><?php echo $pending_courses_count; ?></span>
-      <?php endif; ?>
+      <span class="badge bg-danger rounded-pill px-2 py-0.5 fs-9" id="badge-pending-courses" style="<?php echo ($pending_courses_count > 0) ? '' : 'display: none;'; ?>"><?php echo ($pending_courses_count > 99) ? '99+' : $pending_courses_count; ?></span>
     </a>
 
     <div class="sidebar-section-title mt-3">Financials</div>
@@ -232,9 +226,7 @@ $sidebar_text = $is_super_admin ? '#a3cfbb' : '#94a3b8';
         <i class="bi bi-bank text-success"></i>
         <span>Bank Slip Approvals</span>
       </div>
-      <?php if ($pending_slips_count > 0): ?>
-        <span class="badge bg-danger rounded-pill px-2 py-0.5 fs-9"><?php echo $pending_slips_count; ?></span>
-      <?php endif; ?>
+      <span class="badge bg-danger rounded-pill px-2 py-0.5 fs-9" id="badge-pending-slips" style="<?php echo ($pending_slips_count > 0) ? '' : 'display: none;'; ?>"><?php echo ($pending_slips_count > 99) ? '99+' : $pending_slips_count; ?></span>
     </a>
 
     <!-- Manage Bank Accounts -->
@@ -354,3 +346,7 @@ $sidebar_text = $is_super_admin ? '#a3cfbb' : '#94a3b8';
     }
   });
 </script>
+
+<!-- Centralized Real-Time Heartbeat & Notification Poller for Admin -->
+<link rel="stylesheet" href="../assets/css/notifications.css">
+<script src="../assets/js/realtime-poller.js"></script>

@@ -136,7 +136,18 @@ try {
         exit;
     }
 
-    // 4. Check Quiz Performance for this course
+    // 4. Strict Quiz Completion Verification: Student must complete ALL quizzes for this course
+    $quiz_check = check_course_quizzes_completed($pdo, $user_id, $course_id);
+    if (!$quiz_check['all_completed']) {
+        $missingList = !empty($quiz_check['missing_quiz_titles']) ? ' (' . implode(', ', array_slice($quiz_check['missing_quiz_titles'], 0, 3)) . ')' : '';
+        echo json_encode([
+            'success' => false,
+            'message' => "You must complete all quizzes for this course before requesting your certificate ({$quiz_check['completed_quizzes']} of {$quiz_check['total_quizzes']} quizzes completed). Please complete the remaining quizzes{$missingList} to unlock your certificate."
+        ]);
+        exit;
+    }
+
+    // 5. Gather Quiz Performance Summary
     $qStmt = $pdo->prepare("SELECT * FROM quiz_results WHERE user_id = ? AND course_id = ?");
     $qStmt->execute([$user_id, $course_id]);
     $quiz_res = $qStmt->fetch();
@@ -145,7 +156,7 @@ try {
     $qaStmt->execute([$user_id, $course_id]);
     $quiz_attempt = $qaStmt->fetch();
 
-    $quiz_score_summary = "Progress: 100% | No Quiz Required";
+    $quiz_score_summary = ($quiz_check['total_quizzes'] > 0) ? "Progress: 100% | Quizzes: {$quiz_check['completed_quizzes']}/{$quiz_check['total_quizzes']} Completed" : "Progress: 100% | No Quiz Required";
     if ($quiz_res && (int)($quiz_res['total_questions'] ?? 0) > 0) {
         $qScore = (int)$quiz_res['score'];
         $qTotal = (int)$quiz_res['total_questions'];

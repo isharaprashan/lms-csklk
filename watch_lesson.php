@@ -92,18 +92,16 @@ try {
     $stmt->execute([$course_id]);
     $lessons_with_quizzes = $stmt->fetchAll(PDO::FETCH_COLUMN);
 
-    // Determine unlocked lessons (Sequential dependency: 100% video review AND finalized quiz)
+    // Determine unlocked lessons (Lesson 1 is unlocked; subsequent require previous lesson watched/completed)
     $unlocked_lessons = [];
     foreach ($lessons as $idx => $l) {
         if ($is_teacher || $is_admin || $idx === 0) {
             $unlocked_lessons[] = $l['id'];
         } else {
             $prev_l = $lessons[$idx - 1];
-            $prev_watched = in_array($prev_l['id'], $watched_lessons);
-            $prev_has_quiz = in_array($prev_l['id'], $lessons_with_quizzes);
-            $prev_quiz_done = !$prev_has_quiz || in_array($prev_l['id'], $finalized_quiz_lessons);
+            $prev_watched = in_array($prev_l['id'], $watched_lessons) || in_array($prev_l['id'], $completed_lessons);
 
-            if ($prev_watched && $prev_quiz_done) {
+            if ($prev_watched) {
                 $unlocked_lessons[] = $l['id'];
             }
         }
@@ -588,12 +586,13 @@ try {
 
                                 <?php if ($next_lesson && in_array($next_lesson['id'], $unlocked_lessons)): ?>
                                     <a href="watch_lesson.php?course_id=<?php echo urlencode($course_id); ?>&lesson_id=<?php echo urlencode($next_lesson['id']); ?><?php echo $admin_preview_param; ?>"
+                                        id="lesson-nav-next-btn"
                                         class="btn btn-primary btn-sm rounded-pill px-3 fw-semibold"
                                         style="background-color: #0f4c81; border: none;">
                                         Next <i class="bi bi-chevron-right ms-1"></i>
                                     </a>
                                 <?php else: ?>
-                                    <button class="btn btn-secondary btn-sm rounded-pill px-3 fw-semibold" disabled
+                                    <button id="lesson-nav-next-btn" class="btn btn-secondary btn-sm rounded-pill px-3 fw-semibold" disabled
                                         title="Complete current lesson to unlock next">
                                         Next <i class="bi bi-lock-fill ms-1"></i>
                                     </button>
@@ -607,11 +606,15 @@ try {
                             <?php if (!empty($yt_id)): ?>
                                 <div id="yt-player-target" class="w-100 h-100 rounded-4" style="min-height: 420px;"></div>
                             <?php else: ?>
+                                <?php
+                                $video_src = !empty($active_video_url) ? $active_video_url : 'uploads/class.mp4';
+                                ?>
                                 <video id="lesson-video-player" class="w-100 h-100 rounded-4" controls
                                     controlsList="nodownload" oncontextmenu="return false;" disablePictureInPicture
-                                    poster="<?php echo htmlspecialchars($current_course['thumbnail'] ?? ''); ?>">
+                                    poster="<?php echo htmlspecialchars($current_course['thumbnail'] ?? ''); ?>"
+                                    preload="auto">
                                     <source
-                                        src="<?php echo htmlspecialchars(!empty($active_video_url) ? $active_video_url : 'uploads/class.mp4'); ?>"
+                                        src="<?php echo htmlspecialchars($video_src); ?>"
                                         type="video/mp4">
                                     Your browser does not support HTML5 video player.
                                 </video>
@@ -737,12 +740,11 @@ try {
                                 </div>
                             </div>
                             <div class="d-flex align-items-center justify-content-between text-muted fs-8 mb-2">
-                                <span>Progress: <?php echo $completed_count; ?> of <?php echo $total_lessons_count; ?>
-                                    Completed</span>
-                                <span class="fw-bold text-success"><?php echo $completed_percent; ?>%</span>
+                                <span>Progress: <span id="syllabus-progress-text"><?php echo $completed_count; ?> of <?php echo $total_lessons_count; ?> Completed</span></span>
+                                <span class="fw-bold text-success" id="syllabus-progress-percent"><?php echo $completed_percent; ?>%</span>
                             </div>
                             <div class="progress" style="height: 6px; border-radius: 10px; background-color: #e2e8f0;">
-                                <div class="progress-bar bg-success rounded-pill" role="progressbar"
+                                <div class="progress-bar bg-success rounded-pill" id="syllabus-progress-bar" role="progressbar"
                                     style="width: <?php echo $completed_percent; ?>%; transition: width 0.4s ease;"
                                     aria-valuenow="<?php echo $completed_percent; ?>" aria-valuemin="0"
                                     aria-valuemax="100">
@@ -963,8 +965,10 @@ try {
             const videoElement = document.getElementById('lesson-video-player');
             if (!videoElement) return;
 
+            videoElement.controls = true;
+
             if (IS_REVIEW_MODE) {
-                videoElement.controls = true;
+                // Review mode: full seeking unlocked
             } else {
                 let maxWatchedTime = 0;
                 let isSeekingLock = false;
@@ -1027,6 +1031,8 @@ try {
             setTimeout(() => { toast.style.display = 'none'; }, 3000);
         }
 
+        let hasTriggeredCelebration = false;
+
         async function sendWatchProgress(lessonId, currentTime, duration) {
             if (IS_REVIEW_MODE) return;
 
@@ -1043,24 +1049,110 @@ try {
 
                 const data = await response.json();
 
-                if (data.success && data.completed && data.next_unlocked_lesson && !hasTriggeredUnlock) {
-                    hasTriggeredUnlock = true;
-                    handleInstantNextLessonUnlock(data.next_unlocked_lesson);
+                if (data.success) {
+                    updateCourseProgressUI(data);
                 }
             } catch (err) {
                 console.error('Progress sync error:', err);
             }
         }
 
+        function updateCourseProgressUI(data) {
+            if (!data) return;
+
+            // 1. Update Course Progress Bar and Text in Real-Time
+            if (data.course_progress_percent !== undefined) {
+                const pct = Math.min(100, Math.max(0, parseInt(data.course_progress_percent, 10)));
+                const bar = document.getElementById('syllabus-progress-bar');
+                const pctText = document.getElementById('syllabus-progress-percent');
+                const progText = document.getElementById('syllabus-progress-text');
+
+                if (bar) {
+                    bar.style.width = pct + '%';
+                    bar.setAttribute('aria-valuenow', pct);
+                }
+                if (pctText) {
+                    pctText.textContent = pct + '%';
+                }
+                if (progText && data.course_completed_lessons !== undefined && data.course_total_lessons !== undefined) {
+                    progText.textContent = `${data.course_completed_lessons} of ${data.course_total_lessons} Completed`;
+                }
+            }
+
+            // 2. Update Completed Lesson Sidebar Item Badge
+            if (data.completed && data.lesson_id) {
+                const currentSidebarItem = document.getElementById(`sidebar-item-${data.lesson_id}`);
+                if (currentSidebarItem) {
+                    currentSidebarItem.classList.add('completed');
+                    
+                    let compBadge = currentSidebarItem.querySelector('.badge.bg-success');
+                    if (!compBadge) {
+                        const rightContainer = currentSidebarItem.querySelector('.d-flex.align-items-center.justify-content-between > .d-flex:last-child');
+                        if (rightContainer) {
+                            const doneSpan = document.createElement('span');
+                            doneSpan.className = 'badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 px-2 py-1 fs-9 rounded-pill text-nowrap';
+                            doneSpan.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i>Done';
+                            rightContainer.appendChild(doneSpan);
+                        }
+                    }
+                }
+            }
+
+            // 3. Unlock Next Lesson
+            if (data.completed && data.next_unlocked_lesson && !hasTriggeredUnlock) {
+                hasTriggeredUnlock = true;
+                handleInstantNextLessonUnlock(data.next_unlocked_lesson);
+            }
+
+            // 4. If Course is 100% Completed, show celebration banner/toast
+            if (data.is_course_completed && !hasTriggeredCelebration) {
+                hasTriggeredCelebration = true;
+                showCourseCompletionCelebration();
+            }
+
+            // 5. Broadcast custom event for other widgets/listeners
+            window.dispatchEvent(new CustomEvent('lms:course_progress_updated', { detail: data }));
+        }
+
+        function showCourseCompletionCelebration() {
+            const toastContainer = document.getElementById('unlocked-toast-container');
+            if (!toastContainer) return;
+            const certUrl = `my_courses.php?course_id=${encodeURIComponent(COURSE_ID)}#certificates`;
+
+            const celebrationDiv = document.createElement('div');
+            celebrationDiv.className = 'unlocked-toast border-warning shadow-lg mt-2';
+            celebrationDiv.style.background = 'linear-gradient(135deg, #fef9c3 0%, #ffffff 100%)';
+            celebrationDiv.innerHTML = `
+                <div class="rounded-circle bg-warning text-dark p-2 d-flex align-items-center justify-content-center shadow-xs" style="width: 44px; height: 44px;">
+                    <i class="bi bi-trophy-fill fs-4 text-dark"></i>
+                </div>
+                <div>
+                    <h6 class="fw-bold text-dark mb-0 d-flex align-items-center gap-1.5">
+                        <span>Course Completed 100%!</span>
+                        <span class="badge bg-success text-white rounded-pill px-2 py-0.5 fs-9">Graduated</span>
+                    </h6>
+                    <small class="text-secondary fs-8">Congratulations! Your official Course Certificate is now ready for application.</small>
+                </div>
+                <a href="${certUrl}" class="btn btn-warning btn-sm fw-bold fs-8 text-dark rounded-pill px-3 py-1.5 ms-2 shadow-sm text-nowrap">
+                    <i class="bi bi-award-fill me-1"></i>Get Certificate
+                </a>
+            `;
+            toastContainer.appendChild(celebrationDiv);
+        }
+
         function handleInstantNextLessonUnlock(nextLesson) {
+            const targetUrl = `watch_lesson.php?course_id=${encodeURIComponent(COURSE_ID)}&lesson_id=${encodeURIComponent(nextLesson.id)}`;
+
+            // 1. Update Right Sidebar Playlist item
             const sidebarItem = document.getElementById(`sidebar-item-${nextLesson.id}`);
             if (sidebarItem && sidebarItem.classList.contains('locked')) {
+                if (window.bootstrap && bootstrap.Tooltip) {
+                    const tip = bootstrap.Tooltip.getInstance(sidebarItem);
+                    if (tip) tip.dispose();
+                }
                 sidebarItem.classList.remove('locked');
-                sidebarItem.style.cursor = 'pointer';
-                sidebarItem.style.pointerEvents = 'auto';
-                sidebarItem.style.opacity = '1';
-
-                const targetUrl = `watch_lesson.php?course_id=${encodeURIComponent(COURSE_ID)}&lesson_id=${encodeURIComponent(nextLesson.id)}`;
+                sidebarItem.removeAttribute('data-bs-toggle');
+                sidebarItem.removeAttribute('title');
 
                 const newAnchor = document.createElement('a');
                 newAnchor.href = targetUrl;
@@ -1082,6 +1174,20 @@ try {
                 sidebarItem.parentNode.replaceChild(newAnchor, sidebarItem);
             }
 
+            // 2. Update Top Next Button
+            const nextBtn = document.getElementById('lesson-nav-next-btn');
+            if (nextBtn && nextBtn.tagName.toLowerCase() === 'button') {
+                const nextAnchor = document.createElement('a');
+                nextAnchor.href = targetUrl;
+                nextAnchor.id = 'lesson-nav-next-btn';
+                nextAnchor.className = 'btn btn-primary btn-sm rounded-pill px-3 fw-semibold';
+                nextAnchor.style.backgroundColor = '#0f4c81';
+                nextAnchor.style.border = 'none';
+                nextAnchor.innerHTML = 'Next <i class="bi bi-chevron-right ms-1"></i>';
+                nextBtn.parentNode.replaceChild(nextAnchor, nextBtn);
+            }
+
+            // 3. Show Bottom-Right Notification Toast
             const toastContainer = document.getElementById('unlocked-toast-container');
             const toastTitle = window.i18n__ ? window.i18n__('next_lesson_unlocked', 'Next Lesson Unlocked!') : 'Next Lesson Unlocked!';
             const btnText = window.i18n__ ? window.i18n__('go_to_next_lesson', 'Go to Next Lesson') : 'Go to Next Lesson';
@@ -1095,7 +1201,7 @@ try {
                         <h6 class="fw-bold text-dark mb-0">${toastTitle}</h6>
                         <small class="text-muted fs-8">${escapeHtml(nextLesson.title)}</small>
                     </div>
-                    <a href="watch_lesson.php?course_id=${encodeURIComponent(COURSE_ID)}&lesson_id=${encodeURIComponent(nextLesson.id)}" class="btn btn-success border-0 px-3 py-1.5 fw-semibold fs-8 text-nowrap ms-2 rounded-pill">
+                    <a href="${targetUrl}" class="btn btn-success border-0 px-3 py-1.5 fw-semibold fs-8 text-nowrap ms-2 rounded-pill">
                         ${btnText} <i class="bi bi-arrow-right ms-1"></i>
                     </a>
                 </div>

@@ -647,16 +647,20 @@ try {
                     $progress_percent = $total_lessons > 0 ? min(100, round(($completed_in_course / $total_lessons) * 100)) : 0;
                     $is_course_100 = ($total_lessons > 0 && $completed_in_course >= $total_lessons);
 
-                    // Quiz score summary for certificate
+                    // Quiz completion check & performance summary
+                    $c_quiz_check = check_course_quizzes_completed($pdo, $user_id, $c['id']);
+                    $all_quizzes_done = $c_quiz_check['all_completed'];
+                    $can_request_cert = ($is_course_100 && $all_quizzes_done);
+
                     $qStmt = $pdo->prepare("SELECT * FROM quiz_results WHERE user_id = ? AND course_id = ?");
-                    $qStmt->execute([$user_id, $course['id']]);
+                    $qStmt->execute([$user_id, $c['id']]);
                     $c_quiz_res = $qStmt->fetch();
 
                     $qaStmt = $pdo->prepare("SELECT MAX(score) as best_score, MAX(total_questions) as total_questions, MAX(updated_at) as last_attempt_at FROM quiz_attempts WHERE user_id = ? AND course_id = ?");
-                    $qaStmt->execute([$user_id, $course['id']]);
+                    $qaStmt->execute([$user_id, $c['id']]);
                     $c_quiz_attempt = $qaStmt->fetch();
 
-                    $quiz_score_str = "Progress: 100% | No Quiz Required";
+                    $quiz_score_str = ($c_quiz_check['total_quizzes'] > 0) ? "Progress: 100% | Quizzes: {$c_quiz_check['completed_quizzes']}/{$c_quiz_check['total_quizzes']} Completed" : "Progress: 100% | No Quiz Required";
                     if ($c_quiz_res && (int)($c_quiz_res['total_questions'] ?? 0) > 0) {
                       $qScore = (int)$c_quiz_res['score'];
                       $qTotal = (int)$c_quiz_res['total_questions'];
@@ -676,7 +680,7 @@ try {
                     }
 
                     $comp_date_display = $latest_comp_date ? date('M d, Y', strtotime($latest_comp_date)) : date('M d, Y');
-                    $existing_cert = $cert_requests_map[$course['id']] ?? null;
+                    $existing_cert = $cert_requests_map[$c['id']] ?? null;
 
                     $cert_json = htmlspecialchars(json_encode([
                       'course_id' => $course['id'],
@@ -732,41 +736,56 @@ try {
                           </a>
 
                           <?php if (!$is_teacher): ?>
-                            <?php if ($is_course_100): ?>
-                              <?php if ($existing_cert): ?>
-                                <?php if (in_array($existing_cert['status'], ['approved', 'issued'])): ?>
-                                  <button type="button" class="btn btn-success btn-sm px-3 rounded-pill fw-bold shadow-sm d-inline-flex align-items-center gap-1 text-white"
-                                    onclick='openCertificateStatusModal(<?php echo $cert_json; ?>)'>
-                                    <i class="bi bi-patch-check-fill"></i> <?php echo __('certificate_issued', 'Certificate Issued'); ?>
-                                  </button>
-                                <?php elseif ($existing_cert['status'] === 'dispatched'): ?>
-                                  <button type="button" class="btn btn-info text-white btn-sm px-3 rounded-pill fw-bold shadow-sm d-inline-flex align-items-center gap-1"
-                                    onclick='openCertificateStatusModal(<?php echo $cert_json; ?>)'>
-                                    <i class="bi bi-truck"></i> <?php echo __('certificate_dispatched', 'Certificate Dispatched'); ?>
-                                  </button>
-                                <?php elseif ($existing_cert['status'] === 'processing'): ?>
-                                  <button type="button" class="btn btn-primary btn-sm px-3 rounded-pill fw-bold shadow-sm d-inline-flex align-items-center gap-1 text-white"
-                                    onclick='openCertificateStatusModal(<?php echo $cert_json; ?>)'>
-                                    <i class="bi bi-gear-wide-connected"></i> <?php echo __('certificate_processing', 'Certificate Processing'); ?>
-                                  </button>
-                                <?php else: ?>
-                                  <button type="button" class="btn btn-warning bg-opacity-25 text-dark border-warning btn-sm px-3 rounded-pill fw-bold shadow-sm d-inline-flex align-items-center gap-1"
-                                    onclick='openCertificateStatusModal(<?php echo $cert_json; ?>)'>
-                                    <i class="bi bi-clock-history"></i> <?php echo __('certificate_requested', 'Certificate Requested'); ?>
-                                  </button>
-                                <?php endif; ?>
+                            <?php if ($existing_cert): ?>
+                              <?php if (in_array($existing_cert['status'], ['approved', 'issued'])): ?>
+                                <a href="javascript:void(0)" class="btn btn-success btn-sm px-3 rounded-pill fw-bold shadow-sm d-inline-flex align-items-center gap-1 text-white cert-status-btn"
+                                  data-cert='<?php echo $cert_json; ?>'
+                                  onclick="handleOpenCertStatus(this)">
+                                  <i class="bi bi-patch-check-fill"></i> <?php echo __('certificate_issued', 'Certificate Issued'); ?>
+                                </a>
+                              <?php elseif ($existing_cert['status'] === 'dispatched'): ?>
+                                <a href="javascript:void(0)" class="btn btn-info text-white btn-sm px-3 rounded-pill fw-bold shadow-sm d-inline-flex align-items-center gap-1 cert-status-btn"
+                                  data-cert='<?php echo $cert_json; ?>'
+                                  onclick="handleOpenCertStatus(this)">
+                                  <i class="bi bi-truck"></i> <?php echo __('certificate_dispatched', 'Certificate Dispatched'); ?>
+                                </a>
+                              <?php elseif ($existing_cert['status'] === 'processing'): ?>
+                                <a href="javascript:void(0)" class="btn btn-primary btn-sm px-3 rounded-pill fw-bold shadow-sm d-inline-flex align-items-center gap-1 text-white cert-status-btn"
+                                  data-cert='<?php echo $cert_json; ?>'
+                                  onclick="handleOpenCertStatus(this)">
+                                  <i class="bi bi-gear-wide-connected"></i> <?php echo __('certificate_processing', 'Certificate Processing'); ?>
+                                </a>
                               <?php else: ?>
-                                <button type="button" class="btn btn-success btn-sm px-3.5 py-1.5 rounded-pill fw-bold shadow-sm d-inline-flex align-items-center gap-1 text-white"
-                                  style="background-color: #28a745; border-color: #28a745;"
-                                  onclick='openCertificateModal(<?php echo $cert_json; ?>)'>
-                                  <i class="bi bi-award-fill"></i> <?php echo __('request_certificate', 'Request Certificate'); ?>
-                                </button>
+                                <a href="javascript:void(0)" class="btn btn-warning bg-opacity-25 text-dark border-warning btn-sm px-3 rounded-pill fw-bold shadow-sm d-inline-flex align-items-center gap-1 cert-status-btn"
+                                  data-cert='<?php echo $cert_json; ?>'
+                                  onclick="handleOpenCertStatus(this)">
+                                  <i class="bi bi-clock-history"></i> <?php echo __('certificate_requested', 'Certificate Requested'); ?>
+                                </a>
                               <?php endif; ?>
                             <?php else: ?>
-                              <button type="button" class="btn btn-light border text-muted btn-sm px-3 rounded-pill d-inline-flex align-items-center gap-1"
-                                disabled title="<?php echo __('certificate_locked_tip', 'Complete 100% of course lessons & quizzes to unlock your certificate.'); ?>">
-                                <i class="bi bi-lock-fill text-secondary"></i> <?php echo __('request_certificate', 'Request Certificate'); ?>
-                              </button>
+                              <?php if ($can_request_cert): ?>
+                                <a href="javascript:void(0)" class="btn btn-success btn-sm px-3.5 py-1.5 rounded-pill fw-bold shadow-sm d-inline-flex align-items-center gap-1 text-white cert-req-btn"
+                                  style="background-color: #28a745; border-color: #28a745;"
+                                  data-cert='<?php echo $cert_json; ?>'
+                                  onclick="handleOpenCertModal(this)">
+                                  <i class="bi bi-award-fill"></i> <?php echo __('request_certificate', 'Request Certificate'); ?>
+                                </a>
+                              <?php else: ?>
+                                <a href="javascript:void(0)" class="btn btn-light border text-muted btn-sm px-3 rounded-pill d-inline-flex align-items-center gap-1 cert-locked-btn"
+                                  style="cursor: pointer;"
+                                  data-course-title="<?php echo htmlspecialchars($c['title']); ?>"
+                                  data-progress="<?php echo $progress_percent; ?>"
+                                  data-quizzes-done="<?php echo $all_quizzes_done ? '1' : '0'; ?>"
+                                  data-quizzes-completed="<?php echo (int)$c_quiz_check['completed_quizzes']; ?>"
+                                  data-quizzes-total="<?php echo (int)$c_quiz_check['total_quizzes']; ?>"
+                                  data-missing-quizzes="<?php echo htmlspecialchars(implode(', ', $c_quiz_check['missing_quiz_titles'] ?? [])); ?>"
+                                  data-classroom-url="classroom.php?course_id=<?php echo urlencode($c['id']); ?>"
+                                  data-quiz-url="quiz.php?course_id=<?php echo urlencode($c['id']); ?>"
+                                  onclick="handleLockedCertClick(this)"
+                                  title="<?php echo __('certificate_locked_tip', 'Complete 100% of course lessons & quizzes to unlock your certificate.'); ?>">
+                                  <i class="bi bi-lock-fill text-secondary"></i> <?php echo __('request_certificate', 'Request Certificate'); ?>
+                                </a>
+                              <?php endif; ?>
                             <?php endif; ?>
                           <?php endif; ?>
                         </div>
@@ -1886,8 +1905,131 @@ try {
   <script>
     let currentActiveCertData = null;
 
+    function handleOpenCertModal(btn) {
+      try {
+        const raw = btn.getAttribute('data-cert');
+        const data = raw ? JSON.parse(raw) : null;
+        openCertificateModal(data);
+      } catch(e) {
+        console.error('Error parsing certificate data:', e);
+      }
+    }
+
+    function handleOpenCertStatus(btn) {
+      try {
+        const raw = btn.getAttribute('data-cert');
+        const data = raw ? JSON.parse(raw) : null;
+        openCertificateStatusModal(data);
+      } catch(e) {
+        console.error('Error parsing certificate status data:', e);
+      }
+    }
+
+    function handleLockedCertClick(el) {
+      const title = el.getAttribute('data-course-title') || 'Course';
+      const progress = parseInt(el.getAttribute('data-progress') || '0', 10);
+      const quizzesDone = el.getAttribute('data-quizzes-done') === '1';
+      const qCompleted = parseInt(el.getAttribute('data-quizzes-completed') || '0', 10);
+      const qTotal = parseInt(el.getAttribute('data-quizzes-total') || '0', 10);
+      const missingQuizzes = el.getAttribute('data-missing-quizzes') || '';
+      const classroomUrl = el.getAttribute('data-classroom-url') || 'classroom.php';
+      const quizUrl = el.getAttribute('data-quiz-url') || classroomUrl;
+
+      let lockedModal = document.getElementById('certLockedInfoModal');
+      if (!lockedModal) {
+        lockedModal = document.createElement('div');
+        lockedModal.id = 'certLockedInfoModal';
+        lockedModal.className = 'modal fade text-dark';
+        lockedModal.tabIndex = -1;
+        lockedModal.innerHTML = `
+          <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+              <div class="modal-header border-0 bg-light p-4 pb-3">
+                <div class="d-flex align-items-center gap-3">
+                  <div class="rounded-circle bg-warning bg-opacity-25 p-3 text-warning d-flex align-items-center justify-content-center" style="width: 50px; height: 50px;">
+                    <i class="bi bi-award fs-4 text-dark"></i>
+                  </div>
+                  <div>
+                    <h5 class="modal-title fw-bold text-dark mb-0 fs-6">Certificate Requirements</h5>
+                    <small class="text-muted fs-8" id="locked-cert-course-name"></small>
+                  </div>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+              </div>
+              <div class="modal-body p-4 pt-3 text-center">
+                <div class="p-3 bg-light rounded-3 border mb-3 text-start">
+                  <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="fw-semibold text-secondary fs-8">Lesson Videos Progress</span>
+                    <span class="fw-bold text-dark fs-8" id="locked-cert-progress-text">0%</span>
+                  </div>
+                  <div class="progress mb-3" style="height: 8px;">
+                    <div class="progress-bar bg-primary" id="locked-cert-progress-bar" style="width: 0%;"></div>
+                  </div>
+
+                  <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="fw-semibold text-secondary fs-8">Course Quizzes</span>
+                    <span class="fw-bold text-dark fs-8" id="locked-cert-quiz-text">0 / 0 Completed</span>
+                  </div>
+                  <div class="progress" style="height: 8px;">
+                    <div class="progress-bar bg-success" id="locked-cert-quiz-bar" style="width: 0%;"></div>
+                  </div>
+                </div>
+                <p class="text-muted fs-7 mb-4 text-start" id="locked-cert-desc-text">
+                  Official verified certificates are unlocked once you have completed <strong>100%</strong> of the course lessons and all course quizzes.
+                </p>
+                <div class="d-flex justify-content-center gap-2">
+                  <button type="button" class="btn btn-light rounded-pill px-4" data-bs-dismiss="modal">Close</button>
+                  <a id="locked-cert-continue-btn" href="classroom.php" class="btn btn-primary rounded-pill px-4 fw-bold shadow-sm" style="background-color: #0f4c81;">
+                    <i class="bi bi-play-circle-fill me-1"></i> Continue Learning
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+        document.body.appendChild(lockedModal);
+      }
+
+      document.getElementById('locked-cert-course-name').textContent = title;
+      document.getElementById('locked-cert-progress-text').textContent = progress + '% Completed';
+      document.getElementById('locked-cert-progress-bar').style.width = progress + '%';
+
+      const quizText = document.getElementById('locked-cert-quiz-text');
+      const quizBar = document.getElementById('locked-cert-quiz-bar');
+      const descText = document.getElementById('locked-cert-desc-text');
+      const actionBtn = document.getElementById('locked-cert-continue-btn');
+
+      if (qTotal > 0) {
+        const qPct = Math.round((qCompleted / qTotal) * 100);
+        quizText.textContent = `${qCompleted} of ${qTotal} Completed (${qPct}%)`;
+        quizBar.style.width = `${qPct}%`;
+      } else {
+        quizText.textContent = 'No Quizzes Required';
+        quizBar.style.width = '100%';
+      }
+
+      if (progress >= 100 && !quizzesDone && qTotal > 0) {
+        descText.innerHTML = `You have watched and completed all lesson videos! <br><br><span class="text-danger fw-bold"><i class="bi bi-patch-question-fill me-1"></i>Action Required:</span> You must complete all course quizzes <strong>(${qCompleted} of ${qTotal} completed)</strong> to unlock and request your official Course Certificate.`;
+        actionBtn.href = quizUrl;
+        actionBtn.innerHTML = '<i class="bi bi-patch-question-fill me-1"></i> Complete Course Quizzes';
+        actionBtn.className = 'btn btn-warning text-dark rounded-pill px-4 fw-bold shadow-sm';
+      } else {
+        descText.innerHTML = `Official verified certificates are unlocked once you have completed <strong>100%</strong> of the course lessons and all course quizzes. Continue your learning to earn your certificate!`;
+        actionBtn.href = classroomUrl;
+        actionBtn.innerHTML = '<i class="bi bi-play-circle-fill me-1"></i> Continue Learning';
+        actionBtn.className = 'btn btn-primary rounded-pill px-4 fw-bold shadow-sm';
+        actionBtn.style.backgroundColor = '#0f4c81';
+      }
+
+      const bsModal = new bootstrap.Modal(lockedModal);
+      bsModal.show();
+    }
+
     function openCertificateModal(data) {
       if (!data) return;
+      if (typeof data === 'string') {
+        try { data = JSON.parse(data); } catch(e) {}
+      }
       document.getElementById('cert-modal-course-id').value = data.course_id || '';
       document.getElementById('cert-modal-course-title').value = data.course_title || '';
       document.getElementById('cert-modal-email').value = data.registered_email || '';
@@ -1898,30 +2040,41 @@ try {
       document.getElementById('cert-modal-mobile').value = data.mobile_number || '';
 
       const alertBox = document.getElementById('cert-form-alert');
-      alertBox.className = 'd-none alert mb-3 py-2 px-3 fs-8';
-      alertBox.innerHTML = '';
+      if (alertBox) {
+        alertBox.className = 'd-none alert mb-3 py-2 px-3 fs-8';
+        alertBox.innerHTML = '';
+      }
 
       if (data.delivery_method === 'home_delivery') {
-        document.getElementById('cert-option-hardcopy').checked = true;
-        document.getElementById('cert-option-digital').checked = true;
-        document.getElementById('home-delivery-details').style.display = 'block';
-        document.getElementById('cert-modal-address').value = data.delivery_address || '';
-        document.getElementById('cert-modal-city').value = data.city || '';
-        document.getElementById('cert-modal-postal').value = data.postal_code || '';
-        document.getElementById('cert-modal-district').value = data.district || '';
-        document.getElementById('cert-modal-notes').value = data.delivery_notes || '';
+        const hardCopyEl = document.getElementById('cert-option-hardcopy');
+        if (hardCopyEl) hardCopyEl.checked = true;
+        const digEl = document.getElementById('cert-option-digital');
+        if (digEl) digEl.checked = true;
+        const delivDiv = document.getElementById('home-delivery-details');
+        if (delivDiv) delivDiv.style.display = 'block';
+        if (document.getElementById('cert-modal-address')) document.getElementById('cert-modal-address').value = data.delivery_address || '';
+        if (document.getElementById('cert-modal-city')) document.getElementById('cert-modal-city').value = data.city || '';
+        if (document.getElementById('cert-modal-postal')) document.getElementById('cert-modal-postal').value = data.postal_code || '';
+        if (document.getElementById('cert-modal-district')) document.getElementById('cert-modal-district').value = data.district || '';
+        if (document.getElementById('cert-modal-notes')) document.getElementById('cert-modal-notes').value = data.delivery_notes || '';
         const codPhoneEl = document.getElementById('cert-modal-cod-phone');
         if (codPhoneEl) {
           codPhoneEl.value = data.cod_phone || data.mobile_number || '';
         }
       } else {
-        document.getElementById('cert-option-hardcopy').checked = false;
-        document.getElementById('cert-option-digital').checked = true;
-        document.getElementById('home-delivery-details').style.display = 'none';
+        const hardCopyEl = document.getElementById('cert-option-hardcopy');
+        if (hardCopyEl) hardCopyEl.checked = false;
+        const digEl = document.getElementById('cert-option-digital');
+        if (digEl) digEl.checked = true;
+        const delivDiv = document.getElementById('home-delivery-details');
+        if (delivDiv) delivDiv.style.display = 'none';
       }
 
-      const modal = new bootstrap.Modal(document.getElementById('certificateRequestModal'));
-      modal.show();
+      const modalEl = document.getElementById('certificateRequestModal');
+      if (modalEl) {
+        const modal = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
+        modal.show();
+      }
     }
 
     function copyTrackerCertCode() {
@@ -2393,7 +2546,8 @@ try {
             const count = document.getElementById('notification-count');
             if (count) count.remove();
           }
-        })
+        });
+    }
   </script>
   <!-- Modern Notification System JS Client -->
   <script src="assets/js/notifications.js"></script>
