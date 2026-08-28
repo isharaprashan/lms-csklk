@@ -24,7 +24,7 @@ if (!isset($_SESSION['user_id'])) {
 
 try {
   $pdo = getDBConnection();
-  $userStmt = $pdo->prepare("SELECT id, name, email, avatar, role, status, password_hash FROM users WHERE id = ?");
+  $userStmt = $pdo->prepare("SELECT id, name, email, avatar, role, status, password_hash, must_change_password FROM users WHERE id = ?");
   $userStmt->execute([$_SESSION['user_id']]);
   $logged_in_user = $userStmt->fetch();
   if ($logged_in_user) {
@@ -32,6 +32,7 @@ try {
     $_SESSION['user_name'] = $logged_in_user['name'];
     $_SESSION['user_email'] = $logged_in_user['email'];
     $_SESSION['user_avatar'] = $logged_in_user['avatar'];
+    $_SESSION['must_change_password'] = (!empty($logged_in_user['must_change_password']) && $logged_in_user['must_change_password'] == 1);
 
     // 1. Enforce Status Check: If account is deactivated, log out immediately
     if (strtolower($logged_in_user['status'] ?? 'active') !== 'active' && $logged_in_user['role'] !== 'super_admin') {
@@ -40,7 +41,13 @@ try {
       exit;
     }
 
-    // 2. Enforce Password Change Check: If password was reset by Super Admin, log out immediately
+    // 2. Enforce Mandatory Password Change on First Login
+    if (!empty($_SESSION['must_change_password'])) {
+      header("Location: force_change_password.php");
+      exit;
+    }
+
+    // 3. Enforce Password Change Check: If password was reset by Super Admin, log out immediately
     if (isset($_SESSION['session_password_hash']) && $_SESSION['session_password_hash'] !== $logged_in_user['password_hash'] && $logged_in_user['role'] !== 'super_admin') {
       session_destroy();
       header("Location: login.php?error=password_changed");

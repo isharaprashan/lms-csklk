@@ -648,16 +648,16 @@ try {
                     $is_course_100 = ($total_lessons > 0 && $completed_in_course >= $total_lessons);
 
                     // Quiz completion check & performance summary
-                    $c_quiz_check = check_course_quizzes_completed($pdo, $user_id, $c['id']);
+                    $c_quiz_check = check_course_quizzes_completed($pdo, $user_id, $course['id']);
                     $all_quizzes_done = $c_quiz_check['all_completed'];
                     $can_request_cert = ($is_course_100 && $all_quizzes_done);
 
                     $qStmt = $pdo->prepare("SELECT * FROM quiz_results WHERE user_id = ? AND course_id = ?");
-                    $qStmt->execute([$user_id, $c['id']]);
+                    $qStmt->execute([$user_id, $course['id']]);
                     $c_quiz_res = $qStmt->fetch();
 
                     $qaStmt = $pdo->prepare("SELECT MAX(score) as best_score, MAX(total_questions) as total_questions, MAX(updated_at) as last_attempt_at FROM quiz_attempts WHERE user_id = ? AND course_id = ?");
-                    $qaStmt->execute([$user_id, $c['id']]);
+                    $qaStmt->execute([$user_id, $course['id']]);
                     $c_quiz_attempt = $qaStmt->fetch();
 
                     $quiz_score_str = ($c_quiz_check['total_quizzes'] > 0) ? "Progress: 100% | Quizzes: {$c_quiz_check['completed_quizzes']}/{$c_quiz_check['total_quizzes']} Completed" : "Progress: 100% | No Quiz Required";
@@ -680,7 +680,7 @@ try {
                     }
 
                     $comp_date_display = $latest_comp_date ? date('M d, Y', strtotime($latest_comp_date)) : date('M d, Y');
-                    $existing_cert = $cert_requests_map[$c['id']] ?? null;
+                    $existing_cert = $cert_requests_map[$course['id']] ?? null;
 
                     $cert_json = htmlspecialchars(json_encode([
                       'course_id' => $course['id'],
@@ -773,14 +773,14 @@ try {
                               <?php else: ?>
                                 <a href="javascript:void(0)" class="btn btn-light border text-muted btn-sm px-3 rounded-pill d-inline-flex align-items-center gap-1 cert-locked-btn"
                                   style="cursor: pointer;"
-                                  data-course-title="<?php echo htmlspecialchars($c['title']); ?>"
+                                  data-course-title="<?php echo htmlspecialchars($course['title']); ?>"
                                   data-progress="<?php echo $progress_percent; ?>"
                                   data-quizzes-done="<?php echo $all_quizzes_done ? '1' : '0'; ?>"
                                   data-quizzes-completed="<?php echo (int)$c_quiz_check['completed_quizzes']; ?>"
                                   data-quizzes-total="<?php echo (int)$c_quiz_check['total_quizzes']; ?>"
                                   data-missing-quizzes="<?php echo htmlspecialchars(implode(', ', $c_quiz_check['missing_quiz_titles'] ?? [])); ?>"
-                                  data-classroom-url="classroom.php?course_id=<?php echo urlencode($c['id']); ?>"
-                                  data-quiz-url="quiz.php?course_id=<?php echo urlencode($c['id']); ?>"
+                                  data-classroom-url="classroom.php?course_id=<?php echo urlencode($course['id']); ?>"
+                                  data-quiz-url="quiz.php?course_id=<?php echo urlencode($course['id']); ?>"
                                   onclick="handleLockedCertClick(this)"
                                   title="<?php echo __('certificate_locked_tip', 'Complete 100% of course lessons & quizzes to unlock your certificate.'); ?>">
                                   <i class="bi bi-lock-fill text-secondary"></i> <?php echo __('request_certificate', 'Request Certificate'); ?>

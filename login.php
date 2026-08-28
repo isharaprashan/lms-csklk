@@ -27,6 +27,13 @@ if (isset($_SESSION['registration_success'])) {
     unset($_SESSION['registration_success']);
 }
 
+if (isset($_SESSION['login_flash_success'])) {
+    $success = $_SESSION['login_flash_success'];
+    unset($_SESSION['login_flash_success']);
+} elseif (isset($_GET['reset']) && $_GET['reset'] === 'success' && empty($success)) {
+    $success = function_exists('__') ? __('password_reset_success_msg', 'Password reset successfully! Please sign in with your new password.') : 'Password reset successfully! Please sign in with your new password.';
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email = trim($_POST['email'] ?? '');
     $password = $_POST['password'] ?? '';
@@ -72,13 +79,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $_SESSION['sid'] = $new_sid;
 
                     if ($_SESSION['user_role'] === 'admin' || $_SESSION['user_role'] === 'super_admin') {
-                        // Populate LMS_ADMIN_SESS cookie as well for seamless admin portal access
                         $admin_uid = $_SESSION['user_id'];
                         $admin_name = $_SESSION['user_name'];
                         $admin_email = $_SESSION['user_email'];
                         $admin_avatar = $_SESSION['user_avatar'];
                         $admin_academic_id = $_SESSION['academic_id'];
                         $admin_role = $_SESSION['user_role'];
+                        $must_change_pw = (!empty($user['must_change_password']) && $user['must_change_password'] == 1);
 
                         session_write_close();
                         session_name('LMS_ADMIN_SESS');
@@ -90,6 +97,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $_SESSION['user_avatar'] = $admin_avatar;
                         $_SESSION['academic_id'] = $admin_academic_id;
                         $_SESSION['user_role'] = $admin_role;
+                        $_SESSION['session_password_hash'] = $user['password_hash'];
+                        $_SESSION['must_change_password'] = $must_change_pw;
+
+                        if ($must_change_pw) {
+                            header("Location: admin/force_change_password.php");
+                            exit;
+                        }
 
                         header("Location: admin/index.php");
                     } else {
@@ -372,6 +386,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           <div class="mb-3">
             <div class="d-flex justify-content-between align-items-center mb-1">
               <label for="password" class="form-label fw-semibold text-secondary fs-8 mb-0"><?php echo __('password', 'Password'); ?></label>
+              <a href="forgot_password.php" class="text-decoration-none fs-8 fw-semibold" style="color: #2b529a;"><?php echo __('forgot_password_link', 'Forgot Password?'); ?></a>
             </div>
             <div class="auth-input-group">
               <span class="input-icon"><i class="bi bi-lock text-muted"></i></span>

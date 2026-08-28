@@ -560,19 +560,19 @@ try {
   <?php include __DIR__ . '/includes/navbar.php'; ?>
 
   <!-- Main Container -->
-  <main class="py-4">
+  <main style="padding-top: 86px;" class="pb-4">
     <div class="container-fluid px-3 px-md-4">
       
       <!-- Page Title & Header Actions -->
-      <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
-        <div>
+      <div class="d-flex flex-column flex-sm-row justify-content-between align-items-start align-items-sm-center mb-4 gap-3">
+        <div style="min-width: 0; flex: 1 1 0;">
           <h2 class="fw-bold text-dark mb-1 fs-4 d-flex align-items-center gap-2">
             <i class="bi bi-graph-up-arrow text-primary"></i>
             <span><?php echo __('analytics_title', 'Student Progress & Performance Analytics'); ?></span>
           </h2>
           <p class="text-muted fs-8 mb-0"><?php echo __('analytics_subtitle', 'Monitor real-time video watch completion, lesson progress, quiz results, and student learning records.'); ?></p>
         </div>
-        <div class="d-flex align-items-center gap-2 flex-wrap">
+        <div class="d-flex align-items-center gap-2 flex-wrap flex-shrink-0">
           <!-- Real-Time Live Sync Status Badge -->
           <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 px-3 py-1.5 rounded-pill fs-8 fw-semibold d-inline-flex align-items-center gap-1.5 shadow-xs" title="Auto-synchronizing student learning progress and quiz submissions">
             <span class="pulse-dot"></span> Live Sync <span class="d-none d-sm-inline text-muted" id="last-sync-time">(Just now)</span>

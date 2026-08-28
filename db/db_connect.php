@@ -127,6 +127,16 @@ function ensureMigrations($pdo)
     } catch (PDOException $e) {
         $pdo->exec("ALTER TABLE users ADD COLUMN otp_expires_at DATETIME NULL AFTER otp_code");
     }
+    try {
+        $pdo->query("SELECT must_change_password FROM users LIMIT 1");
+    } catch (PDOException $e) {
+        $pdo->exec("ALTER TABLE users ADD COLUMN must_change_password TINYINT(1) DEFAULT 0 AFTER otp_expires_at");
+    }
+    try {
+        $pdo->query("SELECT temp_password_created_at FROM users LIMIT 1");
+    } catch (PDOException $e) {
+        $pdo->exec("ALTER TABLE users ADD COLUMN temp_password_created_at DATETIME NULL AFTER must_change_password");
+    }
 
     // Auto-verify pre-existing users so existing accounts are never locked out
     if ($isNewEmailVerifiedColumn) {
@@ -781,6 +791,21 @@ function ensureMigrations($pdo)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;");
     }
 
+    // 3.18 Ensure password_resets table exists (Forgot / Reset Password tokens)
+    try {
+        $pdo->query("SELECT id FROM password_resets LIMIT 1");
+    } catch (PDOException $e) {
+        $pdo->exec("CREATE TABLE IF NOT EXISTS `password_resets` (
+            `id` INT AUTO_INCREMENT PRIMARY KEY,
+            `email` VARCHAR(255) NOT NULL,
+            `token` VARCHAR(255) NOT NULL,
+            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            `expires_at` DATETIME NOT NULL,
+            INDEX (`email`),
+            INDEX (`token`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;");
+    }
+
     // 7. Seed primary Super Admin account if not exists
     ensureSuperAdminExists($pdo);
 }
@@ -856,6 +881,8 @@ function initializeDatabase()
                 `email_verified` TINYINT(1) DEFAULT 0,
                 `otp_code` VARCHAR(6) NULL,
                 `otp_expires_at` DATETIME NULL,
+                `must_change_password` TINYINT(1) DEFAULT 0,
+                `temp_password_created_at` DATETIME NULL,
                 `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;",
 
@@ -1012,6 +1039,17 @@ function initializeDatabase()
                 `is_read` TINYINT(1) DEFAULT 0,
                 `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;",
+
+            // Password Resets table
+            "CREATE TABLE IF NOT EXISTS `password_resets` (
+                `id` INT AUTO_INCREMENT PRIMARY KEY,
+                `email` VARCHAR(255) NOT NULL,
+                `token` VARCHAR(255) NOT NULL,
+                `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                `expires_at` DATETIME NOT NULL,
+                INDEX (`email`),
+                INDEX (`token`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;"
         ];
 

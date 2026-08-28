@@ -52,6 +52,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $_SESSION['academic_id'] = $user['academic_id'];
                     $_SESSION['user_role'] = $userRole;
                     $_SESSION['session_password_hash'] = $user['password_hash'];
+                    $_SESSION['must_change_password'] = (!empty($user['must_change_password']) && $user['must_change_password'] == 1);
+
+                    if (!empty($_SESSION['must_change_password'])) {
+                        header("Location: force_change_password.php");
+                        exit;
+                    }
 
                     header("Location: index.php");
                     exit;
@@ -203,7 +209,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
 
         <div class="mb-4">
-          <label for="password" class="form-label fw-semibold text-secondary"><?php echo __('password', 'Password'); ?></label>
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <label for="password" class="form-label fw-semibold text-secondary mb-0"><?php echo __('password', 'Password'); ?></label>
+            <a href="../forgot_password.php" class="text-decoration-none fs-8" style="color: #0f4c81; font-weight: 500;"><?php echo __('forgot_password_link', 'Forgot Password?'); ?></a>
+          </div>
           <div class="input-group">
             <span class="input-group-text bg-light border-end-0"><i class="bi bi-lock text-muted"></i></span>
             <input type="password" name="password" id="password" class="form-control border-start-0 bg-light" placeholder="••••••••" required>

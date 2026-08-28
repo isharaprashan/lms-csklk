@@ -10,6 +10,12 @@ if (!isset($pdo)) {
     }
 }
 
+// Enforce Mandatory Password Change on First Login for all admin pages
+if (!empty($_SESSION['must_change_password']) && basename($_SERVER['PHP_SELF']) !== 'force_change_password.php') {
+    header("Location: force_change_password.php");
+    exit;
+}
+
 $is_super_admin = isset($is_super_admin) ? $is_super_admin : (($_SESSION['user_role'] ?? $_SESSION['role'] ?? '') === 'super_admin');
 $current_page = $active_nav ?? basename($_SERVER['PHP_SELF'], '.php');
 

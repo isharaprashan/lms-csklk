@@ -239,6 +239,192 @@ if (!function_exists('send_otp_email')) {
     }
 }
 
+if (!function_exists('send_password_reset_email')) {
+    function send_password_reset_email($toEmail, $toName, $resetLink, $expiresMinutes = 30)
+    {
+        $subject = "Password Reset Request - Computerscience.lk";
+
+        $htmlBody = "
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset='UTF-8'>
+            <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+            <title>Password Reset Request</title>
+        </head>
+        <body style='margin: 0; padding: 0; background-color: #f4f6f9; font-family: -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif;'>
+            <table width='100%' border='0' cellspacing='0' cellpadding='0' style='background-color: #f4f6f9; padding: 30px 10px;'>
+                <tr>
+                    <td align='center'>
+                        <table width='100%' max-width='580' border='0' cellspacing='0' cellpadding='0' style='max-width: 580px; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.06); border: 1px solid #e2e8f0;'>
+                            <!-- Header -->
+                            <tr>
+                                <td style='background: linear-gradient(135deg, #091527 0%, #0f3d6c 50%, #174b85 100%); padding: 32px 25px; text-align: center;'>
+                                    <h1 style='color: #ffffff; font-size: 22px; font-weight: 700; margin: 0; letter-spacing: 0.5px;'>computerscience.lk</h1>
+                                    <p style='color: rgba(255,255,255,0.75); font-size: 13px; margin: 6px 0 0;'>Academic Security & Authentication Service</p>
+                                </td>
+                            </tr>
+                            <!-- Body -->
+                            <tr>
+                                <td style='padding: 35px 30px;'>
+                                    <h2 style='color: #1e293b; font-size: 20px; font-weight: 700; margin-top: 0; margin-bottom: 12px;'>Password Reset Request</h2>
+                                    <p style='color: #475569; font-size: 14px; line-height: 1.6; margin: 0 0 20px;'>
+                                        Hello " . htmlspecialchars($toName ?: 'User') . ",<br>
+                                        We received a request to reset the password for your account on <strong>Computerscience.lk</strong>. Click the button below to choose a new password:
+                                    </p>
+
+                                    <!-- CTA Button -->
+                                    <div style='text-align: center; margin: 30px 0;'>
+                                        <a href='" . htmlspecialchars($resetLink) . "' target='_blank' style='display: inline-block; background: linear-gradient(135deg, #2b529a 0%, #0f4c81 100%); color: #ffffff; font-size: 15px; font-weight: 700; text-decoration: none; padding: 14px 34px; border-radius: 50px; box-shadow: 0 4px 15px rgba(15, 76, 129, 0.35);'>
+                                            🔒 Reset My Password
+                                        </a>
+                                        <div style='margin-top: 12px; color: #64748b; font-size: 12px;'>
+                                            ⏱ This link will expire in <strong>" . intval($expiresMinutes) . " minutes</strong>.
+                                        </div>
+                                    </div>
+
+                                    <!-- Fallback Link Box -->
+                                    <div style='background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px; margin: 25px 0;'>
+                                        <p style='color: #64748b; font-size: 12px; margin: 0 0 8px; font-weight: 600;'>
+                                            If the button above does not work, copy and paste this link into your browser:
+                                        </p>
+                                        <p style='margin: 0; word-break: break-all;'>
+                                            <a href='" . htmlspecialchars($resetLink) . "' target='_blank' style='color: #0f4c81; font-size: 12px; text-decoration: underline;'>
+                                                " . htmlspecialchars($resetLink) . "
+                                            </a>
+                                        </p>
+                                    </div>
+                                    
+                                    <!-- Security Notice -->
+                                    <div style='background-color: #fffbeb; border-left: 4px solid #f59e0b; padding: 12px 16px; border-radius: 4px; margin-top: 25px;'>
+                                        <p style='color: #92400e; font-size: 12px; margin: 0; line-height: 1.5;'>
+                                            <strong>Security Alert:</strong> If you did not request this password reset, please ignore this email or contact support if you suspect unauthorized activity. Your password will remain unchanged.
+                                        </p>
+                                    </div>
+                                </td>
+                            </tr>
+                            <!-- Footer -->
+                            <tr>
+                                <td style='background-color: #f8fafc; padding: 20px 30px; border-top: 1px solid #e2e8f0; text-align: center;'>
+                                    <p style='color: #94a3b8; font-size: 12px; margin: 0; line-height: 1.5;'>
+                                        This email was sent to " . htmlspecialchars($toEmail) . ".<br>
+                                        &copy; " . date('Y') . " Computerscience.lk Academy. All rights reserved.
+                                    </p>
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+            </table>
+        </body>
+        </html>
+        ";
+
+        $altBody = "Password Reset Request - Computerscience.lk\n\nHello " . ($toName ?: 'User') . ",\n\nWe received a request to reset your password. Please visit the following link to set a new password:\n\n{$resetLink}\n\nThis link is valid for {$expiresMinutes} minutes.\n\nIf you did not make this request, please ignore this email.\n\nComputerscience.lk Academy";
+
+        return send_system_email($toEmail, $toName, $subject, $htmlBody, $altBody);
+    }
+}
+
+if (!function_exists('send_admin_welcome_credentials_email')) {
+    function send_admin_welcome_credentials_email($toEmail, $toName, $tempPassword, $loginUrl)
+    {
+        $subject = "🎉 Welcome to Computerscience.lk Admin Team - Your Login Credentials";
+
+        $htmlBody = "
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset='UTF-8'>
+            <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+            <title>Welcome to Admin Team</title>
+        </head>
+        <body style='margin: 0; padding: 0; background-color: #f4f6f9; font-family: -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif;'>
+            <table width='100%' border='0' cellspacing='0' cellpadding='0' style='background-color: #f4f6f9; padding: 30px 10px;'>
+                <tr>
+                    <td align='center'>
+                        <table width='100%' max-width='580' border='0' cellspacing='0' cellpadding='0' style='max-width: 580px; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.06); border: 1px solid #e2e8f0;'>
+                            <!-- Header -->
+                            <tr>
+                                <td style='background: linear-gradient(135deg, #052014 0%, #0b4528 50%, #125b36 100%); padding: 32px 25px; text-align: center;'>
+                                    <h1 style='color: #ffffff; font-size: 22px; font-weight: 700; margin: 0; letter-spacing: 0.5px;'>computerscience.lk</h1>
+                                    <p style='color: rgba(255,255,255,0.75); font-size: 13px; margin: 6px 0 0;'>Academic Administration & Faculty Management</p>
+                                </td>
+                            </tr>
+                            <!-- Body -->
+                            <tr>
+                                <td style='padding: 35px 30px;'>
+                                    <div style='text-align: center; margin-bottom: 20px;'>
+                                        <span style='font-size: 40px;'>🎉</span>
+                                        <h2 style='color: #0b4528; font-size: 20px; font-weight: 700; margin-top: 8px; margin-bottom: 6px;'>Welcome to the Admin Team!</h2>
+                                        <p style='color: #64748b; font-size: 13px; margin: 0;'>Official Administrator Credentials</p>
+                                    </div>
+
+                                    <p style='color: #475569; font-size: 14px; line-height: 1.6; margin: 0 0 20px;'>
+                                        Hello <strong>" . htmlspecialchars($toName ?: 'Administrator') . "</strong>,<br>
+                                        Congratulations! You have been granted administrative privileges on the <strong>Computerscience.lk LMS Platform</strong>. Use the temporary credentials below to access your administrator portal:
+                                    </p>
+
+                                    <!-- Credentials Box -->
+                                    <div style='background: #f8fafc; border: 1.5px solid #d1e7dd; border-radius: 12px; padding: 22px; margin: 25px 0;'>
+                                        <table width='100%' border='0' cellspacing='0' cellpadding='0'>
+                                            <tr>
+                                                <td style='padding: 6px 0; color: #64748b; font-size: 13px; width: 130px; font-weight: 600;'>Username / Email:</td>
+                                                <td style='padding: 6px 0; color: #1e293b; font-size: 14px; font-weight: 700;'>" . htmlspecialchars($toEmail) . "</td>
+                                            </tr>
+                                            <tr>
+                                                <td style='padding: 6px 0; color: #64748b; font-size: 13px; font-weight: 600;'>Temporary Password:</td>
+                                                <td style='padding: 6px 0;'>
+                                                    <span style='font-family: Consolas, Monaco, monospace; font-size: 17px; font-weight: 800; color: #0b4528; background: #e8f5e9; padding: 4px 10px; border-radius: 6px; border: 1px dashed #2e7d32; display: inline-block; letter-spacing: 1px;'>
+                                                        " . htmlspecialchars($tempPassword) . "
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td style='padding: 6px 0; color: #64748b; font-size: 13px; font-weight: 600;'>Assigned Role:</td>
+                                                <td style='padding: 6px 0; color: #0f5132; font-size: 13px; font-weight: 600;'>System Administrator</td>
+                                            </tr>
+                                        </table>
+                                    </div>
+
+                                    <!-- CTA Button -->
+                                    <div style='text-align: center; margin: 30px 0;'>
+                                        <a href='" . htmlspecialchars($loginUrl) . "' target='_blank' style='display: inline-block; background: linear-gradient(135deg, #0b4528 0%, #125b36 100%); color: #ffffff; font-size: 15px; font-weight: 700; text-decoration: none; padding: 14px 34px; border-radius: 50px; box-shadow: 0 4px 15px rgba(11, 69, 40, 0.35);'>
+                                            🔐 Sign In to Admin Console
+                                        </a>
+                                    </div>
+
+                                    <!-- Security Mandatory Warning -->
+                                    <div style='background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 14px 16px; border-radius: 6px; margin-top: 25px;'>
+                                        <p style='color: #664d03; font-size: 13px; margin: 0; line-height: 1.5;'>
+                                            <strong>⚠️ Mandatory Security Notice:</strong> For security compliance, you are required to change this temporary password immediately upon your first login. You will be prompted to choose a permanent, private password before accessing the admin dashboard.
+                                        </p>
+                                    </div>
+                                </td>
+                            </tr>
+                            <!-- Footer -->
+                            <tr>
+                                <td style='background-color: #f8fafc; padding: 20px 30px; border-top: 1px solid #e2e8f0; text-align: center;'>
+                                    <p style='color: #94a3b8; font-size: 12px; margin: 0; line-height: 1.5;'>
+                                        This confidential email was sent to " . htmlspecialchars($toEmail) . ".<br>
+                                        &copy; " . date('Y') . " Computerscience.lk Academy. All rights reserved.
+                                    </p>
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+            </table>
+        </body>
+        </html>
+        ";
+
+        $altBody = "Welcome to Computerscience.lk Admin Team!\n\nHello {$toName},\n\nYou have been granted administrative privileges on Computerscience.lk.\n\nLogin URL: {$loginUrl}\nEmail: {$toEmail}\nTemporary Password: {$tempPassword}\n\nSecurity Notice: You will be required to change this temporary password immediately upon your first login.\n\nComputerscience.lk Academy";
+
+        return send_system_email($toEmail, $toName, $subject, $htmlBody, $altBody);
+    }
+}
+
 if (!function_exists('test_smtp_connection')) {
     function test_smtp_connection($testEmail, $customConfig = null)
     {

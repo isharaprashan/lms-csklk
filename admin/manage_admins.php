@@ -4,7 +4,31 @@ session_set_cookie_params(['lifetime' => 0, 'path' => '/']);
 session_start();
 
 require_once __DIR__ . '/../db/db_connect.php';
+require_once __DIR__ . '/../config/mail.php';
 require_once __DIR__ . '/../lang/i18n.php';
+
+if (!function_exists('generate_admin_temp_password')) {
+    function generate_admin_temp_password($length = 10) {
+        $upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+        $lower = 'abcdefghijkmnpqrstuvwxyz';
+        $digits = '23456789';
+        $special = '!@#$%&*';
+        $all = $upper . $lower . $digits . $special;
+        $pwd = $upper[random_int(0, strlen($upper) - 1)] .
+               $lower[random_int(0, strlen($lower) - 1)] .
+               $digits[random_int(0, strlen($digits) - 1)] .
+               $special[random_int(0, strlen($special) - 1)];
+        for ($i = 4; $i < $length; $i++) {
+            $pwd .= $all[random_int(0, strlen($all) - 1)];
+        }
+        return str_shuffle($pwd);
+    }
+}
+
+// Generate CSRF token if empty
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
 
 // Detect AJAX / JSON Request
 $isJsonRequest = (
@@ -128,13 +152,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($action)) {
         if ($action === 'ADD_ADMIN' || $action === 'CREATE_ADMIN') {
             $name = trim($_POST['name'] ?? '');
             $email = trim($_POST['email'] ?? '');
-            $password = trim($_POST['password'] ?? '');
+            $raw_password = trim($_POST['password'] ?? '');
             $status = strtolower(trim($_POST['status'] ?? 'active'));
             if (!in_array($status, ['active', 'inactive', 'suspended'])) {
                 $status = 'active';
             }
 
-            if (empty($name) || empty($email) || empty($password)) {
+            if (empty($name) || empty($email)) {
                 $error_message = __('all_fields_required', 'All required fields must be filled.');
             } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
                 $error_message = __('invalid_email', 'Please provide a valid email address.');
@@ -144,17 +168,81 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($action)) {
                 if ($checkStmt->fetch()) {
                     $error_message = __('email_already_exists', 'An account with this email address already exists.');
                 } else {
-                    $passHash = password_hash($password, PASSWORD_BCRYPT);
+                    // Auto-generate secure 10-char temporary password if left blank
+                    $temp_password = !empty($raw_password) ? $raw_password : generate_admin_temp_password(10);
+                    $passHash = password_hash($temp_password, PASSWORD_BCRYPT);
                     $academic_id = 'ADMN-' . rand(100000, 999999);
                     $avatar = null;
-                    $insertStmt = $pdo->prepare("INSERT INTO users (name, email, password_hash, avatar, academic_id, role, status) VALUES (?, ?, ?, ?, ?, 'admin', ?)");
-                    $insertStmt->execute([$name, $email, $passHash, $avatar, $academic_id, $status]);
-                    $success_message = __('admin_created_success', 'Admin account created successfully!');
+                    $must_change = 1;
+                    $temp_created = date('Y-m-d H:i:s');
+
+                    $insertStmt = $pdo->prepare("INSERT INTO users (name, email, password_hash, avatar, academic_id, role, status, email_verified, must_change_password, temp_password_created_at) VALUES (?, ?, ?, ?, ?, 'admin', ?, 1, ?, ?)");
+                    $insertStmt->execute([$name, $email, $passHash, $avatar, $academic_id, $status, $must_change, $temp_created]);
+
+                    // Build Admin Login URL
+                    $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (isset($_SERVER['SERVER_PORT']) && $_SERVER['SERVER_PORT'] == 443);
+                    $protocol = $isHttps ? "https://" : "http://";
+                    $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+                    $scriptDir = str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME']));
+                    $scriptDir = rtrim($scriptDir, '/');
+                    $adminLoginUrl = $protocol . $host . ($scriptDir ? $scriptDir : '') . '/login.php';
+
+                    // Dispatch welcome credentials email via PHPMailer SMTP
+                    if (function_exists('send_admin_welcome_credentials_email')) {
+                        send_admin_welcome_credentials_email($email, $name, $temp_password, $adminLoginUrl);
+                    }
+
+                    $_SESSION['flash_temp_password'] = [
+                        'email' => $email,
+                        'name' => $name,
+                        'password' => $temp_password
+                    ];
+
+                    $success_message = str_replace(':email', $email, __('admin_credentials_dispatched', 'Admin account created successfully! Temporary credentials dispatched to :email.'));
                 }
             }
         }
 
-        // 2. EDIT_ADMIN
+        // 2. RESET_TEMP_PASSWORD / RESEND_CREDENTIALS
+        elseif ($action === 'RESET_TEMP_PASSWORD' || $action === 'RESEND_CREDENTIALS') {
+            $target_id = intval($_POST['admin_id'] ?? 0);
+
+            $targetStmt = $pdo->prepare("SELECT id, name, email, role FROM users WHERE id = ?");
+            $targetStmt->execute([$target_id]);
+            $targetUser = $targetStmt->fetch();
+
+            if (!$targetUser || $targetUser['role'] === 'super_admin') {
+                $error_message = __('cannot_modify_super_admin', 'Permission denied: Cannot modify Super Admin accounts.');
+            } else {
+                $temp_password = generate_admin_temp_password(10);
+                $passHash = password_hash($temp_password, PASSWORD_BCRYPT);
+                $temp_created = date('Y-m-d H:i:s');
+
+                $up = $pdo->prepare("UPDATE users SET password_hash = ?, must_change_password = 1, temp_password_created_at = ? WHERE id = ? AND role = 'admin'");
+                $up->execute([$passHash, $temp_created, $target_id]);
+
+                $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (isset($_SERVER['SERVER_PORT']) && $_SERVER['SERVER_PORT'] == 443);
+                $protocol = $isHttps ? "https://" : "http://";
+                $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+                $scriptDir = str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME']));
+                $scriptDir = rtrim($scriptDir, '/');
+                $adminLoginUrl = $protocol . $host . ($scriptDir ? $scriptDir : '') . '/login.php';
+
+                if (function_exists('send_admin_welcome_credentials_email')) {
+                    send_admin_welcome_credentials_email($targetUser['email'], $targetUser['name'], $temp_password, $adminLoginUrl);
+                }
+
+                $_SESSION['flash_temp_password'] = [
+                    'email' => $targetUser['email'],
+                    'name' => $targetUser['name'],
+                    'password' => $temp_password
+                ];
+
+                $success_message = str_replace(':email', $targetUser['email'], __('credentials_resent_success', 'Temporary password refreshed and welcome credentials email sent to :email.'));
+            }
+        }
+
+        // 3. EDIT_ADMIN
         elseif ($action === 'EDIT_ADMIN' || $action === 'EDIT_ADMIN_ACCOUNT') {
             $target_id = intval($_POST['admin_id'] ?? 0);
             $name = trim($_POST['name'] ?? '');
@@ -184,8 +272,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($action)) {
                 } else {
                     if (!empty($new_password)) {
                         $passHash = password_hash($new_password, PASSWORD_BCRYPT);
-                        $updateStmt = $pdo->prepare("UPDATE users SET name = ?, email = ?, status = ?, password_hash = ? WHERE id = ? AND role = 'admin'");
-                        $updateStmt->execute([$name, $email, $status, $passHash, $target_id]);
+                        $temp_created = date('Y-m-d H:i:s');
+                        $updateStmt = $pdo->prepare("UPDATE users SET name = ?, email = ?, status = ?, password_hash = ?, must_change_password = 1, temp_password_created_at = ? WHERE id = ? AND role = 'admin'");
+                        $updateStmt->execute([$name, $email, $status, $passHash, $temp_created, $target_id]);
                     } else {
                         $updateStmt = $pdo->prepare("UPDATE users SET name = ?, email = ?, status = ? WHERE id = ? AND role = 'admin'");
                         $updateStmt->execute([$name, $email, $status, $target_id]);
@@ -195,7 +284,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($action)) {
             }
         }
 
-        // 3. TOGGLE_STATUS / UPDATE_STATUS (Active <-> Inactive / Suspended)
+        // 4. TOGGLE_STATUS / UPDATE_STATUS (Active <-> Inactive / Suspended)
         elseif ($action === 'TOGGLE_STATUS' || $action === 'UPDATE_STATUS') {
             $target_id = intval($_POST['admin_id'] ?? 0);
             $requested_status = strtolower(trim($_POST['new_status'] ?? $_POST['status'] ?? ''));
@@ -224,7 +313,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($action)) {
             }
         }
 
-        // 4. DELETE_ADMIN
+        // 5. DELETE_ADMIN
         elseif ($action === 'DELETE_ADMIN' || $action === 'REMOVE_ADMIN') {
             $target_id = intval($_POST['admin_id'] ?? 0);
 
@@ -319,9 +408,71 @@ try {
             border-radius: 50%;
             border: 2px solid #a3cfbb;
         }
-        .badge-active { background-color: rgba(25, 135, 84, 0.1); color: #198754; border: 1px solid rgba(25, 135, 84, 0.3); }
-        .badge-inactive { background-color: rgba(239, 68, 68, 0.1); color: #dc2626; border: 1px solid rgba(239, 68, 68, 0.3); }
-        .badge-suspended { background-color: rgba(234, 179, 8, 0.1); color: #ca8a04; border: 1px solid rgba(234, 179, 8, 0.3); }
+        
+        /* High-Contrast Stat Icon Wrappers */
+        .stat-icon-wrapper {
+            width: 52px;
+            height: 52px;
+            border-radius: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.45rem;
+            flex-shrink: 0;
+        }
+        .stat-icon-green {
+            background-color: #e8f5e9 !important;
+            color: #0b4528 !important;
+            border: 1.5px solid #a5d6a7 !important;
+        }
+        .stat-icon-emerald {
+            background-color: #e6f4ea !important;
+            color: #137333 !important;
+            border: 1.5px solid #a8dab5 !important;
+        }
+        .stat-icon-gold {
+            background-color: #fef7e0 !important;
+            color: #b06000 !important;
+            border: 1.5px solid #f9ab00 !important;
+        }
+
+        /* High-Contrast Badges */
+        .badge-pill-custom {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 5px 12px;
+            border-radius: 50px;
+            font-size: 0.78rem;
+            font-weight: 600;
+            line-height: 1.2;
+            white-space: nowrap;
+        }
+        .badge-verified-active {
+            background-color: #e6f4ea !important;
+            color: #137333 !important;
+            border: 1px solid #34a853 !important;
+        }
+        .badge-pending-firstlogin {
+            background-color: #fef7e0 !important;
+            color: #b06000 !important;
+            border: 1px solid #f9ab00 !important;
+        }
+        .badge-status-active {
+            background-color: #e8f5e9 !important;
+            color: #0b4528 !important;
+            border: 1px solid #81c784 !important;
+        }
+        .badge-status-inactive {
+            background-color: #fce8e6 !important;
+            color: #c5221f !important;
+            border: 1px solid #f28b82 !important;
+        }
+        .badge-status-suspended {
+            background-color: #feefe3 !important;
+            color: #c2410c !important;
+            border: 1px solid #fb8c00 !important;
+        }
         
         .btn-super-green {
             background-color: #0b4528;
@@ -342,8 +493,8 @@ try {
     <div class="container py-4" style="max-width: 1140px;">
         
         <!-- Navigation Back Bar -->
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <div class="d-flex align-items-center gap-2">
+        <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+            <div class="d-flex align-items-center gap-2 flex-wrap">
                 <a href="index.php" class="btn btn-outline-success btn-sm rounded-pill px-3 fw-semibold">
                     <i class="bi bi-arrow-left me-1.5"></i> <?php echo __('back_to_dashboard', 'Back to Admin Dashboard'); ?>
                 </a>
@@ -390,6 +541,33 @@ try {
 
         <!-- System Alerts Container -->
         <div id="systemAlertsContainer">
+            <?php 
+            if (!empty($_SESSION['flash_temp_password'])): 
+                $ftp = $_SESSION['flash_temp_password'];
+                unset($_SESSION['flash_temp_password']);
+            ?>
+                <div class="alert alert-success border-success shadow-sm rounded-3 mb-4 alert-dismissible fade show" role="alert">
+                    <div class="d-flex align-items-start gap-3">
+                        <div class="fs-2 text-success"><i class="bi bi-key-fill"></i></div>
+                        <div class="flex-grow-1">
+                            <h6 class="fw-bold text-success mb-1"><?php echo __('temp_password_alert_title', '🔑 Temporary Password Generated'); ?></h6>
+                            <p class="fs-8 text-dark mb-2">
+                                Credentials dispatched to <strong><?php echo htmlspecialchars($ftp['email']); ?></strong> (<?php echo htmlspecialchars($ftp['name']); ?>). For administrative records or direct handoff, the temporary password is:
+                            </p>
+                            <div class="d-flex align-items-center gap-2 flex-wrap">
+                                <span class="font-monospace bg-white border border-success border-opacity-50 px-3 py-1.5 rounded-3 fw-bold text-success fs-7 letter-spacing-1 user-select-all" id="tempPassBadge">
+                                    <?php echo htmlspecialchars($ftp['password']); ?>
+                                </span>
+                                <button type="button" class="btn btn-sm btn-outline-success rounded-pill px-3" onclick="copyTempPass('<?php echo htmlspecialchars($ftp['password']); ?>', this)">
+                                    <i class="bi bi-clipboard me-1"></i> Copy Password
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            <?php endif; ?>
+
             <?php if (!empty($success_message)): ?>
                 <div class="alert alert-success alert-dismissible fade show border-success shadow-sm rounded-3 mb-4" role="alert">
                     <i class="bi bi-check-circle-fill me-2"></i><?php echo htmlspecialchars($success_message); ?>
@@ -409,8 +587,8 @@ try {
         <div class="row g-3 mb-4">
             <div class="col-md-4">
                 <div class="glass-card p-3 d-flex align-items-center gap-3">
-                    <div class="rounded-circle bg-success bg-opacity-10 text-success p-3 d-flex align-items-center justify-content-center" style="width: 52px; height: 52px;">
-                        <i class="bi bi-person-gear fs-3"></i>
+                    <div class="stat-icon-wrapper stat-icon-green">
+                        <i class="bi bi-people-fill"></i>
                     </div>
                     <div>
                         <div class="text-muted fs-8 fw-semibold"><?php echo __('total_admins', 'Total System Admins'); ?></div>
@@ -420,8 +598,8 @@ try {
             </div>
             <div class="col-md-4">
                 <div class="glass-card p-3 d-flex align-items-center gap-3">
-                    <div class="rounded-circle bg-success bg-opacity-15 text-success p-3 d-flex align-items-center justify-content-center" style="width: 52px; height: 52px;">
-                        <i class="bi bi-check-circle-fill fs-3"></i>
+                    <div class="stat-icon-wrapper stat-icon-emerald">
+                        <i class="bi bi-person-check-fill"></i>
                     </div>
                     <div>
                         <div class="text-muted fs-8 fw-semibold"><?php echo __('active_admins', 'Active Admins'); ?></div>
@@ -433,8 +611,8 @@ try {
             </div>
             <div class="col-md-4">
                 <div class="glass-card p-3 d-flex align-items-center gap-3">
-                    <div class="rounded-circle bg-success bg-opacity-20 text-success p-3 d-flex align-items-center justify-content-center" style="width: 52px; height: 52px;">
-                        <i class="bi bi-shield-check fs-3"></i>
+                    <div class="stat-icon-wrapper stat-icon-gold">
+                        <i class="bi bi-shield-fill-check"></i>
                     </div>
                     <div>
                         <div class="text-muted fs-8 fw-semibold"><?php echo __('super_admin_accounts', 'Super Admin Accounts'); ?></div>
@@ -467,6 +645,7 @@ try {
                                 <th scope="col" class="py-3 border-0"><?php echo __('administrator', 'Administrator'); ?></th>
                                 <th scope="col" class="py-3 border-0"><?php echo __('academic_id_and_email', 'Academic ID & Email'); ?></th>
                                 <th scope="col" class="py-3 border-0"><?php echo __('status_label', 'Status'); ?></th>
+                                <th scope="col" class="py-3 border-0">First Login</th>
                                 <th scope="col" class="py-3 border-0"><?php echo __('created_date', 'Created Date'); ?></th>
                                 <th scope="col" class="py-3 border-0 text-end"><?php echo __('actions', 'Actions'); ?></th>
                             </tr>
@@ -474,6 +653,7 @@ try {
                         <tbody>
                             <?php foreach ($admins as $admin): 
                                 $adminStatus = strtolower($admin['status'] ?? 'active');
+                                $mustChange = (int)($admin['must_change_password'] ?? 0);
                             ?>
                                 <tr>
                                     <td class="py-3">
@@ -493,40 +673,63 @@ try {
                                     </td>
                                     <td class="py-3">
                                         <?php if ($adminStatus === 'active'): ?>
-                                            <span class="badge badge-active px-2.5 py-1 rounded-pill fs-8"><i class="bi bi-check-circle-fill me-1"></i> <?php echo __('active', 'Active'); ?></span>
+                                            <span class="badge-pill-custom badge-status-active"><i class="bi bi-check-circle-fill"></i> <?php echo __('active', 'Active'); ?></span>
                                         <?php elseif ($adminStatus === 'suspended'): ?>
-                                            <span class="badge badge-suspended px-2.5 py-1 rounded-pill fs-8"><i class="bi bi-dash-circle-fill me-1"></i> <?php echo __('suspended', 'Suspended'); ?></span>
+                                            <span class="badge-pill-custom badge-status-suspended"><i class="bi bi-dash-circle-fill"></i> <?php echo __('suspended', 'Suspended'); ?></span>
                                         <?php else: ?>
-                                            <span class="badge badge-inactive px-2.5 py-1 rounded-pill fs-8"><i class="bi bi-x-circle-fill me-1"></i> <?php echo __('inactive', 'Inactive'); ?></span>
+                                            <span class="badge-pill-custom badge-status-inactive"><i class="bi bi-x-circle-fill"></i> <?php echo __('inactive', 'Inactive'); ?></span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td class="py-3">
+                                        <?php if ($mustChange === 1): ?>
+                                            <span class="badge-pill-custom badge-pending-firstlogin">
+                                                <i class="bi bi-clock-history"></i> <?php echo __('first_login_pending', 'First Login Pending'); ?>
+                                            </span>
+                                        <?php else: ?>
+                                            <span class="badge-pill-custom badge-verified-active">
+                                                <i class="bi bi-check-circle-fill"></i> <?php echo __('active_verified', 'Active / Verified'); ?>
+                                            </span>
                                         <?php endif; ?>
                                     </td>
                                     <td class="py-3 fs-8 text-secondary">
                                         <?php echo date('Y-m-d H:i', strtotime($admin['created_at'])); ?>
                                     </td>
                                     <td class="py-3 text-end">
-                                        <div class="d-flex justify-content-end gap-2">
+                                        <div class="d-inline-flex align-items-center justify-content-end gap-1.5 flex-wrap">
+                                            <!-- Resend Credentials / Reset Temp Password -->
+                                            <form action="manage_admins.php" method="POST" class="d-inline admin-action-form" onsubmit="return confirm('Generate a new temporary password and dispatch welcome credentials email to <?php echo htmlspecialchars($admin['email']); ?>?');">
+                                                <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token'] ?? ''); ?>">
+                                                <input type="hidden" name="action" value="RESET_TEMP_PASSWORD">
+                                                <input type="hidden" name="admin_id" value="<?php echo $admin['id']; ?>">
+                                                <button type="submit" class="btn btn-sm btn-outline-primary rounded-pill px-2.5 py-1 fs-8 d-inline-flex align-items-center gap-1" title="<?php echo __('reset_temp_password', 'Reset Temp Password & Resend Email'); ?>">
+                                                    <i class="bi bi-envelope-arrow-up"></i> <?php echo __('resend_welcome_email', 'Resend Email'); ?>
+                                                </button>
+                                            </form>
+
                                             <!-- Edit Button Trigger Modal -->
-                                            <button type="button" class="btn btn-sm btn-outline-success rounded-pill px-3" 
+                                            <button type="button" class="btn btn-sm btn-outline-success rounded-pill px-2.5 py-1 fs-8 d-inline-flex align-items-center gap-1" 
                                                     data-bs-toggle="modal" 
                                                     data-bs-target="#editAdminModal<?php echo $admin['id']; ?>">
-                                                <i class="bi bi-pencil-square me-1"></i> <?php echo __('edit_reset_password', 'Edit / Reset Password'); ?>
+                                                <i class="bi bi-pencil-square"></i> <?php echo __('edit_reset_password', 'Edit'); ?>
                                             </button>
 
                                             <!-- Toggle Status Form -->
                                             <form action="manage_admins.php" method="POST" class="d-inline admin-action-form">
+                                                <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token'] ?? ''); ?>">
                                                 <input type="hidden" name="action" value="TOGGLE_STATUS">
                                                 <input type="hidden" name="admin_id" value="<?php echo $admin['id']; ?>">
                                                 <input type="hidden" name="new_status" value="<?php echo ($adminStatus === 'active') ? 'inactive' : 'active'; ?>">
-                                                <button type="submit" class="btn btn-sm btn-outline-<?php echo ($adminStatus === 'active') ? 'warning' : 'success'; ?> rounded-pill px-3">
-                                                    <i class="bi bi-power me-1"></i> <?php echo ($adminStatus === 'active') ? __('deactivate', 'Deactivate') : __('activate', 'Activate'); ?>
+                                                <button type="submit" class="btn btn-sm btn-outline-<?php echo ($adminStatus === 'active') ? 'warning' : 'success'; ?> rounded-pill px-2.5 py-1 fs-8 d-inline-flex align-items-center gap-1">
+                                                    <i class="bi bi-power"></i> <?php echo ($adminStatus === 'active') ? __('deactivate', 'Deactivate') : __('activate', 'Activate'); ?>
                                                 </button>
                                             </form>
 
                                             <!-- Delete Form -->
                                             <form action="manage_admins.php" method="POST" class="d-inline admin-action-form" onsubmit="return confirm('<?php echo htmlspecialchars(__('confirm_delete_admin', 'Are you sure you want to delete this admin account?'), ENT_QUOTES); ?>');">
+                                                <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token'] ?? ''); ?>">
                                                 <input type="hidden" name="action" value="DELETE_ADMIN">
                                                 <input type="hidden" name="admin_id" value="<?php echo $admin['id']; ?>">
-                                                <button type="submit" class="btn btn-sm btn-outline-danger rounded-pill px-2.5" title="Delete Admin">
+                                                <button type="submit" class="btn btn-sm btn-outline-danger rounded-pill px-2 py-1 fs-8 d-inline-flex align-items-center justify-content-center" title="Delete Admin">
                                                     <i class="bi bi-trash-fill"></i>
                                                 </button>
                                             </form>
@@ -547,6 +750,7 @@ try {
         <div class="modal-dialog">
             <div class="modal-content">
                 <form action="manage_admins.php" method="POST" id="createAdminForm" class="admin-action-form">
+                    <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token'] ?? ''); ?>">
                     <input type="hidden" name="action" value="ADD_ADMIN">
                     <div class="modal-header text-white" style="background-color: #0b4528;">
                         <h5 class="modal-title fw-bold" id="createAdminModalLabel">
@@ -564,8 +768,14 @@ try {
                             <input type="email" name="email" class="form-control" placeholder="<?php echo __('placeholder_email', 'e.g. admin@computerscience.lk'); ?>" required>
                         </div>
                         <div class="mb-3">
-                            <label class="form-label fw-semibold text-dark fs-7"><?php echo __('password', 'Password'); ?></label>
-                            <input type="password" name="password" class="form-control" placeholder="<?php echo __('placeholder_password', 'Minimum 6 characters'); ?>" required>
+                            <label class="form-label fw-semibold text-dark fs-7"><?php echo __('temp_password_label', 'Temporary Password'); ?></label>
+                            <div class="input-group">
+                                <input type="text" name="password" id="createAdminPassword" class="form-control font-monospace" placeholder="Leave blank to auto-generate">
+                                <button class="btn btn-outline-secondary btn-sm px-3" type="button" onclick="generateRandomTempPassword('createAdminPassword')">
+                                    <i class="bi bi-magic me-1"></i> Auto
+                                </button>
+                            </div>
+                            <div class="form-text fs-9 text-muted"><i class="bi bi-info-circle me-1"></i> <?php echo __('temp_password_hint', 'Leave blank to auto-generate a secure 10-character temporary password.'); ?></div>
                         </div>
                         <div class="mb-3">
                             <label class="form-label fw-semibold text-dark fs-7"><?php echo __('account_status', 'Account Status'); ?></label>
@@ -593,6 +803,7 @@ try {
             <div class="modal-dialog">
                 <div class="modal-content">
                     <form action="manage_admins.php" method="POST" class="admin-action-form">
+                        <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token'] ?? ''); ?>">
                         <input type="hidden" name="action" value="EDIT_ADMIN">
                         <input type="hidden" name="admin_id" value="<?php echo $admin['id']; ?>">
                         <div class="modal-header text-white" style="background-color: #0b4528;">
@@ -621,6 +832,7 @@ try {
                             <div class="mb-3">
                                 <label class="form-label fw-semibold text-dark fs-7"><?php echo __('reset_password_optional', 'Reset Password (Optional)'); ?></label>
                                 <input type="password" name="new_password" class="form-control" placeholder="<?php echo __('placeholder_leave_blank', 'Leave blank to keep existing password'); ?>">
+                                <div class="form-text fs-9 text-muted">Updating this will force the admin to set a new password upon login.</div>
                             </div>
                         </div>
                         <div class="modal-footer">
@@ -635,5 +847,34 @@ try {
 
     <!-- Local Bootstrap 5 Bundle JS -->
     <script src="assets/js/bootstrap.bundle.min.js"></script>
+    <script>
+        function generateRandomTempPassword(targetInputId) {
+            const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%&*';
+            let res = '';
+            for (let i = 0; i < 10; i++) {
+                res += chars.charAt(Math.floor(Math.random() * chars.length));
+            }
+            const input = document.getElementById(targetInputId);
+            if (input) {
+                input.value = res;
+            }
+        }
+
+        function copyTempPass(text, btn) {
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(text).then(() => {
+                    const original = btn.innerHTML;
+                    btn.innerHTML = '<i class="bi bi-check-lg me-1"></i> Copied!';
+                    btn.classList.remove('btn-outline-success');
+                    btn.classList.add('btn-success', 'text-white');
+                    setTimeout(() => {
+                        btn.innerHTML = original;
+                        btn.classList.remove('btn-success', 'text-white');
+                        btn.classList.add('btn-outline-success');
+                    }, 2500);
+                });
+            }
+        }
+    </script>
 </body>
 </html>
