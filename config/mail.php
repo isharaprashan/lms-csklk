@@ -521,3 +521,114 @@ if (!function_exists('test_smtp_connection')) {
         return $result;
     }
 }
+
+if (!function_exists('send_admin_password_reset_email')) {
+    function send_admin_password_reset_email($toEmail, $toName, $resetLink, $role = 'admin', $expiresMinutes = 20, $ipAddress = null)
+    {
+        $roleLabel = ($role === 'super_admin') ? 'Super Administrator' : 'Administrator';
+        $siteName = 'Computerscience.lk';
+        $subject = "🔒 Security Alert: Admin Password Reset Request - {$siteName}";
+        $reqTime = date('Y-m-d H:i:s T');
+        $clientIp = $ipAddress ?: ($_SERVER['REMOTE_ADDR'] ?? 'Unknown IP');
+
+        $htmlBody = "
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset='UTF-8'>
+            <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+            <title>Admin Password Reset Request</title>
+        </head>
+        <body style='margin: 0; padding: 0; background-color: #0b1329; font-family: -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif;'>
+            <table width='100%' border='0' cellspacing='0' cellpadding='0' style='background-color: #0b1329; padding: 35px 12px;'>
+                <tr>
+                    <td align='center'>
+                        <table width='100%' max-width='600' border='0' cellspacing='0' cellpadding='0' style='max-width: 600px; background-color: #ffffff; border-radius: 18px; overflow: hidden; box-shadow: 0 20px 45px rgba(0,0,0,0.35); border: 1px solid #1e293b;'>
+                            <!-- Header -->
+                            <tr>
+                                <td style='background: linear-gradient(135deg, #052014 0%, #0b4528 50%, #125b36 100%); padding: 32px 28px; text-align: center;'>
+                                    <div style='display: inline-block; background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.25); border-radius: 50px; padding: 5px 16px; margin-bottom: 12px;'>
+                                        <span style='color: #ffffff; font-size: 11px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase;'>🔒 Security & Access Control</span>
+                                    </div>
+                                    <h1 style='color: #ffffff; font-size: 23px; font-weight: 800; margin: 0; letter-spacing: 0.5px;'>{$siteName}</h1>
+                                    <p style='color: rgba(255,255,255,0.8); font-size: 13px; margin: 6px 0 0; font-weight: 500;'>Management Console & Administrative Security</p>
+                                </td>
+                            </tr>
+                            <!-- Body -->
+                            <tr>
+                                <td style='padding: 38px 32px; background-color: #ffffff;'>
+                                    <div style='display: flex; align-items: center; margin-bottom: 16px;'>
+                                        <span style='display: inline-block; background-color: #e6f4ea; color: #137333; border: 1px solid #34a853; font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 20px; text-transform: uppercase;'>
+                                            " . htmlspecialchars($roleLabel) . " Account
+                                        </span>
+                                    </div>
+
+                                    <h2 style='color: #0f172a; font-size: 20px; font-weight: 700; margin-top: 0; margin-bottom: 12px;'>Password Reset Request</h2>
+                                    <p style='color: #334155; font-size: 14px; line-height: 1.65; margin: 0 0 20px;'>
+                                        Hello <strong>" . htmlspecialchars($toName ?: 'Administrator') . "</strong>,<br>
+                                        We received an administrative request to reset the access credentials for your <strong>" . htmlspecialchars($roleLabel) . "</strong> account on <strong>{$siteName}</strong>.
+                                    </p>
+
+                                    <!-- Reset CTA Button -->
+                                    <div style='text-align: center; margin: 30px 0;'>
+                                        <a href='" . htmlspecialchars($resetLink) . "' style='background: linear-gradient(135deg, #0b4528 0%, #125b36 100%); color: #ffffff; text-decoration: none; padding: 14px 34px; border-radius: 50px; font-weight: 700; font-size: 15px; display: inline-block; box-shadow: 0 8px 20px rgba(11,69,40,0.3); letter-spacing: 0.3px;'>
+                                            🔑 Reset Admin Password
+                                        </a>
+                                    </div>
+
+                                    <!-- Metadata & Expiry Box -->
+                                    <div style='background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px 20px; margin: 24px 0; font-size: 13px; color: #475569;'>
+                                        <table width='100%' border='0' cellspacing='0' cellpadding='4'>
+                                            <tr>
+                                                <td width='40%' style='color: #64748b; font-weight: 600;'>⏱ Token Expiration:</td>
+                                                <td width='60%' style='color: #0f172a; font-weight: 700;'>" . intval($expiresMinutes) . " Minutes</td>
+                                            </tr>
+                                            <tr>
+                                                <td style='color: #64748b; font-weight: 600;'>🌐 Requested From IP:</td>
+                                                <td style='color: #0f172a; font-family: Consolas, monospace;'>" . htmlspecialchars($clientIp) . "</td>
+                                            </tr>
+                                            <tr>
+                                                <td style='color: #64748b; font-weight: 600;'>📅 Timestamp:</td>
+                                                <td style='color: #0f172a;'>" . htmlspecialchars($reqTime) . "</td>
+                                            </tr>
+                                        </table>
+                                    </div>
+
+                                    <!-- Security Advisory Alert -->
+                                    <div style='background-color: #fef2f2; border-left: 4px solid #ef4444; border-radius: 8px; padding: 14px 18px; margin: 24px 0;'>
+                                        <p style='color: #991b1b; font-size: 13px; margin: 0; line-height: 1.5;'>
+                                            <strong>⚠️ Security Advisory:</strong> If you did not initiate this password reset, your administrator credentials may be under targeted probing. Please notify the <strong>Super Administrator</strong> immediately and audit your account activity.
+                                        </p>
+                                    </div>
+
+                                    <!-- Plain Link Fallback -->
+                                    <p style='color: #64748b; font-size: 12px; line-height: 1.6; margin: 24px 0 0;'>
+                                        If the button above does not work, copy and paste the following URL into your browser's address bar:<br>
+                                        <a href='" . htmlspecialchars($resetLink) . "' style='color: #0b4528; word-break: break-all; font-family: Consolas, Monaco, monospace; font-size: 11px;'>
+                                            " . htmlspecialchars($resetLink) . "
+                                        </a>
+                                    </p>
+                                </td>
+                            </tr>
+                            <!-- Footer -->
+                            <tr>
+                                <td style='background-color: #f8fafc; padding: 22px 30px; border-top: 1px solid #e2e8f0; text-align: center;'>
+                                    <p style='color: #94a3b8; font-size: 12px; margin: 0; line-height: 1.6;'>
+                                        This is a privileged security notification delivered to " . htmlspecialchars($toEmail) . ".<br>
+                                        &copy; " . date('Y') . " {$siteName} Enterprise Security & Governance.
+                                    </p>
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+            </table>
+        </body>
+        </html>
+        ";
+
+        $altBody = "Security Alert: Admin Password Reset Request - {$siteName}\n\nHello {$toName},\n\nA password reset request was initiated for your {$roleLabel} account.\n\nReset Link: {$resetLink}\n\nValid for {$expiresMinutes} minutes.\nRequested From IP: {$clientIp}\nTimestamp: {$reqTime}\n\nIf you did not request this, please contact Super Admin immediately.\n\n{$siteName}";
+
+        return send_system_email($toEmail, $toName, $subject, $htmlBody, $altBody);
+    }
+}

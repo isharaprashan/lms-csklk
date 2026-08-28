@@ -1,6 +1,9 @@
 <?php
 require_once __DIR__ . '/session.php';
 
+// Set application timezone
+date_default_timezone_set('Asia/Colombo');
+
 // Database Configuration
 define('DB_HOST', '127.0.0.1');
 define('DB_USER', 'root');
@@ -806,6 +809,23 @@ function ensureMigrations($pdo)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;");
     }
 
+    // 3.19 Ensure admin_password_resets table exists (Admin & Super Admin Password Reset tokens)
+    try {
+        $pdo->query("SELECT id FROM admin_password_resets LIMIT 1");
+    } catch (PDOException $e) {
+        $pdo->exec("CREATE TABLE IF NOT EXISTS `admin_password_resets` (
+            `id` INT AUTO_INCREMENT PRIMARY KEY,
+            `email` VARCHAR(255) NOT NULL,
+            `token` VARCHAR(255) NOT NULL,
+            `role` ENUM('admin', 'super_admin') NOT NULL,
+            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            `expires_at` DATETIME NOT NULL,
+            `is_used` TINYINT(1) DEFAULT 0,
+            INDEX (`email`),
+            INDEX (`token`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;");
+    }
+
     // 7. Seed primary Super Admin account if not exists
     ensureSuperAdminExists($pdo);
 }
@@ -1048,6 +1068,19 @@ function initializeDatabase()
                 `token` VARCHAR(255) NOT NULL,
                 `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 `expires_at` DATETIME NOT NULL,
+                INDEX (`email`),
+                INDEX (`token`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;",
+
+            // Admin Password Resets table
+            "CREATE TABLE IF NOT EXISTS `admin_password_resets` (
+                `id` INT AUTO_INCREMENT PRIMARY KEY,
+                `email` VARCHAR(255) NOT NULL,
+                `token` VARCHAR(255) NOT NULL,
+                `role` ENUM('admin', 'super_admin') NOT NULL,
+                `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                `expires_at` DATETIME NOT NULL,
+                `is_used` TINYINT(1) DEFAULT 0,
                 INDEX (`email`),
                 INDEX (`token`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;"

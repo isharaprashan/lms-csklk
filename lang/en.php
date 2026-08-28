@@ -567,10 +567,24 @@ return [
     'current_temp_password' => 'Current Temporary Password',
     'new_permanent_password' => 'New Permanent Password',
     'confirm_permanent_password' => 'Confirm New Permanent Password',
-    'update_permanent_password_btn' => 'Set Permanent Password & Enter Dashboard',
-    'password_must_not_match_temp' => 'Your new password cannot be the same as your temporary password.',
-    'incorrect_temp_password' => 'The current temporary password you entered is incorrect.',
     'password_change_success' => 'Password updated successfully! Welcome to your administrator dashboard.',
-    'temp_password_alert_title' => '🔑 Temporary Password Generated'
+    'temp_password_alert_title' => '🔑 Temporary Password Generated',
+
+    // Admin Dedicated Forgot / Reset Password Portal
+    'admin_forgot_password_title' => 'Admin Password Recovery',
+    'admin_forgot_password_subtitle' => 'Administrative credential recovery for authorized System and Super Administrators.',
+    'admin_reset_link_sent_msg' => 'If an authorized administrator account is associated with this email, a secure password reset link has been dispatched. Please inspect your inbox and spam filters.',
+    'admin_reset_password_title' => 'Set New Admin Password',
+    'admin_reset_password_subtitle' => 'Configure a strong, cryptographically secure password for your administrative account.',
+    'admin_password_updated_success' => 'Administrator password updated successfully. Please sign in with your new credentials.',
+    'admin_token_invalid_or_expired' => 'This password reset link is invalid, has expired (valid for 20 minutes), or has already been used.',
+    'admin_token_invalid_desc' => 'For administrative security, reset tokens are strictly limited to single-use and expire within 20 minutes of dispatch. Please generate a new request.',
+    'request_new_admin_reset_link' => 'Request New Admin Reset Link',
+    'back_to_admin_login' => 'Back to Admin Login',
+    'admin_security_portal' => 'Enterprise Admin Security',
+    'forgot_admin_password_link' => 'Forgot Admin Password?',
+    'admin_email_label' => 'Registered Admin Email',
+    'send_admin_reset_link_btn' => 'Send Secure Admin Reset Link',
+    'admin_access_restricted_notice' => 'Restricted Area: Access is strictly monitored and limited to verified administrative personnel.'
 ];
 ?>

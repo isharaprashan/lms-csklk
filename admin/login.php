@@ -11,6 +11,14 @@ if (isset($_SESSION['user_id']) && in_array($_SESSION['user_role'] ?? '', ['admi
 }
 
 $error = '';
+$success = '';
+
+if (isset($_SESSION['login_flash_success'])) {
+    $success = $_SESSION['login_flash_success'];
+    unset($_SESSION['login_flash_success']);
+} elseif (isset($_GET['reset']) && $_GET['reset'] === 'success') {
+    $success = function_exists('__') ? __('admin_password_updated_success', 'Administrator password updated successfully. Please sign in with your new credentials.') : 'Administrator password updated successfully. Please sign in with your new credentials.';
+}
 
 if (isset($_GET['error'])) {
     $errCode = $_GET['error'];
@@ -198,6 +206,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
       <?php endif; ?>
 
+      <?php if (!empty($success)): ?>
+        <div class="alert alert-success alert-dismissible fade show" role="alert">
+          <i class="bi bi-check-circle-fill me-2"></i>
+          <?php echo htmlspecialchars($success); ?>
+          <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+      <?php endif; ?>
+
       <!-- Login Form -->
       <form action="login.php" method="POST">
         <div class="mb-3">
@@ -211,7 +227,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <div class="mb-4">
           <div class="d-flex justify-content-between align-items-center mb-1">
             <label for="password" class="form-label fw-semibold text-secondary mb-0"><?php echo __('password', 'Password'); ?></label>
-            <a href="../forgot_password.php" class="text-decoration-none fs-8" style="color: #0f4c81; font-weight: 500;"><?php echo __('forgot_password_link', 'Forgot Password?'); ?></a>
+            <a href="forgot_password.php" class="text-decoration-none fs-8" style="color: #0f4c81; font-weight: 500;"><?php echo __('forgot_admin_password_link', 'Forgot Admin Password?'); ?></a>
           </div>
           <div class="input-group">
             <span class="input-group-text bg-light border-end-0"><i class="bi bi-lock text-muted"></i></span>

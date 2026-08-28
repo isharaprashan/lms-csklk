@@ -57,15 +57,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if ($user && ($user['status'] ?? 'active') !== 'inactive') {
                         // Generate secure 64-char token (32 random bytes)
                         $token = bin2hex(random_bytes(32));
-                        $expiresAt = date('Y-m-d H:i:s', strtotime('+30 minutes'));
-
                         // Delete any prior unused reset tokens for this email
                         $delStmt = $pdo->prepare("DELETE FROM password_resets WHERE email = ?");
                         $delStmt->execute([$user['email']]);
 
-                        // Store new token
-                        $insStmt = $pdo->prepare("INSERT INTO password_resets (email, token, expires_at) VALUES (?, ?, ?)");
-                        $insStmt->execute([$user['email'], $token, $expiresAt]);
+                        // Store new token (30 minutes expiration)
+                        $insStmt = $pdo->prepare("INSERT INTO password_resets (email, token, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 30 MINUTE))");
+                        $insStmt->execute([$user['email'], $token]);
 
                         // Build dynamic absolute reset URL
                         $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (isset($_SERVER['SERVER_PORT']) && $_SERVER['SERVER_PORT'] == 443);
