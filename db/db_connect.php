@@ -1,34 +1,61 @@
 <?php
 require_once __DIR__ . '/session.php';
+require_once __DIR__ . '/../config/config.php';
 
 // Set application timezone
 date_default_timezone_set('Asia/Colombo');
 
 // Database Configuration
-define('DB_HOST', '127.0.0.1');
+define('DB_HOST', 'localhost');
 define('DB_USER', 'root');
 define('DB_PASS', '');
 define('DB_NAME', 'computerscience_lms');
 
 function getDBConnection()
 {
+    static $pdo = null;
+
+    if ($pdo !== null) {
+        return $pdo;
+    }
+
     try {
         // Try connecting to the database directly
         $dsn = "mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=utf8mb4";
-        $pdo = new PDO($dsn, DB_USER, DB_PASS, [
-            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-            PDO::ATTR_EMULATE_PREPARES => false,
-        ]);
+        try {
+            $pdo = new PDO($dsn, DB_USER, DB_PASS, [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                PDO::ATTR_EMULATE_PREPARES => false,
+            ]);
+        } catch (PDOException $pe) {
+            // Fallback to alternate host (127.0.0.1 <-> localhost) if needed
+            $altHost = (DB_HOST === 'localhost') ? '127.0.0.1' : 'localhost';
+            $altDsn = "mysql:host=" . $altHost . ";dbname=" . DB_NAME . ";charset=utf8mb4";
+            $pdo = new PDO($altDsn, DB_USER, DB_PASS, [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                PDO::ATTR_EMULATE_PREPARES => false,
+            ]);
+        }
 
-        // Ensure role, tutor_id and other updates exist
-        ensureMigrations($pdo);
+        // Run migrations only if not recently validated, avoiding heavy 85+ query overhead on every connection
+        static $migrationsRun = false;
+        if (!$migrationsRun) {
+            $migrationsRun = true;
+            $migrationLock = __DIR__ . '/.migration_check_lock';
+            if (!file_exists($migrationLock) || (time() - filemtime($migrationLock) > 21600)) {
+                ensureMigrations($pdo);
+                @touch($migrationLock);
+            }
+        }
 
         return $pdo;
     } catch (PDOException $e) {
         // If database doesn't exist, we connect to host and initialize it
         if ($e->getCode() === 1049 || strpos($e->getMessage(), 'Unknown database') !== false) {
-            return initializeDatabase();
+            $pdo = initializeDatabase();
+            return $pdo;
         }
         throw $e;
     }
@@ -508,6 +535,18 @@ function ensureMigrations($pdo)
     } catch (PDOException $e) {
     }
 
+    // Ensure quizzes are strictly MCQ only
+    try {
+        $pdo->exec("UPDATE quizzes SET question_type = 'mcq', 
+            option_1 = IF(option_1 IS NULL OR option_1 = '', 'Option A', option_1), 
+            option_2 = IF(option_2 IS NULL OR option_2 = '', 'Option B', option_2), 
+            option_3 = IF(option_3 IS NULL OR option_3 = '', 'Option C', option_3), 
+            option_4 = IF(option_4 IS NULL OR option_4 = '', 'Option D', option_4), 
+            answer_index = IF(answer_index < 0, 0, answer_index) 
+            WHERE question_type != 'mcq' OR question_type IS NULL");
+    } catch (PDOException $e) {
+    }
+
     // Ensure legacy courses without status are set to approved
     try {
         $pdo->exec("UPDATE courses SET status = 'approved' WHERE status IS NULL");
@@ -604,6 +643,93 @@ function ensureMigrations($pdo)
         $pdo->exec("ALTER TABLE quiz_results ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP");
     }
 
+    // 3.11 Ensure lesson_assignments and assignment_submissions tables exist
+    try {
+        $pdo->query("SELECT id FROM lesson_assignments LIMIT 1");
+    } catch (PDOException $e) {
+        $pdo->exec("CREATE TABLE IF NOT EXISTS `lesson_assignments` (
+            `id` INT AUTO_INCREMENT PRIMARY KEY,
+            `lesson_id` VARCHAR(50) NOT NULL UNIQUE,
+            `course_id` VARCHAR(50) NOT NULL,
+            `title` VARCHAR(255) NOT NULL,
+            `instructions` TEXT NULL,
+            `attachment_path` VARCHAR(255) NULL,
+            `attachment_name` VARCHAR(255) NULL,
+            `attachment_size` INT NULL,
+            `due_date` DATETIME NULL,
+            `created_by` INT NOT NULL,
+            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX (`course_id`),
+            INDEX (`lesson_id`),
+            FOREIGN KEY (`lesson_id`) REFERENCES `lessons`(`id`) ON DELETE CASCADE,
+            FOREIGN KEY (`course_id`) REFERENCES `courses`(`id`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;");
+    }
+
+    try {
+        $pdo->query("SELECT id FROM assignment_submissions LIMIT 1");
+    } catch (PDOException $e) {
+        $pdo->exec("CREATE TABLE IF NOT EXISTS `assignment_submissions` (
+            `id` INT AUTO_INCREMENT PRIMARY KEY,
+            `assignment_id` INT NOT NULL,
+            `lesson_id` VARCHAR(50) NOT NULL,
+            `course_id` VARCHAR(50) NOT NULL,
+            `user_id` INT NOT NULL,
+            `submission_file` VARCHAR(255) NOT NULL,
+            `file_name` VARCHAR(255) NOT NULL,
+            `file_size` INT NOT NULL,
+            `student_notes` TEXT NULL,
+            `status` VARCHAR(20) DEFAULT 'submitted',
+            `grade` DECIMAL(5,2) NULL,
+            `feedback` TEXT NULL,
+            `graded_at` DATETIME NULL,
+            `graded_by` INT NULL,
+            `submitted_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY `unique_student_assignment` (`assignment_id`, `user_id`),
+            INDEX (`course_id`),
+            INDEX (`lesson_id`),
+            INDEX (`user_id`),
+            FOREIGN KEY (`assignment_id`) REFERENCES `lesson_assignments`(`id`) ON DELETE CASCADE,
+            FOREIGN KEY (`lesson_id`) REFERENCES `lessons`(`id`) ON DELETE CASCADE,
+            FOREIGN KEY (`course_id`) REFERENCES `courses`(`id`) ON DELETE CASCADE,
+            FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;");
+    }
+
+    // Ensure grading columns exist on assignment_submissions
+    try {
+        $pdo->query("SELECT grade FROM assignment_submissions LIMIT 1");
+    } catch (PDOException $e) {
+        $pdo->exec("ALTER TABLE assignment_submissions ADD COLUMN grade DECIMAL(5,2) NULL AFTER status");
+    }
+    try {
+        $pdo->query("SELECT feedback FROM assignment_submissions LIMIT 1");
+    } catch (PDOException $e) {
+        $pdo->exec("ALTER TABLE assignment_submissions ADD COLUMN feedback TEXT NULL AFTER grade");
+    }
+    try {
+        $pdo->query("SELECT graded_at FROM assignment_submissions LIMIT 1");
+    } catch (PDOException $e) {
+        $pdo->exec("ALTER TABLE assignment_submissions ADD COLUMN graded_at DATETIME NULL AFTER feedback");
+    }
+    try {
+        $pdo->query("SELECT graded_by FROM assignment_submissions LIMIT 1");
+    } catch (PDOException $e) {
+        $pdo->exec("ALTER TABLE assignment_submissions ADD COLUMN graded_by INT NULL AFTER graded_at");
+    }
+
+    // Ensure upload directories exist
+    if (function_exists('root_path')) {
+        $tasksDir = root_path('uploads/assignments/tasks/');
+        if (!file_exists($tasksDir))
+            @mkdir($tasksDir, 0755, true);
+        $subsDir = root_path('uploads/assignments/submissions/');
+        if (!file_exists($subsDir))
+            @mkdir($subsDir, 0755, true);
+    }
+
     // 3.8 Ensure hero_settings table exists with target design columns
     try {
         $pdo->query("SELECT id FROM hero_settings LIMIT 1");
@@ -658,13 +784,13 @@ function ensureMigrations($pdo)
 
     // Ensure social media URL columns exist in hero_settings
     $social_columns = [
-        'facebook_url'  => "VARCHAR(255) DEFAULT '#'",
-        'twitter_url'   => "VARCHAR(255) DEFAULT '#'",
-        'telegram_url'  => "VARCHAR(255) DEFAULT '#'",
+        'facebook_url' => "VARCHAR(255) DEFAULT '#'",
+        'twitter_url' => "VARCHAR(255) DEFAULT '#'",
+        'telegram_url' => "VARCHAR(255) DEFAULT '#'",
         'instagram_url' => "VARCHAR(255) DEFAULT '#'",
-        'youtube_url'   => "VARCHAR(255) NULL",
-        'linkedin_url'  => "VARCHAR(255) NULL",
-        'whatsapp_url'  => "VARCHAR(255) NULL"
+        'youtube_url' => "VARCHAR(255) NULL",
+        'linkedin_url' => "VARCHAR(255) NULL",
+        'whatsapp_url' => "VARCHAR(255) NULL"
     ];
     foreach ($social_columns as $col => $col_def) {
         try {
@@ -678,6 +804,131 @@ function ensureMigrations($pdo)
     if ($heroCheck->fetchColumn() == 0) {
         $pdo->exec("INSERT INTO hero_settings (id, title, description, button_text, button_url, secondary_button_text, secondary_button_url, phone_number, enrolled_students_count, bg_image_1, bg_image_2, bg_image_3, hero_image_path, hero_image_alt, facebook_url, twitter_url, telegram_url, instagram_url, youtube_url, linkedin_url, whatsapp_url) VALUES
         (1, 'Enhance Your Skills With Our Online Courses', 'Dive into a World of Knowledge with Our Comprehensive and Engaging Online Courses Designed for Skill Enhancement', 'Apply Now', '#courses-section', 'Know More', '#courses-section', 'Call Us : 011 234 5678', '30K Enrolled Students', NULL, NULL, NULL, NULL, 'Student with books', '#', '#', '#', '#', NULL, NULL, NULL)");
+    }
+
+    // 3.8B Ensure about_settings table exists
+    try {
+        $pdo->query("SELECT id FROM about_settings LIMIT 1");
+    } catch (PDOException $e) {
+        $pdo->exec("CREATE TABLE IF NOT EXISTS `about_settings` (
+            `id` INT PRIMARY KEY,
+            `badge_text` VARCHAR(100) DEFAULT 'About Computerscience.lk',
+            `title` VARCHAR(255) DEFAULT 'Empowering the Next Generation of Tech Leaders & Innovators',
+            `subtitle` TEXT NULL,
+            `bg_image` VARCHAR(255) DEFAULT 'uploads/about/default_about_bg.jpg',
+            `overlay_fade_style` VARCHAR(50) DEFAULT 'dark_vignette',
+            `overlay_opacity` DECIMAL(3,2) DEFAULT 0.65,
+            `story_badge` VARCHAR(100) DEFAULT 'Our Heritage & Journey',
+            `story_title` VARCHAR(255) DEFAULT 'Bridging Higher Academics with Real-World Software Engineering',
+            `story_content` TEXT NULL,
+            `mission_title` VARCHAR(150) DEFAULT 'Our Mission',
+            `mission_content` TEXT NULL,
+            `vision_title` VARCHAR(150) DEFAULT 'Our Vision',
+            `vision_content` TEXT NULL,
+            `stat_1_number` VARCHAR(50) DEFAULT '30,000+',
+            `stat_1_label` VARCHAR(100) DEFAULT 'Enrolled Students',
+            `stat_2_number` VARCHAR(50) DEFAULT '120+',
+            `stat_2_label` VARCHAR(100) DEFAULT 'Certified Courses',
+            `stat_3_number` VARCHAR(50) DEFAULT '50+',
+            `stat_3_label` VARCHAR(100) DEFAULT 'Expert Mentors',
+            `stat_4_number` VARCHAR(50) DEFAULT '98.5%',
+            `stat_4_label` VARCHAR(100) DEFAULT 'Student Satisfaction',
+            `pillar_1_icon` VARCHAR(50) DEFAULT 'bi-cpu',
+            `pillar_1_title` VARCHAR(100) DEFAULT 'Industry-Aligned Curricula',
+            `pillar_1_desc` VARCHAR(255) DEFAULT 'Engineered alongside software architects to match cutting-edge industry demands.',
+            `pillar_2_icon` VARCHAR(50) DEFAULT 'bi-award-fill',
+            `pillar_2_title` VARCHAR(100) DEFAULT 'Recognized Certificates',
+            `pillar_2_desc` VARCHAR(255) DEFAULT 'Earn verifiable digital credentials and embossed hard-copy diplomas delivered island-wide.',
+            `pillar_3_icon` VARCHAR(50) DEFAULT 'bi-camera-video-fill',
+            `pillar_3_title` VARCHAR(100) DEFAULT 'Live & Interactive Classes',
+            `pillar_3_desc` VARCHAR(255) DEFAULT 'Real-time lecture streams with hands-on coding demonstrations and instant tutor Q&A.',
+            `pillar_4_icon` VARCHAR(50) DEFAULT 'bi-people-fill',
+            `pillar_4_title` VARCHAR(100) DEFAULT 'Supportive Community',
+            `pillar_4_desc` VARCHAR(255) DEFAULT 'Join peer collaborative study groups, assignment code reviews, and career guidance.',
+            `contact_email` VARCHAR(100) DEFAULT 'info@computerscience.lk',
+            `contact_phone` VARCHAR(100) DEFAULT '011 234 5678',
+            `contact_address` VARCHAR(255) DEFAULT 'Colombo, Western Province, Sri Lanka',
+            `contact_hours` VARCHAR(100) DEFAULT 'Mon - Sat: 8.30 AM - 6.00 PM',
+            `cta_title` VARCHAR(255) DEFAULT 'Start Your Computing Journey Today',
+            `cta_desc` VARCHAR(255) DEFAULT 'Explore our comprehensive course catalog, build production-ready projects, and achieve recognized certification.',
+            `cta_btn_text` VARCHAR(100) DEFAULT 'Browse Courses',
+            `cta_btn_url` VARCHAR(255) DEFAULT 'index.php#courses-section',
+            `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;");
+    }
+
+    // Ensure all columns exist in about_settings if table was previously created with fewer columns
+    try {
+        $colStmt = $pdo->query("SHOW COLUMNS FROM about_settings");
+        if ($colStmt) {
+            $existingCols = $colStmt->fetchAll(PDO::FETCH_COLUMN, 0);
+            if (!in_array('bg_image', $existingCols)) {
+                $pdo->exec("ALTER TABLE about_settings ADD COLUMN bg_image VARCHAR(255) DEFAULT 'uploads/about/default_about_bg.jpg' AFTER subtitle");
+            }
+            if (!in_array('overlay_fade_style', $existingCols)) {
+                $pdo->exec("ALTER TABLE about_settings ADD COLUMN overlay_fade_style VARCHAR(50) DEFAULT 'dark_vignette' AFTER bg_image");
+            }
+            if (!in_array('overlay_opacity', $existingCols)) {
+                $pdo->exec("ALTER TABLE about_settings ADD COLUMN overlay_opacity DECIMAL(3,2) DEFAULT 0.65 AFTER overlay_fade_style");
+            }
+        }
+    } catch (PDOException $ex) {
+    }
+
+    try {
+        $aboutCheck = $pdo->query("SELECT COUNT(*) FROM about_settings");
+        if ($aboutCheck && $aboutCheck->fetchColumn() == 0) {
+            $stmtInitAbout = $pdo->prepare("INSERT INTO about_settings (
+                id, badge_text, title, subtitle, bg_image, overlay_fade_style, overlay_opacity,
+                story_badge, story_title, story_content, mission_title, mission_content, vision_title, vision_content,
+                stat_1_number, stat_1_label, stat_2_number, stat_2_label, stat_3_number, stat_3_label, stat_4_number, stat_4_label,
+                pillar_1_icon, pillar_1_title, pillar_1_desc,
+                pillar_2_icon, pillar_2_title, pillar_2_desc,
+                pillar_3_icon, pillar_3_title, pillar_3_desc,
+                pillar_4_icon, pillar_4_title, pillar_4_desc,
+                contact_email, contact_phone, contact_address, contact_hours,
+                cta_title, cta_desc, cta_btn_text, cta_btn_url
+            ) VALUES (
+                1, ?, ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?, ?, ?, ?,
+                ?, ?, ?,
+                ?, ?, ?,
+                ?, ?, ?,
+                ?, ?, ?,
+                ?, ?, ?, ?,
+                ?, ?, ?, ?
+            )");
+            $stmtInitAbout->execute([
+                'About Computerscience.lk',
+                'Empowering the Next Generation of Tech Leaders & Innovators',
+                'Computerscience.lk is Sri Lanka\'s dedicated online academic portal designed to impart university-grade computer science education, practical software engineering skills, and globally accredited certifications to aspiring learners.',
+                'uploads/about/default_about_bg.jpg',
+                'dark_vignette',
+                0.65,
+                'Our Heritage & Journey',
+                'Bridging Higher Academics with Real-World Software Engineering',
+                'Founded with a bold vision to make high-caliber computer science training universally accessible, Computerscience.lk has evolved into a premier learning destination. We merge traditional theoretical computer science fundamentals with the velocity of modern tech stacks.' . "\n\n" . 'Whether mastering algorithms, full-stack software development, cloud systems, or cybersecurity, our students gain actionable competencies backed by verifiable course credentials and hands-on portfolio work.',
+                'Our Mission',
+                'To democratize access to world-class computational education, offering students and professionals rigorous, practical courses, hands-on development experience, and industry mentorship that accelerates their technical careers.',
+                'Our Vision',
+                'To be the preeminent technology learning hub in South Asia, fostering a culture of innovation, critical computational problem-solving, and continuous academic advancement.',
+                '30,000+', 'Enrolled Students',
+                '120+', 'Certified Courses',
+                '50+', 'Expert Mentors',
+                '98.5%', 'Student Satisfaction',
+                'bi-cpu', 'Industry-Aligned Curricula', 'Engineered alongside software architects to match cutting-edge industry demands.',
+                'bi-award-fill', 'Recognized Certificates', 'Earn verifiable digital credentials and embossed hard-copy diplomas delivered island-wide.',
+                'bi-camera-video-fill', 'Live & Interactive Classes', 'Real-time lecture streams with hands-on coding demonstrations and instant tutor Q&A.',
+                'bi-people-fill', 'Supportive Community', 'Join peer collaborative study groups, assignment code reviews, and career guidance.',
+                'info@computerscience.lk', '011 234 5678', 'Colombo, Western Province, Sri Lanka', 'Mon - Sat: 8.30 AM - 6.00 PM',
+                'Start Your Computing Journey Today',
+                'Explore our comprehensive course catalog, build production-ready projects, and achieve recognized certification.',
+                'Browse Courses',
+                'index.php#courses-section'
+            ]);
+        }
+    } catch (PDOException $ex) {
     }
 
 
@@ -1383,6 +1634,75 @@ function get_register_page_image()
     return $register_img;
 }
 
+// Global Helper function to retrieve About Us page settings and customizable details
+function get_about_settings($pdo = null)
+{
+    static $about_cached = null;
+    if ($about_cached !== null) {
+        return $about_cached;
+    }
+    $defaults = [
+        'id' => 1,
+        'badge_text' => 'About Computerscience.lk',
+        'title' => 'Empowering the Next Generation of Tech Leaders & Innovators',
+        'subtitle' => 'Computerscience.lk is Sri Lanka’s dedicated online academic portal designed to impart university-grade computer science education, practical software engineering skills, and globally accredited certifications to aspiring learners.',
+        'bg_image' => 'uploads/about/default_about_bg.jpg',
+        'overlay_fade_style' => 'dark_vignette',
+        'overlay_opacity' => 0.65,
+        'story_badge' => 'Our Heritage & Journey',
+        'story_title' => 'Bridging Higher Academics with Real-World Software Engineering',
+        'story_content' => "Founded with a bold vision to make high-caliber computer science training universally accessible, Computerscience.lk has evolved into a premier learning destination. We merge traditional theoretical computer science fundamentals with the velocity of modern tech stacks.\n\nWhether mastering algorithms, full-stack software development, cloud systems, or cybersecurity, our students gain actionable competencies backed by verifiable course credentials and hands-on portfolio work.",
+        'mission_title' => 'Our Mission',
+        'mission_content' => 'To democratize access to world-class computational education, offering students and professionals rigorous, practical courses, hands-on development experience, and industry mentorship that accelerates their technical careers.',
+        'vision_title' => 'Our Vision',
+        'vision_content' => 'To be the preeminent technology learning hub in South Asia, fostering a culture of innovation, critical computational problem-solving, and continuous academic advancement.',
+        'stat_1_number' => '30,000+',
+        'stat_1_label' => 'Enrolled Students',
+        'stat_2_number' => '120+',
+        'stat_2_label' => 'Certified Courses',
+        'stat_3_number' => '50+',
+        'stat_3_label' => 'Expert Mentors',
+        'stat_4_number' => '98.5%',
+        'stat_4_label' => 'Student Satisfaction',
+        'pillar_1_icon' => 'bi-cpu',
+        'pillar_1_title' => 'Industry-Aligned Curricula',
+        'pillar_1_desc' => 'Engineered alongside software architects to match cutting-edge industry demands.',
+        'pillar_2_icon' => 'bi-award-fill',
+        'pillar_2_title' => 'Recognized Certificates',
+        'pillar_2_desc' => 'Earn verifiable digital credentials and embossed hard-copy diplomas delivered island-wide.',
+        'pillar_3_icon' => 'bi-camera-video-fill',
+        'pillar_3_title' => 'Live & Interactive Classes',
+        'pillar_3_desc' => 'Real-time lecture streams with hands-on coding demonstrations and instant tutor Q&A.',
+        'pillar_4_icon' => 'bi-people-fill',
+        'pillar_4_title' => 'Supportive Community',
+        'pillar_4_desc' => 'Join peer collaborative study groups, assignment code reviews, and career guidance.',
+        'contact_email' => 'info@computerscience.lk',
+        'contact_phone' => '011 234 5678',
+        'contact_address' => 'Colombo, Western Province, Sri Lanka',
+        'contact_hours' => 'Mon - Sat: 8.30 AM - 6.00 PM',
+        'cta_title' => 'Start Your Computing Journey Today',
+        'cta_desc' => 'Explore our comprehensive course catalog, build production-ready projects, and achieve recognized certification.',
+        'cta_btn_text' => 'Browse Courses',
+        'cta_btn_url' => 'index.php#courses-section'
+    ];
+
+    try {
+        if (!$pdo) {
+            $pdo = getDBConnection();
+        }
+        $stmt = $pdo->query("SELECT * FROM about_settings WHERE id = 1 LIMIT 1");
+        $row = $stmt->fetch();
+        if ($row) {
+            $about_cached = array_merge($defaults, array_filter($row, fn($v) => $v !== null && $v !== ''));
+            return $about_cached;
+        }
+    } catch (Exception $e) {
+    }
+
+    $about_cached = $defaults;
+    return $about_cached;
+}
+
 /**
  * Check if a student has completed all quizzes for a specific course
  *
@@ -1391,7 +1711,8 @@ function get_register_page_image()
  * @param string $course_id
  * @return array ['all_completed' => bool, 'total_quizzes' => int, 'completed_quizzes' => int, 'missing_quiz_titles' => array]
  */
-function check_course_quizzes_completed($pdo, $user_id, $course_id) {
+function check_course_quizzes_completed($pdo, $user_id, $course_id)
+{
     if (!$pdo || empty($user_id) || empty($course_id)) {
         return [
             'all_completed' => true,
@@ -1408,7 +1729,7 @@ function check_course_quizzes_completed($pdo, $user_id, $course_id) {
 
     $courseWideQuizStmt = $pdo->prepare("SELECT COUNT(*) FROM quizzes WHERE course_id = ? AND (lesson_id IS NULL OR lesson_id = '')");
     $courseWideQuizStmt->execute([$course_id]);
-    $has_course_wide_quiz = ((int)$courseWideQuizStmt->fetchColumn() > 0);
+    $has_course_wide_quiz = ((int) $courseWideQuizStmt->fetchColumn() > 0);
 
     $total_quizzes = count($lesson_quiz_ids) + ($has_course_wide_quiz ? 1 : 0);
 
@@ -1430,7 +1751,7 @@ function check_course_quizzes_completed($pdo, $user_id, $course_id) {
         foreach ($lesson_quiz_ids as $l_id) {
             $checkStmt = $pdo->prepare("SELECT COUNT(*) FROM quiz_attempts WHERE user_id = ? AND course_id = ? AND lesson_id = ? AND status IN ('completed', 'finalized')");
             $checkStmt->execute([$user_id, $course_id, $l_id]);
-            $isDone = ((int)$checkStmt->fetchColumn() > 0);
+            $isDone = ((int) $checkStmt->fetchColumn() > 0);
 
             if ($isDone) {
                 $completed_quizzes_count++;
@@ -1447,12 +1768,12 @@ function check_course_quizzes_completed($pdo, $user_id, $course_id) {
     if ($has_course_wide_quiz) {
         $checkCwStmt = $pdo->prepare("SELECT COUNT(*) FROM quiz_attempts WHERE user_id = ? AND course_id = ? AND (lesson_id IS NULL OR lesson_id = '') AND status IN ('completed', 'finalized')");
         $checkCwStmt->execute([$user_id, $course_id]);
-        $isCwDone = ((int)$checkCwStmt->fetchColumn() > 0);
+        $isCwDone = ((int) $checkCwStmt->fetchColumn() > 0);
 
         if (!$isCwDone) {
             $resCwStmt = $pdo->prepare("SELECT COUNT(*) FROM quiz_results WHERE user_id = ? AND course_id = ? AND (status IN ('completed', 'finalized') OR score > 0)");
             $resCwStmt->execute([$user_id, $course_id]);
-            $isCwDone = ((int)$resCwStmt->fetchColumn() > 0);
+            $isCwDone = ((int) $resCwStmt->fetchColumn() > 0);
         }
 
         if ($isCwDone) {
@@ -1470,5 +1791,135 @@ function check_course_quizzes_completed($pdo, $user_id, $course_id) {
         'completed_quizzes' => $completed_quizzes_count,
         'missing_quiz_titles' => $missing_quiz_titles
     ];
+}
+
+/**
+ * Helper function to verify if a student has submitted all assignments configured for a course
+ * 
+ * @param PDO $pdo
+ * @param int $user_id
+ * @param string $course_id
+ * @return array ['all_completed' => bool, 'total_assignments' => int, 'completed_assignments' => int, 'missing_assignment_titles' => array]
+ */
+function check_course_assignments_completed($pdo, $user_id, $course_id)
+{
+    if (!$pdo || empty($user_id) || empty($course_id)) {
+        return [
+            'all_completed' => true,
+            'total_assignments' => 0,
+            'completed_assignments' => 0,
+            'missing_assignment_titles' => [],
+            'all_graded' => true,
+            'graded_assignments' => 0,
+            'pending_grading_assignments' => 0,
+            'pending_grading_titles' => [],
+            'unsubmitted_titles' => [],
+            'average_grade' => null
+        ];
+    }
+
+    try {
+        // Fetch all assignments for this course
+        $stmt = $pdo->prepare("SELECT a.id, a.title, a.lesson_id, l.title as lesson_title 
+                               FROM lesson_assignments a 
+                               INNER JOIN lessons l ON l.id = a.lesson_id 
+                               WHERE a.course_id = ? 
+                               ORDER BY l.sort_order ASC");
+        $stmt->execute([$course_id]);
+        $assignments = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $total_assignments = count($assignments);
+        if ($total_assignments === 0) {
+            return [
+                'all_completed' => true,
+                'total_assignments' => 0,
+                'completed_assignments' => 0,
+                'missing_assignment_titles' => [],
+                'all_graded' => true,
+                'graded_assignments' => 0,
+                'pending_grading_assignments' => 0,
+                'pending_grading_titles' => [],
+                'unsubmitted_titles' => [],
+                'average_grade' => null
+            ];
+        }
+
+        // Fetch submissions with status and grade by this student for this course
+        $subStmt = $pdo->prepare("SELECT assignment_id, status, grade, feedback FROM assignment_submissions WHERE user_id = ? AND course_id = ?");
+        $subStmt->execute([$user_id, $course_id]);
+        $submissions = $subStmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $submission_map = [];
+        foreach ($submissions as $sub) {
+            $submission_map[$sub['assignment_id']] = $sub;
+        }
+
+        $completed_count = 0;
+        $graded_count = 0;
+        $missing_titles = [];
+        $pending_grading_titles = [];
+        $unsubmitted_titles = [];
+        $grades = [];
+
+        foreach ($assignments as $asg) {
+            $asgId = $asg['id'];
+            $asgLabel = ($asg['lesson_title'] ?: "Lesson") . ": " . $asg['title'];
+            if (isset($submission_map[$asgId])) {
+                $completed_count++;
+                $sub = $submission_map[$asgId];
+                if ($sub['status'] === 'graded' && $sub['grade'] !== null) {
+                    $graded_count++;
+                    $grades[] = (float)$sub['grade'];
+                } else {
+                    $pending_grading_titles[] = $asgLabel;
+                }
+            } else {
+                $missing_titles[] = $asgLabel;
+                $unsubmitted_titles[] = $asgLabel;
+            }
+        }
+
+        $all_completed = ($completed_count >= $total_assignments);
+        $all_graded = ($total_assignments === 0 || $graded_count >= $total_assignments);
+
+        return [
+            'all_completed' => $all_completed,
+            'total_assignments' => $total_assignments,
+            'completed_assignments' => $completed_count,
+            'missing_assignment_titles' => $missing_titles,
+            'all_graded' => $all_graded,
+            'graded_assignments' => $graded_count,
+            'pending_grading_assignments' => ($completed_count - $graded_count),
+            'pending_grading_titles' => $pending_grading_titles,
+            'unsubmitted_titles' => $unsubmitted_titles,
+            'average_grade' => (count($grades) > 0 ? round(array_sum($grades) / count($grades), 2) : null)
+        ];
+    } catch (PDOException $e) {
+        return [
+            'all_completed' => true,
+            'total_assignments' => 0,
+            'completed_assignments' => 0,
+            'missing_assignment_titles' => [],
+            'all_graded' => true,
+            'graded_assignments' => 0,
+            'pending_grading_assignments' => 0,
+            'pending_grading_titles' => [],
+            'unsubmitted_titles' => [],
+            'average_grade' => null
+        ];
+    }
+}
+
+/**
+ * Check if all required course assignments have marks assigned by teacher
+ *
+ * @param PDO $pdo
+ * @param int $user_id
+ * @param string $course_id
+ * @return array
+ */
+function check_course_assignments_graded($pdo, $user_id, $course_id)
+{
+    return check_course_assignments_completed($pdo, $user_id, $course_id);
 }
 ?>

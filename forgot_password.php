@@ -65,14 +65,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $insStmt = $pdo->prepare("INSERT INTO password_resets (email, token, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 30 MINUTE))");
                         $insStmt->execute([$user['email'], $token]);
 
-                        // Build dynamic absolute reset URL
-                        $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (isset($_SERVER['SERVER_PORT']) && $_SERVER['SERVER_PORT'] == 443);
-                        $protocol = $isHttps ? "https://" : "http://";
-                        $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
-                        $scriptDir = str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME']));
-                        $scriptDir = rtrim($scriptDir, '/');
-                        
-                        $resetUrl = $protocol . $host . ($scriptDir ? $scriptDir : '') . '/reset_password.php?token=' . urlencode($token) . '&email=' . urlencode($user['email']);
+                        // Build dynamic universal reset URL
+                        $resetUrl = url('reset_password.php?token=' . urlencode($token) . '&email=' . urlencode($user['email']));
 
                         // Dispatch HTML reset email via database-configured PHPMailer SMTP
                         send_password_reset_email($user['email'], $user['name'] ?? 'Student', $resetUrl, 30);

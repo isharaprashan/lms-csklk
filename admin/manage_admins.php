@@ -180,12 +180,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($action)) {
                     $insertStmt->execute([$name, $email, $passHash, $avatar, $academic_id, $status, $must_change, $temp_created]);
 
                     // Build Admin Login URL
-                    $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (isset($_SERVER['SERVER_PORT']) && $_SERVER['SERVER_PORT'] == 443);
-                    $protocol = $isHttps ? "https://" : "http://";
-                    $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
-                    $scriptDir = str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME']));
-                    $scriptDir = rtrim($scriptDir, '/');
-                    $adminLoginUrl = $protocol . $host . ($scriptDir ? $scriptDir : '') . '/login.php';
+                    $adminLoginUrl = admin_url('login.php');
 
                     // Dispatch welcome credentials email via PHPMailer SMTP
                     if (function_exists('send_admin_welcome_credentials_email')) {
@@ -221,12 +216,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($action)) {
                 $up = $pdo->prepare("UPDATE users SET password_hash = ?, must_change_password = 1, temp_password_created_at = ? WHERE id = ? AND role = 'admin'");
                 $up->execute([$passHash, $temp_created, $target_id]);
 
-                $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (isset($_SERVER['SERVER_PORT']) && $_SERVER['SERVER_PORT'] == 443);
-                $protocol = $isHttps ? "https://" : "http://";
-                $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
-                $scriptDir = str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME']));
-                $scriptDir = rtrim($scriptDir, '/');
-                $adminLoginUrl = $protocol . $host . ($scriptDir ? $scriptDir : '') . '/login.php';
+                $adminLoginUrl = admin_url('login.php');
 
                 if (function_exists('send_admin_welcome_credentials_email')) {
                     send_admin_welcome_credentials_email($targetUser['email'], $targetUser['name'], $temp_password, $adminLoginUrl);

@@ -34,24 +34,7 @@ if (!function_exists('get_google_redirect_uri')) {
             return $custom_uri;
         }
 
-        $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https://' : 'http://';
-        $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
-        
-        // Auto-detect base folder (e.g. /lms or /)
-        $script = $_SERVER['SCRIPT_NAME'] ?? '';
-        $baseDir = dirname($script);
-        $baseDir = str_replace('\\', '/', $baseDir);
-        $baseDir = rtrim($baseDir, '/');
-
-        // Normalize if called from a subfolder like api/ or admin/
-        if (str_ends_with($baseDir, '/admin') || str_ends_with($baseDir, '/api') || str_ends_with($baseDir, '/config')) {
-            $baseDir = dirname($baseDir);
-            $baseDir = str_replace('\\', '/', $baseDir);
-            $baseDir = rtrim($baseDir, '/');
-        }
-
-        $basePath = ($baseDir === '/' || $baseDir === '') ? '' : $baseDir;
-        return $protocol . $host . $basePath . '/google_callback.php';
+        return url('google_callback.php');
     }
 }
 

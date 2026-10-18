@@ -23,9 +23,10 @@ document.addEventListener('DOMContentLoaded', function () {
   const lessonProgressBar = document.getElementById('lesson-progress-bar');
 
   // --- Local Testing & Video Player Settings ---
+  // --- Local Testing & Video Player Settings ---
   // Set USE_LOCAL_TESTING_VIDEO to true to bypass YouTube Iframe API restrictions during local testing on localhost.
   // Set to false when deploying to production to re-enable YouTube Iframe API player.
-  const USE_LOCAL_TESTING_VIDEO = true; 
+  const USE_LOCAL_TESTING_VIDEO = false; 
   const LOCAL_TESTING_VIDEO_PATH = 'uploads/class.mp4';
 
   // --- Video Progress Tracking State ---
@@ -34,6 +35,7 @@ document.addEventListener('DOMContentLoaded', function () {
   let progressSaveTimer = null;     // Interval that periodically saves progress while playing
   let activeLessonId = null;        // Lesson currently loaded in the player
   let maxWatchedTime = 0;           // Highest time point watched in the current video (for skip-blocking)
+  let lastProgressSaveTime = 0;     // Timestamp tracking last AJAX save
   const PROGRESS_SAVE_INTERVAL_MS = 5000; // Save progress every 5 seconds while playing
   const AUTO_COMPLETE_THRESHOLD = 90; // Percent watched to auto mark-complete
 
@@ -47,20 +49,24 @@ document.addEventListener('DOMContentLoaded', function () {
       warningEl.style.zIndex = '1050';
       warningEl.style.top = '15px';
       warningEl.style.fontSize = '0.8rem';
-      const msg = (typeof window.i18n__ === 'function') ? window.i18n__('forward_seeking_restricted', 'Forward seeking is restricted until you watch this section.') : 'Forward seeking is restricted until you watch this section.';
-      warningEl.innerHTML = `<i class="bi bi-exclamation-circle-fill me-1"></i> ${msg}`;
+      const msg = (typeof window.i18n__ === 'function') ? window.i18n__('forward_seeking_restricted', '⚠️ Fast-forwarding is restricted. Please complete the video sequentially.') : '⚠️ Fast-forwarding is restricted. Please complete the video sequentially.';
+      warningEl.innerHTML = `<i class="bi bi-exclamation-circle-fill me-1"></i> <span>${msg}</span>`;
       
       const container = document.getElementById('player-container');
       if (container) {
         container.style.position = 'relative';
         container.appendChild(warningEl);
       }
+    } else {
+      const msg = (typeof window.i18n__ === 'function') ? window.i18n__('forward_seeking_restricted', '⚠️ Fast-forwarding is restricted. Please complete the video sequentially.') : '⚠️ Fast-forwarding is restricted. Please complete the video sequentially.';
+      const span = warningEl.querySelector('span');
+      if (span) span.textContent = msg;
     }
     warningEl.style.display = 'inline-block';
     clearTimeout(window._seekWarningTimer);
     window._seekWarningTimer = setTimeout(() => {
       if (warningEl) warningEl.style.display = 'none';
-    }, 2500);
+    }, 3000);
   }
 
   // --- Helper: Clear all active outline indicators ---
@@ -353,9 +359,9 @@ document.addEventListener('DOMContentLoaded', function () {
         videoEl.addEventListener('timeupdate', function () {
           if (!videoEl.duration) return;
 
-          // 1. Skip-blocking logic: prevent seeking past highest watched time point for students ONLY
+          // 1. Skip-blocking logic with 2.5s tolerance: prevent seeking past highest watched time point for students ONLY
           if (!isReviewMode && !isSeekingLock) {
-            if (videoEl.currentTime <= maxWatchedTime + 1.5) {
+            if (videoEl.currentTime <= maxWatchedTime + 2.5) {
               if (videoEl.currentTime > maxWatchedTime) {
                 maxWatchedTime = videoEl.currentTime;
               }
@@ -384,7 +390,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
         // HTML5 Video Event: Block seeking forward beyond watched progress (Students ONLY)
         videoEl.addEventListener('seeking', function () {
-          if (!isReviewMode && videoEl.currentTime > maxWatchedTime + 1.5) {
+          if (!isReviewMode && videoEl.currentTime > maxWatchedTime + 2.5) {
             isSeekingLock = true;
             videoEl.currentTime = maxWatchedTime;
             showSeekWarning();
@@ -394,9 +400,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
         // HTML5 Video Playback state events
         videoEl.addEventListener('play', function () {
-          startProgressTimer(function () {
-            saveProgress(activeLessonId, videoEl.currentTime, videoEl.duration || 0);
-          });
+          startProgressTimer();
         });
 
         videoEl.addEventListener('pause', function () {
@@ -423,37 +427,41 @@ document.addEventListener('DOMContentLoaded', function () {
       loadYouTubeIframeAPI(function () {
         ytPlayer = new YT.Player('yt-player-target', {
           videoId: youtubeVideoId,
-          playerVars: { rel: 0, modestbranding: 1, enablejsapi: 1 },
+          playerVars: {
+            'playsinline': 1,
+            'rel': 0,
+            'modestbranding': 1,
+            'enablejsapi': 1,
+            'autoplay': 0
+          },
           events: {
             onReady: function (event) {
               if (saved.position > 0) {
-                event.target.seekTo(saved.position, true);
+                maxWatchedTime = Math.max(maxWatchedTime, saved.position);
               }
             },
             onStateChange: function (event) {
               if (event.data === YT.PlayerState.PLAYING) {
-                startProgressTimer(function () {
+                startProgressTimer();
+              } else {
+                stopProgressTimer();
+              }
+
+              if (event.data === YT.PlayerState.ENDED) {
+                const dur = (ytPlayer && typeof ytPlayer.getDuration === 'function') ? ytPlayer.getDuration() : (saved.duration || 0);
+                maxWatchedTime = dur || maxWatchedTime;
+                saveProgress(lessonId, dur, dur);
+                if (lessonId && !completedLessonsList.includes(lessonId)) {
+                  completedLessonsList.push(lessonId);
+                  applyLessonCompletedUI(lessonId);
+                  updateOverallProgressBar();
+                }
+              } else if (event.data === YT.PlayerState.PAUSED) {
+                if (ytPlayer && typeof ytPlayer.getCurrentTime === 'function') {
                   const current = ytPlayer.getCurrentTime();
                   const dur = ytPlayer.getDuration();
-
-                  // YouTube Skip-blocking check
-                  if (current > maxWatchedTime + 1.5) {
-                    ytPlayer.seekTo(maxWatchedTime, true);
-                    showSeekWarning();
-                  } else if (current > maxWatchedTime) {
-                    maxWatchedTime = current;
-                  }
-
                   saveProgress(lessonId, current, dur);
-                });
-              } else if (event.data === YT.PlayerState.PAUSED || event.data === YT.PlayerState.ENDED) {
-                stopProgressTimer();
-                const current = ytPlayer.getCurrentTime();
-                const dur = ytPlayer.getDuration();
-                if (event.data === YT.PlayerState.ENDED) {
-                  maxWatchedTime = dur || maxWatchedTime;
                 }
-                saveProgress(lessonId, current, dur);
               }
             }
           }
@@ -476,6 +484,7 @@ document.addEventListener('DOMContentLoaded', function () {
     if (!window._ytApiScriptInjected) {
       window._ytApiScriptInjected = true;
       const tag = document.createElement('script');
+      tag.id = 'youtube-iframe-api-script';
       tag.src = 'https://www.youtube.com/iframe_api';
       document.head.appendChild(tag);
 
@@ -486,10 +495,65 @@ document.addEventListener('DOMContentLoaded', function () {
     }
   }
 
-  // Starts a periodic timer that reports playback progress while the video is playing
-  function startProgressTimer(tickFn) {
+  // Starts a periodic timer (500ms) that reports playback progress & enforces anti-forward seek
+  function startProgressTimer() {
     stopProgressTimer();
-    progressSaveTimer = setInterval(tickFn, PROGRESS_SAVE_INTERVAL_MS);
+    progressSaveTimer = setInterval(function () {
+      if (ytPlayer && typeof ytPlayer.getCurrentTime === 'function') {
+        // Player State Guard: pause/ignore checks while BUFFERING, UNSTARTED, or CUED
+        if (typeof ytPlayer.getPlayerState === 'function') {
+          const state = ytPlayer.getPlayerState();
+          if (state === YT.PlayerState.BUFFERING || state === YT.PlayerState.UNSTARTED || state === YT.PlayerState.CUED || state !== YT.PlayerState.PLAYING) {
+            return;
+          }
+        }
+
+        const isReviewMode = (typeof window.IS_REVIEW_MODE !== 'undefined' && window.IS_REVIEW_MODE) ||
+                             (typeof window.USER_ROLE !== 'undefined' && (window.USER_ROLE === 'admin' || window.USER_ROLE === 'super_admin' || window.USER_ROLE === 'teacher'));
+        const current = ytPlayer.getCurrentTime();
+        const dur = (typeof ytPlayer.getDuration === 'function') ? ytPlayer.getDuration() : 0;
+
+        if (isReviewMode) {
+          if (current > maxWatchedTime) {
+            maxWatchedTime = current;
+          }
+          return;
+        }
+
+        // Normal playback progression with 2.5s tolerance
+        if (current <= maxWatchedTime + 2.5) {
+          if (current > maxWatchedTime) {
+            maxWatchedTime = current;
+          }
+        } else {
+          // Illegal forward scrub detected -> clamp back to max watched point
+          ytPlayer.seekTo(maxWatchedTime, true);
+          showSeekWarning();
+        }
+
+        // Real-time progress bar UI update
+        if (dur > 0) {
+          const percent = Math.min(100, Math.round((current / dur) * 100));
+          updateProgressBarUI(percent);
+        }
+
+        // Throttled periodic progress sync to server every 5 seconds or near end (>= 90%)
+        if (dur > 0 && (current - lastProgressSaveTime >= 5 || current >= dur * 0.9)) {
+          lastProgressSaveTime = current;
+          saveProgress(activeLessonId, current, dur);
+        }
+      } else {
+        const videoEl = document.getElementById('classroom-player');
+        if (videoEl && videoEl.duration > 0) {
+          const currentTime = videoEl.currentTime;
+          const duration = videoEl.duration;
+          if (currentTime - lastProgressSaveTime >= 5 || currentTime >= duration * 0.9) {
+            lastProgressSaveTime = currentTime;
+            saveProgress(activeLessonId, currentTime, duration);
+          }
+        }
+      }
+    }, 500);
   }
 
   function stopProgressTimer() {
@@ -1204,72 +1268,6 @@ document.addEventListener('DOMContentLoaded', function () {
               location.reload();
             } else {
               alert('Failed to update course: ' + data.message);
-              submitBtn.disabled = false;
-              submitBtn.innerHTML = originalBtnText;
-            }
-          })
-          .catch(err => {
-            console.error(err);
-            alert('Server connection error.');
-            submitBtn.disabled = false;
-            submitBtn.innerHTML = originalBtnText;
-          });
-      });
-    }
-
-    // 3. Edit Lesson Populate Modal Event
-    const editLessonTriggers = document.querySelectorAll('.edit-lesson-btn-trigger');
-    editLessonTriggers.forEach(btn => {
-      btn.addEventListener('click', function (e) {
-        e.stopPropagation(); // Prevent switching to the clicked lesson in workspace
-        
-        // Retrieve data attributes
-        const lid = this.getAttribute('data-lesson-id');
-        const ltitle = this.getAttribute('data-lesson-title');
-        const lduration = this.getAttribute('data-lesson-duration');
-        const lvideo = this.getAttribute('data-lesson-video');
-        const lcontent = this.getAttribute('data-lesson-content');
-
-        // Populate Modal inputs
-        document.getElementById('edit-lesson-id').value = lid;
-        document.getElementById('edit-lesson-title').value = ltitle;
-        document.getElementById('edit-lesson-duration').value = lduration;
-        document.getElementById('edit-lesson-video').value = lvideo;
-        document.getElementById('edit-lesson-content').value = lcontent;
-      });
-    });
-
-    // 4. Submit Edit Lesson Form
-    const editLessonForm = document.getElementById('edit-lesson-form');
-    if (editLessonForm) {
-      editLessonForm.addEventListener('submit', function (e) {
-        e.preventDefault();
-        const submitBtn = editLessonForm.querySelector('button[type="submit"]');
-        const originalBtnText = submitBtn.innerHTML;
-        submitBtn.disabled = true;
-        submitBtn.innerHTML = `<span class="spinner-border spinner-border-sm" role="status"></span> Saving...`;
-
-        fetch('api/edit_lesson.php', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            lesson_id: document.getElementById('edit-lesson-id').value,
-            course_id: courseId,
-            title: document.getElementById('edit-lesson-title').value,
-            duration: document.getElementById('edit-lesson-duration').value,
-            video_url: document.getElementById('edit-lesson-video').value,
-            content: document.getElementById('edit-lesson-content').value
-          })
-        })
-          .then(res => res.json())
-          .then(data => {
-            if (data.success) {
-              alert('Lesson details updated successfully!');
-              location.reload();
-            } else {
-              alert('Failed to update lesson: ' + data.message);
               submitBtn.disabled = false;
               submitBtn.innerHTML = originalBtnText;
             }

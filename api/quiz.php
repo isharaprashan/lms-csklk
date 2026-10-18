@@ -38,6 +38,32 @@ try {
         exit;
     }
 
+    $userRole = $_SESSION['user_role'] ?? '';
+    $is_review_mode = in_array($userRole, ['admin', 'super_admin', 'teacher']);
+
+    if (!$is_review_mode && !empty($lesson_id)) {
+        $chkStmt = $pdo->prepare("SELECT COUNT(*) FROM completed_lessons WHERE user_id = ? AND lesson_id = ?");
+        $chkStmt->execute([$user_id, $lesson_id]);
+        $isWatched = ((int)$chkStmt->fetchColumn() > 0);
+
+        if (!$isWatched) {
+            $lpStmt = $pdo->prepare("SELECT completed, progress_percent FROM lesson_progress WHERE user_id = ? AND lesson_id = ?");
+            $lpStmt->execute([$user_id, $lesson_id]);
+            $lpRow = $lpStmt->fetch();
+            if ($lpRow && ((int)$lpRow['completed'] === 1 || (float)$lpRow['progress_percent'] >= 90)) {
+                $isWatched = true;
+            }
+        }
+
+        if (!$isWatched) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'This quiz is locked. You must watch the relevant lesson video in its entirety (100%) before taking the quiz.'
+            ]);
+            exit;
+        }
+    }
+
     $score = 0;
     $total = count($quiz_questions);
     $details = [];

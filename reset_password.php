@@ -80,8 +80,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $isTokenValid) {
                 // 4. Set session flash notification and redirect to login
                 $_SESSION['login_flash_success'] = __('password_reset_success_msg', 'Password reset successfully! Please sign in with your new password.');
                 
-                header("Location: login.php?reset=success");
-                exit;
+                redirect('login.php?reset=success');
 
             } catch (Exception $e) {
                 error_log("Password update error: " . $e->getMessage());

@@ -151,9 +151,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action'])) {
       } elseif ($fileSize > 15 * 1024 * 1024) {
         $error_message = "Uploaded image file is too large (maximum allowed: 15MB).";
       } else {
-        $destDir = __DIR__ . '/../uploads/certificates/';
+        $destDir = root_path('uploads/certificates/');
         if (!is_dir($destDir)) {
-          mkdir($destDir, 0777, true);
+          @mkdir($destDir, 0755, true);
         }
         $uniqueName = 'cert_design_' . bin2hex(random_bytes(8)) . '.' . $ext;
         $destPath = $destDir . $uniqueName;

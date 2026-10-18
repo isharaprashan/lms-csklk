@@ -150,6 +150,17 @@ try {
     $resources_by_lesson[$r['lesson_id']][] = $r;
   }
 
+  // Fetch all assignments attached to course lessons
+  $stmt = $pdo->prepare("SELECT a.* FROM lesson_assignments a INNER JOIN lessons l ON l.id = a.lesson_id WHERE l.course_id = ?");
+  $stmt->execute([$course_id]);
+  $all_course_assignments = $stmt->fetchAll();
+  $assignments_by_lesson = [];
+  foreach ($all_course_assignments as $asg) {
+    $bytes = (int)($asg['attachment_size'] ?? 0);
+    $asg['formatted_size'] = ($bytes >= 1048576) ? round($bytes / 1048576, 2) . ' MB' : (($bytes >= 1024) ? round($bytes / 1024, 1) . ' KB' : $bytes . ' B');
+    $assignments_by_lesson[$asg['lesson_id']] = $asg;
+  }
+
   // Fetch all courses for sidebar navigation (approved courses, or pending if owner/admin)
   if ($is_admin) {
     $stmt = $pdo->query("SELECT * FROM courses");
@@ -333,6 +344,29 @@ try {
 
       100% {
         opacity: 1;
+      }
+    }
+
+    @media (max-width: 767.98px) {
+      .video-wrapper {
+        min-height: auto !important;
+        aspect-ratio: 16 / 9 !important;
+        border-radius: 12px !important;
+      }
+      .enter-quiz-banner {
+        flex-direction: column !important;
+        align-items: stretch !important;
+        padding: 1rem 1.25rem !important;
+        gap: 0.85rem !important;
+      }
+      .enter-quiz-banner a.enter-quiz-btn,
+      .enter-quiz-banner #enter-quiz-banner-btn {
+        width: 100% !important;
+        text-align: center !important;
+        justify-content: center !important;
+      }
+      .lesson-outline-item {
+        padding: 0.65rem 0.6rem !important;
       }
     }
   </style>
@@ -800,9 +834,13 @@ try {
                     </div>
                   <?php else: ?>
                     <?php
-                    $stmt = $pdo->prepare("SELECT DISTINCT lesson_id FROM quiz_attempts WHERE user_id = ? AND course_id = ? AND status = 'finalized'");
+                    $stmt = $pdo->prepare("SELECT DISTINCT lesson_id FROM quiz_attempts WHERE user_id = ? AND course_id = ? AND status IN ('completed', 'finalized')");
                     $stmt->execute([$user_id, $course_id]);
-                    $finalized_quiz_lessons = $stmt->fetchAll(PDO::FETCH_COLUMN);
+                    $finalized_quiz_lessons = $stmt->fetchAll(PDO::FETCH_COLUMN) ?: [];
+
+                    $stmt = $pdo->prepare("SELECT DISTINCT lesson_id FROM quiz_results WHERE user_id = ? AND course_id = ? AND (status IN ('completed', 'finalized') OR score > 0)");
+                    $stmt->execute([$user_id, $course_id]);
+                    $finalized_quiz_lessons = array_unique(array_filter(array_merge($finalized_quiz_lessons, $stmt->fetchAll(PDO::FETCH_COLUMN) ?: [])));
 
                     $stmt = $pdo->prepare("SELECT lp.lesson_id FROM lesson_progress lp INNER JOIN lessons l ON l.id = lp.lesson_id WHERE lp.user_id = ? AND l.course_id = ? AND (lp.completed = 1 OR lp.progress_percent >= 90)");
                     $stmt->execute([$user_id, $course_id]);
@@ -867,6 +905,11 @@ try {
                                 ?>
                                   <span class="badge bg-light text-primary border border-primary border-opacity-25 py-0.5 px-1.5 rounded-pill" style="font-size: 0.65rem;" title="<?php echo $l_res_count; ?> Resources attached">
                                     <i class="bi bi-paperclip"></i> <?php echo $l_res_count; ?>
+                                  </span>
+                                <?php endif; ?>
+                                <?php if (isset($assignments_by_lesson[$lesson['id']])): ?>
+                                  <span class="badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25 py-0.5 px-1.5 rounded-pill" style="font-size: 0.65rem;" title="Mandatory Assignment Attached: <?php echo htmlspecialchars($assignments_by_lesson[$lesson['id']]['title']); ?>">
+                                    <i class="bi bi-journal-check"></i> Assignment
                                   </span>
                                 <?php endif; ?>
                                 <?php if ($index === 0): ?>
@@ -1165,6 +1208,78 @@ try {
                     <?php echo __('supported_file_types_hint', 'Accepted formats: PDF, Word, PPT, Excel, Images, ZIP up to 50MB per file.'); ?>
                   </div>
                 </div>
+
+                <!-- Topic Assignment & Coursework Section -->
+                <div class="col-12">
+                  <div class="card border rounded-3 p-3 bg-light" style="border-color: #d0d7de !important;">
+                    <div class="d-flex align-items-center justify-content-between mb-2 pb-2 border-bottom">
+                      <div class="d-flex align-items-center gap-2">
+                        <i class="bi bi-journal-check text-primary fs-5"></i>
+                        <div>
+                          <span class="fw-bold text-dark fs-7 d-block">Topic Assignment & Coursework</span>
+                          <small class="text-muted fs-9">Mandatory coursework required for students to reach 100% course completion & certificates</small>
+                        </div>
+                      </div>
+                      <span class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 rounded-pill px-2.5 py-1 fs-9 fw-bold" id="edit-lesson-assignment-badge">
+                        No Assignment
+                      </span>
+                    </div>
+
+                    <!-- Current Assignment Attachment Info (if exists) -->
+                    <div id="edit-lesson-current-assignment" class="d-none mb-3 p-2.5 bg-white rounded-2 border">
+                      <div class="d-flex align-items-center justify-content-between">
+                        <div class="d-flex align-items-center gap-2 text-truncate me-2">
+                          <i class="bi bi-file-earmark-arrow-down-fill text-primary fs-4 flex-shrink-0"></i>
+                          <div class="text-truncate">
+                            <span class="fw-semibold text-dark fs-8 d-block text-truncate" id="edit-lesson-current-assignment-filename">Assignment File</span>
+                            <small class="text-muted fs-9" id="edit-lesson-current-assignment-meta">PDF &bull; 1.2 MB</small>
+                          </div>
+                        </div>
+                        <div class="d-flex align-items-center gap-1.5">
+                          <a href="#" id="edit-lesson-download-assignment-btn" target="_blank" class="btn btn-outline-primary btn-sm rounded-pill px-2.5 py-1 fs-9 fw-semibold">
+                            <i class="bi bi-download me-1"></i>View File
+                          </a>
+                          <button type="button" id="edit-lesson-delete-assignment-btn" class="btn btn-outline-danger btn-sm rounded-pill px-2 py-1 fs-9" title="Delete Assignment">
+                            <i class="bi bi-trash3"></i>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                    <input type="hidden" id="edit-lesson-delete-assignment-flag" name="delete_assignment" value="0">
+
+                    <div class="row g-2">
+                      <div class="col-md-7">
+                        <label for="edit-lesson-assignment-title" class="form-label fw-semibold text-secondary fs-8 mb-1">
+                          Assignment Title
+                        </label>
+                        <input type="text" class="form-control form-control-sm rounded-2 fs-8" id="edit-lesson-assignment-title" name="assignment_title" placeholder="e.g. Practical Task: Binary Search Trees">
+                      </div>
+                      <div class="col-md-5">
+                        <label for="edit-lesson-assignment-due-date" class="form-label fw-semibold text-secondary fs-8 mb-1">
+                          Due Date / Deadline (Optional)
+                        </label>
+                        <input type="datetime-local" class="form-control form-control-sm rounded-2 fs-8" id="edit-lesson-assignment-due-date" name="assignment_due_date">
+                      </div>
+                      <div class="col-12">
+                        <label for="edit-lesson-assignment-instructions" class="form-label fw-semibold text-secondary fs-8 mb-1">
+                          Assignment Instructions / Brief (Optional)
+                        </label>
+                        <textarea class="form-control form-control-sm rounded-2 fs-8" id="edit-lesson-assignment-instructions" name="assignment_instructions" rows="2" placeholder="Provide assignment instructions or submission requirements for students..."></textarea>
+                      </div>
+                      <div class="col-12">
+                        <label for="edit-lesson-assignment-file" class="form-label fw-semibold text-secondary fs-8 mb-1 d-flex align-items-center justify-content-between">
+                          <span><i class="bi bi-paperclip me-1 text-primary"></i>Upload Assignment Attachment File</span>
+                          <small class="text-muted fw-normal fs-9" id="edit-lesson-assignment-file-hint">Optional (Leave blank to keep existing)</small>
+                        </label>
+                        <input type="file" class="form-control form-control-sm rounded-2 fs-8" id="edit-lesson-assignment-file" name="assignment_file"
+                          accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.png,.jpg,.jpeg,.webp,.zip,.rar,.7z">
+                        <div class="form-text fs-9 text-muted mt-1">
+                          Accepted formats: PDF, Word, PowerPoint, Excel, ZIP, RAR, TXT, Images (Max 50MB)
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
             <div class="modal-footer border-0 pt-0">
@@ -1364,6 +1479,7 @@ try {
     window.IS_TEACHER = <?php echo json_encode($is_teacher); ?>;
     window.IS_ADMIN = <?php echo json_encode($is_admin); ?>;
     window.LESSON_RESOURCES = <?php echo json_encode($resources_by_lesson ?? []); ?>;
+    window.LESSON_ASSIGNMENTS = <?php echo json_encode($assignments_by_lesson ?? []); ?>;
   </script>
 
   <!-- Local Bootstrap 5 Bundle JS -->
@@ -1662,6 +1778,173 @@ try {
             });
         }
 
+        // Helper: Reset assignment section in Edit Lesson modal
+        function resetLessonAssignmentModalState() {
+          const badge = document.getElementById('edit-lesson-assignment-badge');
+          const currentBox = document.getElementById('edit-lesson-current-assignment');
+          const filenameEl = document.getElementById('edit-lesson-current-assignment-filename');
+          const metaEl = document.getElementById('edit-lesson-current-assignment-meta');
+          const downloadBtn = document.getElementById('edit-lesson-download-assignment-btn');
+          const deleteFlag = document.getElementById('edit-lesson-delete-assignment-flag');
+          const titleInput = document.getElementById('edit-lesson-assignment-title');
+          const dueDateInput = document.getElementById('edit-lesson-assignment-due-date');
+          const instructionsInput = document.getElementById('edit-lesson-assignment-instructions');
+          const fileInput = document.getElementById('edit-lesson-assignment-file');
+          const fileHint = document.getElementById('edit-lesson-assignment-file-hint');
+
+          if (badge) {
+            badge.className = 'badge bg-secondary bg-opacity-10 text-secondary border border-secondary border-opacity-25 rounded-pill px-2.5 py-1 fs-9 fw-bold';
+            badge.textContent = 'No Assignment';
+          }
+          if (currentBox) currentBox.classList.add('d-none');
+          if (filenameEl) filenameEl.textContent = '';
+          if (metaEl) metaEl.textContent = '';
+          if (downloadBtn) {
+            downloadBtn.setAttribute('href', '#');
+            downloadBtn.classList.add('d-none');
+          }
+          if (deleteFlag) deleteFlag.value = '0';
+          if (titleInput) titleInput.value = '';
+          if (dueDateInput) dueDateInput.value = '';
+          if (instructionsInput) instructionsInput.value = '';
+          if (fileInput) fileInput.value = '';
+          if (fileHint) fileHint.textContent = 'Optional (Upload PDF, Word, ZIP, etc.)';
+        }
+
+        // Helper: Load existing assignment for Edit Lesson modal
+        function loadLessonAssignmentForEdit(lessonId) {
+          resetLessonAssignmentModalState();
+          if (!lessonId) return;
+
+          const badge = document.getElementById('edit-lesson-assignment-badge');
+          const currentBox = document.getElementById('edit-lesson-current-assignment');
+          const filenameEl = document.getElementById('edit-lesson-current-assignment-filename');
+          const metaEl = document.getElementById('edit-lesson-current-assignment-meta');
+          const downloadBtn = document.getElementById('edit-lesson-download-assignment-btn');
+          const titleInput = document.getElementById('edit-lesson-assignment-title');
+          const dueDateInput = document.getElementById('edit-lesson-assignment-due-date');
+          const instructionsInput = document.getElementById('edit-lesson-assignment-instructions');
+          const fileHint = document.getElementById('edit-lesson-assignment-file-hint');
+
+          // Check if cached assignment exists from PHP server render
+          if (window.LESSON_ASSIGNMENTS && window.LESSON_ASSIGNMENTS[lessonId]) {
+            const cached = window.LESSON_ASSIGNMENTS[lessonId];
+            if (badge) {
+              badge.className = 'badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 rounded-pill px-2.5 py-1 fs-9 fw-bold';
+              badge.innerHTML = '<i class="bi bi-check2-circle me-1"></i>Active Assignment';
+            }
+            if (titleInput) titleInput.value = cached.title || '';
+            if (instructionsInput) instructionsInput.value = cached.instructions || '';
+            if (dueDateInput && cached.due_date) {
+              dueDateInput.value = cached.due_date.replace(' ', 'T').substring(0, 16);
+            }
+            if (fileHint) fileHint.textContent = 'Optional (Leave blank to keep existing file)';
+
+            if (cached.attachment_path) {
+              if (currentBox) currentBox.classList.remove('d-none');
+              if (filenameEl) filenameEl.textContent = cached.attachment_name || 'Assignment Task File';
+              if (metaEl) metaEl.textContent = `${cached.formatted_size || ''} • Attached File`;
+              if (downloadBtn) {
+                const dlUrl = cached.id ? `download_assignment.php?type=task&id=${encodeURIComponent(cached.id)}&view=1` : cached.attachment_path;
+                downloadBtn.setAttribute('href', dlUrl);
+                downloadBtn.classList.remove('d-none');
+              }
+            }
+          } else if (badge) {
+            badge.className = 'badge bg-light text-muted border rounded-pill px-2.5 py-1 fs-9';
+            badge.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Checking...';
+          }
+
+          // Fetch latest from API
+          fetch(`api/get_lesson_assignment.php?lesson_id=${encodeURIComponent(lessonId)}`)
+            .then(res => res.json())
+            .then(data => {
+              if (data.success && data.assignment) {
+                const asg = data.assignment;
+                // Update cache
+                if (!window.LESSON_ASSIGNMENTS) window.LESSON_ASSIGNMENTS = {};
+                window.LESSON_ASSIGNMENTS[lessonId] = asg;
+
+                if (badge) {
+                  badge.className = 'badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 rounded-pill px-2.5 py-1 fs-9 fw-bold';
+                  badge.innerHTML = '<i class="bi bi-check2-circle me-1"></i>Active Assignment';
+                }
+                if (titleInput) titleInput.value = asg.title || '';
+                if (instructionsInput) instructionsInput.value = asg.instructions || '';
+                if (dueDateInput) dueDateInput.value = asg.due_date_formatted || '';
+                if (fileHint) fileHint.textContent = 'Optional (Leave blank to keep existing file)';
+
+                if (asg.has_attachment && asg.attachment_path) {
+                  if (currentBox) currentBox.classList.remove('d-none');
+                  if (filenameEl) filenameEl.textContent = asg.attachment_name || 'Assignment Task File';
+                  if (metaEl) metaEl.textContent = `${asg.formatted_size || ''} • Attached File`;
+                  if (downloadBtn) {
+                    const dlUrl = asg.id ? `download_assignment.php?type=task&id=${encodeURIComponent(asg.id)}&view=1` : asg.attachment_path;
+                    downloadBtn.setAttribute('href', dlUrl);
+                    downloadBtn.classList.remove('d-none');
+                  }
+                } else {
+                  if (currentBox) currentBox.classList.add('d-none');
+                }
+              } else {
+                if (window.LESSON_ASSIGNMENTS) delete window.LESSON_ASSIGNMENTS[lessonId];
+                if (badge) {
+                  badge.className = 'badge bg-secondary bg-opacity-10 text-secondary border border-secondary border-opacity-25 rounded-pill px-2.5 py-1 fs-9 fw-bold';
+                  badge.textContent = 'No Assignment Attached';
+                }
+                if (currentBox) currentBox.classList.add('d-none');
+                if (fileHint) fileHint.textContent = 'Upload coursework file (PDF, Word, etc.)';
+              }
+            })
+            .catch(err => {
+              console.error('Error fetching assignment for lesson:', err);
+            });
+        }
+
+        // Delete assignment button in Edit Lesson Modal
+        const editLessonDelAsgBtn = document.getElementById('edit-lesson-delete-assignment-btn');
+        if (editLessonDelAsgBtn) {
+          editLessonDelAsgBtn.addEventListener('click', function (e) {
+            e.preventDefault();
+            const confirmMsg = 'Remove this assignment from the lesson? Click "Save Changes" on the modal afterwards to confirm deletion.';
+            if (!confirm(confirmMsg)) return;
+
+            const deleteFlag = document.getElementById('edit-lesson-delete-assignment-flag');
+            if (deleteFlag) deleteFlag.value = '1';
+
+            const currentBox = document.getElementById('edit-lesson-current-assignment');
+            if (currentBox) currentBox.classList.add('d-none');
+
+            const badge = document.getElementById('edit-lesson-assignment-badge');
+            if (badge) {
+              badge.className = 'badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25 rounded-pill px-2.5 py-1 fs-9 fw-bold';
+              badge.innerHTML = '<i class="bi bi-trash3 me-1"></i>Marked for Deletion';
+            }
+
+            const titleInput = document.getElementById('edit-lesson-assignment-title');
+            if (titleInput) titleInput.value = '';
+            const dueDateInput = document.getElementById('edit-lesson-assignment-due-date');
+            if (dueDateInput) dueDateInput.value = '';
+            const instructionsInput = document.getElementById('edit-lesson-assignment-instructions');
+            if (instructionsInput) instructionsInput.value = '';
+            const fileInput = document.getElementById('edit-lesson-assignment-file');
+            if (fileInput) fileInput.value = '';
+          });
+        }
+
+        // Reset delete assignment flag if teacher starts filling in assignment fields
+        ['edit-lesson-assignment-title', 'edit-lesson-assignment-file', 'edit-lesson-assignment-instructions'].forEach(id => {
+          const el = document.getElementById(id);
+          if (el) {
+            el.addEventListener('input', function () {
+              const deleteFlag = document.getElementById('edit-lesson-delete-assignment-flag');
+              if (deleteFlag && deleteFlag.value === '1') {
+                deleteFlag.value = '0';
+              }
+            });
+          }
+        });
+
         // Edit Lesson Modal Populate
         document.querySelectorAll('.edit-lesson-btn-trigger').forEach(btn => {
           btn.addEventListener('click', function (e) {
@@ -1689,6 +1972,9 @@ try {
 
             if (lid) {
               loadLessonResourcesForEdit(lid);
+              loadLessonAssignmentForEdit(lid);
+            } else {
+              resetLessonAssignmentModalState();
             }
           });
         });

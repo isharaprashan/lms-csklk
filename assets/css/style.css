@@ -717,3 +717,365 @@ h1, h2, h3, h4, h5, h6, .moodle-brand {
   transform: translateX(3px);
 }
 
+/* ==========================================================================
+   MOBILE & RESPONSIVE DESIGN SYSTEM (STUDENT & TEACHER PANELS)
+   Optimized for smartphones, tablets, and touch-screen viewports
+   ========================================================================== */
+
+/* Universal Layout & Touch Adjustments */
+html, body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+/* Drawer & Backdrop Responsiveness */
+@media (max-width: 991.98px) {
+  .moodle-drawer {
+    width: min(290px, 86vw) !important;
+    max-width: 86vw;
+    z-index: 1055 !important;
+    box-shadow: 6px 0 28px rgba(0, 0, 0, 0.16) !important;
+  }
+  
+  .moodle-drawer-backdrop {
+    z-index: 1050 !important;
+  }
+
+  .moodle-content-wrapper {
+    margin-left: 0 !important;
+    padding-top: 68px;
+  }
+}
+
+/* Tablets and Mobile Landscape / Portrait (< 768px) */
+@media (max-width: 767.98px) {
+  /* Header Bar */
+  .moodle-header {
+    height: 64px !important;
+    padding-left: 0.75rem !important;
+    padding-right: 0.75rem !important;
+  }
+
+  .moodle-header .moodle-brand {
+    font-size: 1.1rem !important;
+    gap: 0.35rem;
+  }
+
+  .moodle-header .moodle-brand img {
+    height: 26px !important;
+  }
+
+  .moodle-header .dropdown-menu {
+    max-width: calc(100vw - 20px) !important;
+    right: 0 !important;
+    left: auto !important;
+  }
+
+  /* Content Wrapper Padding */
+  .moodle-content-wrapper {
+    padding-top: 64px !important;
+  }
+
+  .moodle-content-wrapper .container,
+  .moodle-content-wrapper .container-fluid {
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+    padding-top: 1rem !important;
+  }
+
+  /* Page Headers & Action Bars */
+  .panel-header-responsive {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 0.85rem !important;
+  }
+
+  .panel-header-responsive h1 {
+    font-size: 1.35rem !important;
+  }
+
+  .panel-header-responsive .header-actions-group {
+    width: 100% !important;
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 0.5rem !important;
+  }
+
+  .panel-header-responsive .header-actions-group .btn,
+  .panel-header-responsive .header-actions-group a.btn {
+    flex: 1 1 auto !important;
+    min-height: 38px;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    text-align: center;
+    font-size: 0.8rem !important;
+  }
+
+  /* Card Padding */
+  .moodle-card {
+    padding: 1.15rem !important;
+    border-radius: 14px !important;
+  }
+
+  /* Course Row inside Dashboard */
+  .moodle-course-item {
+    padding: 0.85rem !important;
+  }
+
+  .course-actions-responsive {
+    width: 100% !important;
+    margin-top: 0.75rem !important;
+    padding-top: 0.75rem !important;
+    border-top: 1px solid #eef2f6 !important;
+    justify-content: flex-start !important;
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 0.5rem !important;
+  }
+
+  .course-actions-responsive .btn,
+  .course-actions-responsive a.btn {
+    flex: 1 1 auto !important;
+    min-height: 38px;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    font-size: 0.82rem !important;
+    padding: 0.45rem 0.85rem !important;
+  }
+
+  /* Classroom Video Player Responsiveness */
+  .video-wrapper,
+  .video-container,
+  #player-container,
+  #yt-player-target {
+    min-height: auto !important;
+    height: auto !important;
+    aspect-ratio: 16 / 9 !important;
+    border-radius: 12px !important;
+    overflow: hidden !important;
+  }
+
+  .video-wrapper video,
+  .video-container video,
+  #player-container iframe,
+  #yt-player-target iframe {
+    width: 100% !important;
+    height: 100% !important;
+    aspect-ratio: 16 / 9 !important;
+    object-fit: contain !important;
+  }
+
+  /* Classroom Quiz Banner */
+  .enter-quiz-banner {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    padding: 1.15rem 1.25rem !important;
+    gap: 1rem !important;
+    text-align: left !important;
+  }
+
+  .enter-quiz-banner .enter-quiz-btn,
+  .enter-quiz-banner #enter-quiz-banner-btn,
+  .enter-quiz-banner a.btn {
+    width: 100% !important;
+    min-height: 44px;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    text-align: center !important;
+    font-size: 0.9rem !important;
+  }
+
+  /* Syllabus Lesson Items */
+  .lesson-outline-item {
+    padding: 0.75rem 0.85rem !important;
+    border-radius: 10px !important;
+  }
+
+  /* Detailed Lesson Progress Breakdown */
+  .lesson-progress-row {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 0.5rem !important;
+    padding: 0.75rem !important;
+  }
+
+  .lesson-progress-row .lesson-progress-title {
+    max-width: 100% !important;
+    width: 100% !important;
+  }
+
+  .lesson-progress-row .lesson-progress-status {
+    width: 100% !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 0.5rem !important;
+  }
+
+  /* Teacher Create Course Collapse Wizard */
+  .wizard-steps-header {
+    overflow-x: auto !important;
+    white-space: nowrap !important;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 0.5rem !important;
+    display: flex !important;
+    gap: 0.5rem !important;
+  }
+
+  .wizard-step-header {
+    flex-shrink: 0 !important;
+    font-size: 0.82rem !important;
+  }
+
+  /* Filter Panel in Teacher Assignments */
+  .filter-panel {
+    padding: 1rem !important;
+    border-radius: 14px !important;
+  }
+
+  .filter-btn-group {
+    display: flex !important;
+    width: 100% !important;
+  }
+
+  .filter-btn-group .btn {
+    flex: 1 1 0 !important;
+    padding: 0.45rem 0.25rem !important;
+    font-size: 0.75rem !important;
+    text-align: center !important;
+    justify-content: center !important;
+    display: flex !important;
+    align-items: center !important;
+  }
+
+  /* KPI Stat Cards (Teacher Assignments & Student Analytics) */
+  .kpi-row-responsive > [class*="col-"] {
+    margin-bottom: 0.5rem;
+  }
+
+  .kpi-card {
+    padding: 0.85rem 1rem !important;
+    border-radius: 12px !important;
+  }
+
+  .kpi-card h3,
+  .kpi-card h4 {
+    font-size: 1.35rem !important;
+  }
+
+  /* Table Panels */
+  .table-panel-header {
+    padding: 1rem 1.15rem !important;
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 0.5rem !important;
+  }
+
+  .table-responsive {
+    border-radius: 12px;
+    -webkit-overflow-scrolling: touch;
+    border: 1px solid #eef2f6;
+  }
+
+  .submissions-table td,
+  .submissions-table th,
+  .custom-table td,
+  .custom-table th {
+    padding: 0.65rem 0.75rem !important;
+    font-size: 0.8rem !important;
+  }
+
+  /* Modals on Mobile */
+  .modal-dialog {
+    margin: 0.5rem !important;
+    max-width: calc(100% - 1rem) !important;
+  }
+
+  .modal-content {
+    border-radius: 16px !important;
+  }
+
+  .modal-body {
+    padding: 1.15rem !important;
+  }
+
+  .modal-footer {
+    padding: 0.85rem 1.15rem !important;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .modal-footer .btn {
+    flex: 1 1 auto;
+    min-height: 42px;
+  }
+}
+
+/* Extra Small Phones (< 576px: 360px - 575px) */
+@media (max-width: 575.98px) {
+  /* Brand text on ultra-compact headers */
+  .moodle-brand span.brand-text-subtle {
+    display: none !important;
+  }
+
+  /* Touch targets minimum size */
+  .btn, .form-control, .form-select {
+    min-height: 40px;
+  }
+
+  /* Course Card thumbnail */
+  .course-thumb-box-mobile {
+    width: 60px !important;
+    height: 60px !important;
+    min-width: 60px !important;
+    object-fit: cover !important;
+    border-radius: 8px !important;
+  }
+
+  /* Certificate Stepper in Modal */
+  .cert-tracker-stepper {
+    padding: 0 0.25rem !important;
+  }
+
+  .cert-tracker-stepper .rounded-circle {
+    width: 30px !important;
+    height: 30px !important;
+    font-size: 0.75rem !important;
+  }
+
+  .cert-tracker-stepper span.fs-9 {
+    font-size: 0.68rem !important;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+  }
+
+  .cert-tracker-stepper small.fs-9 {
+    font-size: 0.62rem !important;
+  }
+
+  /* Quiz Option Cards */
+  .option-card {
+    padding: 0.85rem 1rem !important;
+    gap: 0.75rem !important;
+  }
+
+  .option-badge {
+    width: 30px !important;
+    height: 30px !important;
+    font-size: 0.8rem !important;
+  }
+
+  /* Teacher Question Builder */
+  .question-card-header {
+    padding: 0.85rem 1rem !important;
+  }
+
+  .question-card .p-4 {
+    padding: 1rem !important;
+  }
+}
+
+

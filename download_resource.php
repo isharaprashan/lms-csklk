@@ -67,7 +67,7 @@ try {
 
     // Resolve full file path
     $relative_path = $resource['file_path'];
-    $full_path = __DIR__ . '/' . ltrim($relative_path, '/');
+    $full_path = root_path(ltrim($relative_path, '/'));
 
     if (!file_exists($full_path) || !is_file($full_path)) {
         http_response_code(404);

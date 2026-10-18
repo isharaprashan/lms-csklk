@@ -5,6 +5,28 @@ init_lms_session();
 $logged_in = false;
 $user = null;
 $enrolled_courses = [];
+$notifications = [];
+$unread_count = 0;
+$all_courses_sidebar = [];
+$site_announcements = [];
+$promotional_banners = [];
+
+$hero = [
+  'title' => 'Welcome to Computerscience.lk',
+  'description' => 'The central hub for academic software engineering and computational studies. Browse active course resources, track submissions, and collaborate with academic colleagues.',
+  'button_text' => 'Browse Course Catalog',
+  'button_url' => '#courses-section',
+  'bg_image_1' => null,
+  'bg_image_2' => null,
+  'bg_image_3' => null,
+  'hero_image_path' => null,
+  'hero_image_alt' => 'Student with books'
+];
+
+$hero_portrait_default = 'https://images.unsplash.com/photo-1523050854058-8df90110c9f1?w=800&auto=format&fit=crop&q=85';
+$hero_portrait_src = $hero_portrait_default;
+$hero_portrait_alt = 'Student with books';
+$hero_images = [];
 
 try {
   $pdo = getDBConnection();
@@ -17,12 +39,12 @@ try {
       // Fetch user's enrolled course IDs
       $stmt = $pdo->prepare("SELECT course_id FROM enrollments WHERE user_id = ?");
       $stmt->execute([$user['id']]);
-      $enrolled_courses = $stmt->fetchAll(PDO::FETCH_COLUMN);
+      $enrolled_courses = $stmt->fetchAll(PDO::FETCH_COLUMN) ?: [];
 
       // Fetch notifications
       $stmt = $pdo->prepare("SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 5");
       $stmt->execute([$user['id']]);
-      $notifications = $stmt->fetchAll();
+      $notifications = $stmt->fetchAll() ?: [];
 
       $stmt = $pdo->prepare("SELECT COUNT(*) FROM notifications WHERE user_id = ? AND is_read = 0");
       $stmt->execute([$user['id']]);
@@ -32,38 +54,26 @@ try {
 
   // Fetch courses for the sidebar (active/approved only)
   $stmt = $pdo->query("SELECT id, title, tutor_id FROM courses WHERE (status = 'approved' OR status = 'active') AND (is_archived = 0 OR is_archived IS NULL) AND deleted_at IS NULL");
-  $all_courses_sidebar = $stmt->fetchAll();
+  $all_courses_sidebar = $stmt->fetchAll() ?: [];
 
   // Fetch active site announcements
   $stmt = $pdo->query("SELECT * FROM site_announcements WHERE status = 'active' ORDER BY created_at DESC");
-  $site_announcements = $stmt->fetchAll();
+  $site_announcements = $stmt->fetchAll() ?: [];
 
   // Fetch active promotional ad banners for the auto-swiping carousel
   $stmt = $pdo->query("SELECT * FROM promotional_banners WHERE is_active = 1 ORDER BY display_order ASC, created_at DESC");
-  $promotional_banners = $stmt->fetchAll();
+  $promotional_banners = $stmt->fetchAll() ?: [];
 
   // Fetch hero settings
   $stmt = $pdo->query("SELECT * FROM hero_settings WHERE id = 1 LIMIT 1");
-  $hero = $stmt->fetch();
-  if (!$hero) {
-    $hero = [
-      'title' => 'Welcome to Computerscience.lk',
-      'description' => 'The central hub for academic software engineering and computational studies. Browse active course resources, track submissions, and collaborate with academic colleagues.',
-      'button_text' => 'Browse Course Catalog',
-      'button_url' => '#courses-section',
-      'bg_image_1' => null,
-      'bg_image_2' => null,
-      'bg_image_3' => null,
-      'hero_image_path' => null,
-      'hero_image_alt' => 'Student with books'
-    ];
+  $fetched_hero = $stmt->fetch();
+  if ($fetched_hero) {
+    $hero = array_merge($hero, $fetched_hero);
   }
 
   // Resolve the hero portrait image (uploaded custom OR fallback to a high-quality default)
   $hero_portrait_path = !empty($hero['hero_image_path']) ? htmlspecialchars($hero['hero_image_path']) : null;
   $hero_portrait_alt = htmlspecialchars(__($hero['hero_image_alt'] ?? 'Student with books', $hero['hero_image_alt'] ?? 'Student with books'));
-  // Default fallback — high-quality transparent-BG student image (served as PNG)
-  $hero_portrait_default = 'https://images.unsplash.com/photo-1523050854058-8df90110c9f1?w=800&auto=format&fit=crop&q=85';
   $hero_portrait_src = $hero_portrait_path ?: $hero_portrait_default;
 
   $hero_images = [];
@@ -77,7 +87,7 @@ try {
     $hero_images[] = $hero['bg_image'];
   }
 } catch (PDOException $e) {
-  // Handle database error gracefully
+  error_log("Database error in index.php: " . $e->getMessage());
 }
 ?>
 <!DOCTYPE html>
@@ -816,7 +826,7 @@ try {
                 <span><?php echo __('site_announcements', 'Site Announcements'); ?></span>
               </h3>
               <span class="badge bg-primary bg-opacity-10 text-primary rounded-pill px-2.5 py-1 fs-8 fw-semibold">
-                <?php echo count($site_announcements); ?> <?php echo __('updates', 'Updates'); ?>
+                <?php echo count($site_announcements ?? []); ?> <?php echo __('updates', 'Updates'); ?>
               </span>
             </div>
 
@@ -952,7 +962,7 @@ try {
                 </div>
 
                 <!-- Navigation Controls -->
-                <?php if (count($promotional_banners) > 1): ?>
+                <?php if (count($promotional_banners ?? []) > 1): ?>
                   <button type="button" class="promo-nav-btn promo-nav-prev" id="promoPrevBtn" aria-label="Previous Slide">
                     <i class="bi bi-chevron-left"></i>
                   </button>
@@ -962,7 +972,7 @@ try {
 
                   <!-- Pagination Dots -->
                   <div class="promo-indicators" id="promoIndicators">
-                    <?php for ($d = 0; $d < count($promotional_banners); $d++): ?>
+                    <?php for ($d = 0; $d < count($promotional_banners ?? []); $d++): ?>
                       <div class="promo-indicator-dot <?php echo $d === 0 ? 'active' : ''; ?>"
                         data-target-slide="<?php echo $d; ?>"></div>
                     <?php endfor; ?>

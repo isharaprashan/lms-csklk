@@ -119,6 +119,18 @@ try {
         .question-card:hover { border-color: #74c0fc; box-shadow: 0 4px 16px rgba(15,76,129,0.08); }
         .question-card-header { background: #f8f9fa; border-bottom: 1px solid #e9ecef; padding: 1rem 1.5rem; border-radius: 14px 14px 0 0; }
         .img-preview { max-height: 140px; border-radius: 8px; border: 1px solid #dee2e6; object-fit: contain; }
+
+        @media (max-width: 575.98px) {
+            .page-card {
+                padding: 1rem !important;
+            }
+            .question-card-header {
+                padding: 0.75rem 1rem !important;
+            }
+            .question-card > .p-4 {
+                padding: 1rem !important;
+            }
+        }
     </style>
 </head>
 <body>
@@ -127,14 +139,14 @@ try {
     <?php include __DIR__ . '/includes/navbar.php'; ?>
 
     <div class="bg-white border-bottom py-2 shadow-xs">
-        <div class="container px-4 d-flex align-items-center justify-content-between">
+        <div class="container px-3 px-md-4 d-flex align-items-center justify-content-between">
             <div class="d-flex align-items-center gap-2">
                 <a href="classroom.php?course_id=<?php echo urlencode($course_id); ?>&sid=<?php echo urlencode(session_id()); ?>" class="btn btn-outline-secondary btn-sm rounded-pill px-3 py-1">
                     <i class="bi bi-arrow-left me-1"></i> <?php echo __('back', 'Back to Classroom'); ?>
                 </a>
             </div>
             <div class="fs-8 text-muted">
-                <i class="bi bi-gear-wide-connected me-1 text-primary"></i>Quiz Management Console
+                <i class="bi bi-gear-wide-connected me-1 text-primary"></i>Quiz Management
             </div>
         </div>
     </div>
@@ -158,11 +170,11 @@ try {
                     <i class="bi bi-patch-question-fill text-primary me-2"></i><?php echo __('create_quiz_title', 'Quiz Management System'); ?>
                 </h2>
                 <p class="text-muted fs-7 mb-0">
-                    <?php echo __('create_quiz_subtitle', 'Design custom quizzes, add MCQ or Text questions, upload images, set per-question timers, and set attempt limits.'); ?>
+                    <?php echo __('create_quiz_subtitle', 'Design custom quizzes, add Multiple Choice (MCQ) questions, upload images, set per-question timers, and set attempt limits.'); ?>
                 </p>
             </div>
 
-            <button type="button" onclick="saveQuizForm()" id="main-save-btn" class="btn btn-primary btn-lg px-4 py-2.5 border-0 shadow-sm fw-bold" style="background-color: #0f4c81;">
+            <button type="button" onclick="saveQuizForm()" id="main-save-btn" class="btn btn-primary btn-lg px-4 py-2.5 border-0 shadow-sm fw-bold w-100 w-md-auto" style="background-color: #0f4c81;">
                 <i class="bi bi-check-circle-fill me-2"></i><?php echo __('save_quiz_btn', 'Save Quiz & Publish'); ?>
             </button>
         </div>
@@ -281,7 +293,6 @@ try {
             const qIdx = questionCount;
 
             const qId = data ? data.question_id : 'q-' + Date.now() + '-' + Math.floor(Math.random()*1000);
-            const qType = data ? (data.question_type || 'mcq') : 'mcq';
             const qText = data ? (data.question || '') : '';
             const timerSec = data ? (data.time_limit_seconds || 30) : 30;
             const imagePath = data ? (data.image_path || '') : '';
@@ -292,7 +303,6 @@ try {
             const opt3 = data ? (data.option_3 || '') : '';
             const opt4 = data ? (data.option_4 || '') : '';
             const answerIdx = data ? (parseInt(data.answer_index) >= 0 ? parseInt(data.answer_index) : 0) : 0;
-            const correctAnsText = data ? (data.correct_answer || '') : '';
 
             const card = document.createElement('div');
             card.className = 'question-card';
@@ -311,19 +321,14 @@ try {
                 </div>
                 <div class="p-4">
                     <div class="row g-3 mb-3">
-                        <!-- Question Type Selector -->
+                        <!-- Question Type Indicator (MCQ Only) -->
                         <div class="col-md-6">
                             <label class="form-label fw-semibold text-secondary fs-7">
                                 ${window.i18n__ ? window.i18n__('question_type', 'Question Type') : 'Question Type'}
                             </label>
-                            <select class="form-select bg-light border q-type-select" onchange="toggleQuestionTypeFields(${qIdx})">
-                                <option value="mcq" ${qType === 'mcq' ? 'selected' : ''}>
-                                    ${window.i18n__ ? window.i18n__('mcq_type', 'Multiple Choice (MCQ)') : 'Multiple Choice (MCQ)'}
-                                </option>
-                                <option value="text" ${qType === 'text' ? 'selected' : ''}>
-                                    ${window.i18n__ ? window.i18n__('text_type', 'Text Input (Type Answer)') : 'Text Input (Type Answer)'}
-                                </option>
-                            </select>
+                            <div class="form-control bg-light border d-flex align-items-center text-dark fw-medium fs-7">
+                                <i class="bi bi-ui-radios-grid text-primary me-2"></i> ${window.i18n__ ? window.i18n__('mcq_type', 'Multiple Choice (MCQ)') : 'Multiple Choice (MCQ)'}
+                            </div>
                         </div>
 
                         <!-- Custom Timer Per Question -->
@@ -354,8 +359,8 @@ try {
                         </div>
                     </div>
 
-                    <!-- Dynamic Answer Section MCQ vs Text Input -->
-                    <div id="mcq-section-${qIdx}" class="${qType === 'mcq' ? '' : 'd-none'} p-3 rounded bg-light border mb-3">
+                    <!-- Answer Section: MCQ Options & Radio Selection -->
+                    <div id="mcq-section-${qIdx}" class="p-3 rounded bg-light border mb-3">
                         <label class="form-label fw-semibold text-dark fs-7 mb-2">
                             ${window.i18n__ ? window.i18n__('correct_option', 'Multiple Choice Options & Correct Option') : 'Multiple Choice Options & Correct Option'}
                         </label>
@@ -393,14 +398,6 @@ try {
                         </div>
                     </div>
 
-                    <div id="text-section-${qIdx}" class="${qType === 'text' ? '' : 'd-none'} p-3 rounded bg-light border mb-3">
-                        <label class="form-label fw-semibold text-dark fs-7 mb-2">
-                            ${window.i18n__ ? window.i18n__('exact_answer_keyword', 'Exact Correct Keyword / Answer Pattern') : 'Exact Correct Keyword / Answer Pattern'}
-                        </label>
-                        <input type="text" class="form-control bg-white q-text-answer" placeholder="e.g. O(log n)" value="${escapeHtml(correctAnsText)}">
-                        <small class="text-muted fs-8">Automated grading will compare the student's typed answer with this keyword pattern (case-insensitive).</small>
-                    </div>
-
                     <!-- Explanation -->
                     <div>
                         <label class="form-label fw-semibold text-secondary fs-7">
@@ -413,23 +410,6 @@ try {
 
             container.appendChild(card);
             renumberQuestionCards();
-        }
-
-        function toggleQuestionTypeFields(qIdx) {
-            const card = document.getElementById(`q-card-${qIdx}`);
-            if (!card) return;
-
-            const qType = card.querySelector('.q-type-select').value;
-            const mcqSec = document.getElementById(`mcq-section-${qIdx}`);
-            const textSec = document.getElementById(`text-section-${qIdx}`);
-
-            if (qType === 'mcq') {
-                mcqSec.classList.remove('d-none');
-                textSec.classList.add('d-none');
-            } else {
-                mcqSec.classList.add('d-none');
-                textSec.classList.remove('d-none');
-            }
         }
 
         function removeQuestionCard(qIdx) {
@@ -480,7 +460,6 @@ try {
 
             cards.forEach((c, idx) => {
                 const qId = c.getAttribute('data-question-id');
-                const qType = c.querySelector('.q-type-select').value;
                 const timerSec = c.querySelector('.q-timer-input').value;
                 const qText = c.querySelector('.q-text-input').value;
                 const explanation = c.querySelector('.q-explanation-input').value;
@@ -491,7 +470,7 @@ try {
 
                 const qObj = {
                     question_id: qId,
-                    question_type: qType,
+                    question_type: 'mcq',
                     time_limit_seconds: parseInt(timerSec) || 30,
                     question_text: qText,
                     explanation: explanation,
@@ -500,7 +479,7 @@ try {
                     option_3: c.querySelector('.q-opt-3').value,
                     option_4: c.querySelector('.q-opt-4').value,
                     answer_index: radioVal,
-                    correct_answer: qType === 'text' ? c.querySelector('.q-text-answer').value : String(radioVal)
+                    correct_answer: String(radioVal)
                 };
 
                 questions.push(qObj);

@@ -1,0 +1,899 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Assignment Submissions & Grading | Computerscience.lk</title>
+  <link rel="icon" type="image/x-icon" href="assets/logo.png?v=1791886259">
+  <link rel="shortcut icon" href="assets/logo.png?v=1791886259">
+  <script src="assets/js/session_manager.js"></script>
+
+  <!-- Google Fonts: Inter -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <!-- Local Bootstrap 5 CSS -->
+  <link href="assets/css/bootstrap.min.css" rel="stylesheet">
+  <!-- Local Bootstrap Icons -->
+  <link rel="stylesheet" href="assets/css/bootstrap-icons.min.css">
+  <!-- Custom Style & Notification System -->
+  <link rel="stylesheet" href="assets/css/style.css">
+  <link rel="stylesheet" href="assets/css/notifications.css">
+
+  <style>
+    body { font-family: 'Inter', sans-serif; background-color: #f4f6f9; color: #1e293b; }
+    .kpi-card {
+      border: none;
+      border-radius: 16px;
+      background: #ffffff;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.04);
+      transition: all 0.25s ease;
+      position: relative;
+      overflow: hidden;
+    }
+    .kpi-card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 10px 25px rgba(0,0,0,0.08);
+    }
+    .kpi-icon-box {
+      width: 50px;
+      height: 50px;
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.4rem;
+    }
+    .submission-row {
+      transition: background-color 0.15s ease;
+    }
+    .submission-row:hover {
+      background-color: #f8fafc;
+    }
+    .score-badge {
+      font-size: 0.85rem;
+      font-weight: 700;
+      padding: 0.35rem 0.75rem;
+      border-radius: 50rem;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Unified LMS Top Header Bar -->
+  
+<!-- LMS Unified Top Header Bar -->
+<header class="moodle-header px-3 px-md-4 shadow-sm bg-white sticky-top border-bottom" style="z-index: 1040;">
+  <div class="d-flex align-items-center w-100 justify-content-between">
+
+    <!-- Left: Drawer Toggle (if on dashboard/classroom) + Site Brand -->
+    <div class="d-flex align-items-center gap-2 gap-md-3">
+            <a class="moodle-brand fw-bold text-decoration-none fs-4 d-flex align-items-center" href="dashboard.php"
+        style="color: #0f4c81;">
+        <img src="uploads/logo/site_logo_1785354614.png?v=1791886259" alt="Logo" class="me-2"
+          style="height: 32px; width: auto; object-fit: contain;">
+        <span class="d-none d-sm-inline">computerscience<span class="text-secondary">.lk</span></span>
+      </a>
+    </div>
+
+    <!-- Center: Main Navigation Links -->
+    <nav class="d-none d-lg-flex align-items-center gap-1.5">
+      <a href="index.php"
+        class="btn btn-sm px-3 rounded-pill transition-all btn-light text-secondary fw-semibold"
+        style="">
+        <i class="bi bi-house-door me-1"></i>Site Home      </a>
+      
+              <a href="dashboard.php"
+          class="btn btn-sm px-3 rounded-pill transition-all btn-light text-secondary fw-semibold"
+          style="">
+          <i class="bi bi-speedometer2 me-1"></i>Dashboard        </a>
+
+        <a href="my_courses.php"
+          class="btn btn-sm px-3 rounded-pill transition-all btn-light text-secondary fw-semibold"
+          style="">
+          <i class="bi bi-journal-bookmark me-1"></i>Uploaded Courses        </a>
+
+        <a href="live_classes.php"
+          class="btn btn-sm px-3 rounded-pill transition-all btn-light text-danger fw-semibold d-inline-flex align-items-center gap-1.5 border border-danger border-opacity-25 bg-danger bg-opacity-10">
+          <i class="bi bi-broadcast text-danger fs-7"></i>
+          <span>Live Classes</span>
+        </a>
+          </nav>
+
+    <!-- Right: Actions, Language Switcher, Notifications, Profile Menu -->
+    <div class="d-flex align-items-center gap-2">
+      <!-- Language Switcher Dropdown -->
+      <div class="dropdown">
+        <button
+          class="btn btn-sm btn-light border text-secondary dropdown-toggle d-flex align-items-center gap-1.5 rounded-pill px-2.5 py-1"
+          type="button" id="navLangDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+          <i class="bi bi-globe text-primary fs-7"></i>
+          <span class="fw-semibold fs-8">English</span>
+        </button>
+        <ul class="dropdown-menu dropdown-menu-end shadow-sm border-0 py-1" aria-labelledby="navLangDropdown">
+          <li>
+            <a class="dropdown-item fs-8 d-flex align-items-center justify-content-between active fw-bold"
+              href="#" onclick="if(typeof switchLanguage === 'function'){switchLanguage('en');}else{window.location.href='api/set_language.php?lang=en';} return false;">
+              <span>English</span>
+              <i class="bi bi-check-lg text-primary ms-2"></i>            </a>
+          </li>
+          <li>
+            <a class="dropdown-item fs-8 d-flex align-items-center justify-content-between "
+              href="#" onclick="if(typeof switchLanguage === 'function'){switchLanguage('si');}else{window.location.href='api/set_language.php?lang=si';} return false;">
+              <span>සිංහල</span>
+                          </a>
+          </li>
+        </ul>
+      </div>
+
+              <!-- Modern Notification Dropdown Component -->
+        <div class="dropdown">
+  <button class="notif-bell-btn border-0 bg-transparent p-0 position-relative dropdown-toggle no-caret"
+    type="button" id="notificationDropdown" data-bs-toggle="dropdown" aria-expanded="false" title="Notifications">
+    <i class="bi bi-bell fs-5"></i>
+    <span class="notif-badge-count" id="notification-badge" style="display: inline-flex;">
+      1    </span>
+  </button>
+  
+  <div class="dropdown-menu dropdown-menu-end notif-dropdown-menu" aria-labelledby="notificationDropdown">
+    <!-- Dropdown Header -->
+    <div class="notif-dropdown-header d-flex flex-column gap-2">
+      <div class="d-flex align-items-center justify-content-between">
+        <div class="d-flex align-items-center gap-1.5">
+          <span class="fw-bold text-dark fs-7">Notifications</span>
+          <span class="badge bg-danger rounded-pill px-2 py-0.5" id="dropdown-unread-count" style="font-size: 0.65rem; ">
+            1          </span>
+        </div>
+        <button type="button" class="btn btn-link p-0 text-primary fs-9 fw-semibold text-decoration-none d-flex align-items-center gap-1" id="btn-mark-all-read">
+          <i class="bi bi-check2-all"></i>
+          <span>Mark all as read</span>
+        </button>
+      </div>
+
+      <!-- Filter Tabs -->
+      <div class="d-flex align-items-center gap-1 p-1 bg-light rounded-pill">
+        <button type="button" class="notif-tab-btn flex-grow-1 active" id="notif-tab-all">All</button>
+        <button type="button" class="notif-tab-btn flex-grow-1" id="notif-tab-unread">Unread (1)</button>
+      </div>
+    </div>
+
+    <!-- Scrollable Notification Items List -->
+    <div class="notif-list-container" id="dropdown-notif-list">
+      <div class="text-center py-4 text-muted fs-8">
+        <span class="spinner-border spinner-border-sm me-1"></span> Loading notifications...
+      </div>
+    </div>
+
+    <!-- Dropdown Footer -->
+    <div class="notif-dropdown-footer">
+      <a href="notifications.php" class="btn btn-sm btn-light border w-100 rounded-pill py-1.5 fs-8 fw-semibold text-secondary d-flex align-items-center justify-content-center gap-1.5">
+        <span>View All in Notifications Center</span>
+        <i class="bi bi-arrow-right fs-9"></i>
+      </a>
+    </div>
+  </div>
+</div>
+
+        <!-- User Profile Dropdown Menu -->
+        <div class="dropdown">
+          <button class="btn btn-light rounded-pill p-1 border dropdown-toggle d-flex align-items-center gap-2 transition-all hover-shadow-sm"
+            type="button" id="navUserMenuDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+            <img src="uploads/b0c3b022202d5a2904f09f7892a226c4.jpg" class="rounded-circle border"
+              style="width: 32px; height: 32px; object-fit: cover;" alt="Profile Avatar">
+            <span class="d-none d-md-inline text-secondary fw-semibold fs-8 pe-1">Abilash</span>
+          </button>
+          <ul class="dropdown-menu dropdown-menu-end shadow border-light py-2" aria-labelledby="navUserMenuDropdown" style="min-width: 220px; border-radius: 14px;">
+            <li class="px-3 py-2 border-bottom mb-1 bg-light bg-opacity-50">
+              <div class="fw-bold text-dark fs-8 text-truncate">Abilash Rajendra</div>
+              <div class="d-flex align-items-center justify-content-between mt-0.5">
+                <small class="text-muted fs-9 text-truncate">9mwz0mdgba@ruutukf.com</small>
+                <span class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 rounded-pill px-2 py-0.5 text-uppercase" style="font-size: 0.6rem;">
+                  teacher                </span>
+              </div>
+            </li>
+            <li><a class="dropdown-item fs-8 py-2" href="dashboard.php"><i class="bi bi-speedometer2 me-2 text-primary"></i>Dashboard</a></li>
+            <li><a class="dropdown-item fs-8 py-2" href="profile.php"><i class="bi bi-person-circle me-2 text-primary"></i>Profile</a></li>
+            <li><a class="dropdown-item fs-8 py-2" href="my_courses.php"><i class="bi bi-journal-bookmark me-2 text-primary"></i>Uploaded Syllabus Modules</a></li>
+            <li><a class="dropdown-item fs-8 py-2" href="notifications.php"><i class="bi bi-bell me-2 text-primary"></i>Notifications Center</a></li>
+            
+            
+            <li><hr class="dropdown-divider my-1"></li>
+            <li><a class="dropdown-item text-danger fs-8 py-2 fw-semibold" href="logout.php"><i class="bi bi-box-arrow-right me-2"></i>Logout</a></li>
+          </ul>
+        </div>
+          </div>
+
+  </div>
+</header>
+
+<!-- Moodle Drawer Mobile Overlay Backdrop -->
+<div id="moodle-drawer-backdrop" class="moodle-drawer-backdrop"></div>
+
+<script>
+(function() {
+  function setupDrawer() {
+    const toggleBtn = document.getElementById('drawer-toggle');
+    const toggleIcon = document.getElementById('drawer-toggle-icon');
+    const drawer = document.getElementById('moodle-drawer');
+    const wrapper = document.getElementById('moodle-content-wrapper');
+    const backdrop = document.getElementById('moodle-drawer-backdrop');
+
+    if (!drawer) return;
+
+    function setDrawerState(isOpen) {
+      if (isOpen) {
+        drawer.classList.remove('collapsed');
+        if (wrapper) wrapper.classList.remove('full-width');
+        if (backdrop) backdrop.classList.add('show');
+        if (toggleIcon) {
+          toggleIcon.className = 'bi bi-x-lg fs-5 text-danger';
+        }
+        if (toggleBtn) {
+          toggleBtn.classList.add('bg-danger', 'bg-opacity-10', 'text-danger');
+          toggleBtn.classList.remove('btn-light');
+          toggleBtn.setAttribute('title', 'Close Navigation Sidebar');
+        }
+      } else {
+        drawer.classList.add('collapsed');
+        if (wrapper) wrapper.classList.add('full-width');
+        if (backdrop) backdrop.classList.remove('show');
+        if (toggleIcon) {
+          toggleIcon.className = 'bi bi-list fs-4 text-secondary';
+        }
+        if (toggleBtn) {
+          toggleBtn.classList.remove('bg-danger', 'bg-opacity-10', 'text-danger');
+          toggleBtn.classList.add('btn-light');
+          toggleBtn.setAttribute('title', 'Open Navigation Sidebar');
+        }
+      }
+    }
+
+    if (toggleBtn) {
+      toggleBtn.onclick = function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        const willOpen = drawer.classList.contains('collapsed');
+        setDrawerState(willOpen);
+      };
+    }
+
+    // Delegate close buttons inside drawer
+    document.addEventListener('click', function(e) {
+      const closeBtn = e.target.closest('.drawer-close-trigger') || e.target.closest('#drawer-close-btn');
+      if (closeBtn) {
+        e.preventDefault();
+        setDrawerState(false);
+      }
+    });
+
+    if (backdrop) {
+      backdrop.onclick = function() {
+        setDrawerState(false);
+      };
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', setupDrawer);
+  } else {
+    setupDrawer();
+  }
+})();
+</script>
+
+<!-- Centralized Real-Time Heartbeat & Notification Poller Engine -->
+<link rel="stylesheet" href="assets/css/notifications.css">
+<script src="assets/js/realtime-poller.js"></script>
+
+  <!-- Main Container -->
+  <main style="padding-top: 86px;" class="pb-5">
+    <div class="container-fluid px-3 px-md-4 px-xl-5">
+
+      <!-- Breadcrumbs -->
+      <nav aria-label="breadcrumb" class="mb-3">
+        <ol class="breadcrumb moodle-breadcrumb fs-8">
+          <li class="breadcrumb-item"><a href="index.php">Site Home</a></li>
+          <li class="breadcrumb-item"><a href="dashboard.php">Dashboard</a></li>
+          <li class="breadcrumb-item active" aria-current="page">Grade Assignments</li>
+        </ol>
+      </nav>
+
+      <!-- Page Header -->
+      <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center mb-4 gap-3">
+        <div>
+          <h2 class="fw-bold text-dark mb-1 fs-4 d-flex align-items-center gap-2">
+            <i class="bi bi-journal-check text-primary"></i>
+            <span>Assignment Submissions & Grading</span>
+          </h2>
+          <p class="text-muted fs-8 mb-0">
+            Review student submissions, evaluate coursework files, assign grades, and provide feedback with automatic notifications.
+          </p>
+        </div>
+        <div class="d-flex align-items-center gap-2 flex-wrap">
+          <a href="student_analytics.php" class="btn btn-outline-primary btn-sm px-3 rounded-pill fw-semibold shadow-xs">
+            <i class="bi bi-graph-up-arrow me-1"></i> Student Analytics          </a>
+          <a href="dashboard.php" class="btn btn-outline-secondary btn-sm px-3 rounded-pill fw-semibold shadow-xs">
+            <i class="bi bi-arrow-left me-1"></i> Dashboard          </a>
+        </div>
+      </div>
+
+      <!-- KPI Summary Cards -->
+      <div class="row g-3 mb-4">
+        <!-- KPI 1: Total Submissions -->
+        <div class="col-sm-6 col-xl-3">
+          <div class="kpi-card p-3.5 border-start border-4 border-primary">
+            <div class="d-flex justify-content-between align-items-center">
+              <div>
+                <small class="text-muted fw-bold text-uppercase fs-9 tracking-wider">Total Submissions</small>
+                <h3 class="fw-bold text-dark mb-0 mt-1" id="kpi-total-subs">2</h3>
+                <small class="text-muted fs-9">Across all your courses</small>
+              </div>
+              <div class="kpi-icon-box bg-primary bg-opacity-10 text-primary">
+                <i class="bi bi-folder-check"></i>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- KPI 2: Pending Grading -->
+        <div class="col-sm-6 col-xl-3">
+          <div class="kpi-card p-3.5 border-start border-4 border-warning">
+            <div class="d-flex justify-content-between align-items-center">
+              <div>
+                <small class="text-muted fw-bold text-uppercase fs-9 tracking-wider">Pending Review</small>
+                <h3 class="fw-bold text-warning mb-0 mt-1" id="kpi-pending-subs">1</h3>
+                <small class="text-danger fs-9 fw-semibold">
+                  <i class="bi bi-hourglass-split me-0.5"></i>Requires evaluation
+                </small>
+              </div>
+              <div class="kpi-icon-box bg-warning bg-opacity-15 text-warning">
+                <i class="bi bi-pencil-square"></i>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- KPI 3: Graded Submissions -->
+        <div class="col-sm-6 col-xl-3">
+          <div class="kpi-card p-3.5 border-start border-4 border-success">
+            <div class="d-flex justify-content-between align-items-center">
+              <div>
+                <small class="text-muted fw-bold text-uppercase fs-9 tracking-wider">Graded Coursework</small>
+                <h3 class="fw-bold text-success mb-0 mt-1" id="kpi-graded-subs">1</h3>
+                <small class="text-success fs-9 fw-semibold">
+                  <i class="bi bi-check2-circle me-0.5"></i>Feedback sent
+                </small>
+              </div>
+              <div class="kpi-icon-box bg-success bg-opacity-10 text-success">
+                <i class="bi bi-award-fill"></i>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- KPI 4: Average Score -->
+        <div class="col-sm-6 col-xl-3">
+          <div class="kpi-card p-3.5 border-start border-4 border-info">
+            <div class="d-flex justify-content-between align-items-center">
+              <div>
+                <small class="text-muted fw-bold text-uppercase fs-9 tracking-wider">Average Grade Score</small>
+                <h3 class="fw-bold text-info mb-0 mt-1">94.5 <span class="fs-7 text-muted fw-normal">/ 100</span></h3>
+                <small class="text-muted fs-9">Overall cohort achievement</small>
+              </div>
+              <div class="kpi-icon-box bg-info bg-opacity-10 text-info">
+                <i class="bi bi-pie-chart-fill"></i>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Filter Controls & Search Bar Card -->
+      <div class="card border-0 shadow-sm rounded-4 p-3.5 mb-4 bg-white">
+        <form method="GET" action="teacher_assignments.php" class="row g-2.5 align-items-center">
+          <!-- Course Selector -->
+          <div class="col-md-4 col-lg-3">
+            <label class="form-label fs-8 fw-semibold text-secondary mb-1">Filter by Course</label>
+            <select name="course_id" class="form-select form-select-sm rounded-pill" onchange="this.form.submit()">
+              <option value="">All Courses (2)</option>
+                              <option value="archaeology-ba-bsc" >
+                  Archaeology (BA / BSc)                </option>
+                              <option value="test-course34" >
+                  test course34                </option>
+                          </select>
+          </div>
+
+          <!-- Status Selector -->
+          <div class="col-md-3 col-lg-2">
+            <label class="form-label fs-8 fw-semibold text-secondary mb-1">Grading Status</label>
+            <select name="status" class="form-select form-select-sm rounded-pill" onchange="this.form.submit()">
+              <option value="all" selected>All Statuses</option>
+              <option value="pending" >Pending Review (1)</option>
+              <option value="graded" >Graded (1)</option>
+            </select>
+          </div>
+
+          <!-- Search Input -->
+          <div class="col-md-5 col-lg-5">
+            <label class="form-label fs-8 fw-semibold text-secondary mb-1">Search Submissions</label>
+            <div class="input-group input-group-sm">
+              <span class="input-group-text bg-light rounded-start-pill border-end-0">
+                <i class="bi bi-search text-muted"></i>
+              </span>
+              <input type="text" name="q" class="form-control border-start-0" placeholder="Search student name, email, or lesson..." value="">
+              <button class="btn btn-primary rounded-end-pill px-3" type="submit" style="background-color: #0f4c81;">Search</button>
+            </div>
+          </div>
+
+          <!-- Reset Filter -->
+          <div class="col-md-12 col-lg-2 d-flex align-items-end mt-2 mt-lg-0">
+                      </div>
+        </form>
+      </div>
+
+      <!-- Submissions List Table Card -->
+      <div class="card border-0 shadow-sm rounded-4 bg-white overflow-hidden">
+        <div class="card-header bg-white border-bottom py-3 px-4 d-flex flex-wrap align-items-center justify-content-between gap-2">
+          <div class="d-flex align-items-center gap-2">
+            <h6 class="fw-bold text-dark mb-0 fs-6">
+              <i class="bi bi-list-task text-primary me-1"></i>Student Coursework Submissions
+            </h6>
+            <span class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 rounded-pill px-2.5 py-1 fs-9 fw-bold">
+              2 Total
+            </span>
+          </div>
+          <small class="text-muted fs-8">Click <strong>"Grade"</strong> to evaluate, assign a score, and send a notification</small>
+        </div>
+
+        <div class="card-body p-0">
+                      <div class="table-responsive">
+              <table class="table table-hover align-middle mb-0 fs-8" id="submissions-table">
+                <thead class="table-light text-secondary">
+                  <tr>
+                    <th class="ps-4">Student</th>
+                    <th>Course & Lesson</th>
+                    <th>Assignment Name</th>
+                    <th>Submitted File</th>
+                    <th>Submitted At</th>
+                    <th>Grade / Status</th>
+                    <th class="text-end pe-4">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                                      <tr class="submission-row" id="sub-row-4">
+                      <!-- Student Info -->
+                      <td class="ps-4">
+                        <div class="d-flex align-items-center gap-2.5">
+                          <img src="uploads/369952a8b1ec0a128f91b324e7173cc9.jpg" 
+                               class="rounded-circle border shadow-xs" style="width: 34px; height: 34px; object-fit: cover;" alt="">
+                          <div>
+                            <span class="fw-bold text-dark d-block">Sansala Gunasekara</span>
+                            <small class="text-muted fs-9">secakey171@ebflyai.com</small>
+                          </div>
+                        </div>
+                      </td>
+
+                      <!-- Course & Lesson -->
+                      <td>
+                        <span class="fw-semibold text-dark d-block text-truncate" style="max-width: 220px;" title="Archaeology (BA / BSc)">
+                          Archaeology (BA / BSc)                        </span>
+                        <small class="text-muted d-block text-truncate" style="max-width: 220px;" title="Archaeological Methods &amp; Theory:">
+                          <i class="bi bi-play-circle me-1"></i>Archaeological Methods &amp; Theory:                        </small>
+                      </td>
+
+                      <!-- Assignment Name -->
+                      <td>
+                        <span class="fw-medium text-dark d-block text-truncate" style="max-width: 200px;" title="ටෙස්ට් assignment">
+                          ටෙස්ට් assignment                        </span>
+                                                  <small class="text-muted fs-9">
+                            <i class="bi bi-calendar-event me-0.5"></i>Due: Oct 15, 2026                          </small>
+                                              </td>
+
+                      <!-- Submitted File -->
+                      <td>
+                        <a href="download_assignment.php?type=submission&id=4" 
+                           class="btn btn-sm btn-light border py-1 px-2.5 rounded-pill text-dark fw-semibold text-nowrap shadow-xs d-inline-flex align-items-center gap-1.5"
+                           title="Download and view submitted student coursework">
+                          <i class="bi bi-file-earmark-pdf-fill text-danger fs-6"></i>
+                          <span class="text-truncate" style="max-width: 140px;">my_homework.pdf</span>
+                          <small class="text-muted">(1 KB)</small>
+                        </a>
+                                                  <div class="mt-1 fs-9 text-muted text-truncate" style="max-width: 200px;" title="Here is my completed coursework.">
+                            <em>Note: "Here is my completed coursework."</em>
+                          </div>
+                                              </td>
+
+                      <!-- Submitted Date -->
+                      <td>
+                        <span class="text-secondary d-block">Oct 13, 2026</span>
+                        <small class="text-muted fs-9">01:32 PM</small>
+                      </td>
+
+                      <!-- Grade / Status -->
+                      <td id="sub-status-cell-4">
+                                                  <span class="badge bg-success bg-opacity-15 text-success border border-success border-opacity-35 score-badge d-inline-flex align-items-center gap-1">
+                            <i class="bi bi-award-fill"></i> 94.5 / 100
+                          </span>
+                                                      <small class="d-block text-muted fs-9 text-truncate mt-1" style="max-width: 150px;" title="Exceptional solution with well-documented proofs. Keep it up!">
+                              <i class="bi bi-chat-quote me-0.5"></i>"Exceptional solution with well-documented proofs. Keep it up!"
+                            </small>
+                                                                        </td>
+
+                      <!-- Actions -->
+                      <td class="text-end pe-4 text-nowrap">
+                        <button type="button" 
+                                class="btn btn-sm btn-outline-primary rounded-pill px-3 py-1 fw-semibold shadow-xs btn-open-grade-modal"
+                                data-sub-id="4"
+                                data-student-name="Sansala Gunasekara"
+                                data-student-email="secakey171@ebflyai.com"
+                                data-course-title="Archaeology (BA / BSc)"
+                                data-lesson-title="Archaeological Methods &amp; Theory:"
+                                data-assignment-title="ටෙස්ට් assignment"
+                                data-file-name="my_homework.pdf"
+                                data-file-size="1 KB"
+                                data-download-url="download_assignment.php?type=submission&id=4"
+                                data-student-notes="Here is my completed coursework."
+                                data-current-grade="94.5"
+                                data-current-feedback="Exceptional solution with well-documented proofs. Keep it up!">
+                          <i class="bi bi-pencil-square me-1"></i>
+                          Edit Grade                        </button>
+                        <a href="watch_lesson.php?course_id=archaeology-ba-bsc&lesson_id=lesson-6a8ea9760e2bd" 
+                           target="_blank" 
+                           class="btn btn-sm btn-light border rounded-circle p-1 ms-1 d-inline-flex align-items-center justify-content-center" 
+                           style="width: 28px; height: 28px;" title="Open Lesson Workspace">
+                          <i class="bi bi-box-arrow-up-right fs-9"></i>
+                        </a>
+                      </td>
+                    </tr>
+                                      <tr class="submission-row" id="sub-row-3">
+                      <!-- Student Info -->
+                      <td class="ps-4">
+                        <div class="d-flex align-items-center gap-2.5">
+                          <img src="https://ui-avatars.com/api/?name=test3&amp;background=0f4c81&amp;color=fff" 
+                               class="rounded-circle border shadow-xs" style="width: 34px; height: 34px; object-fit: cover;" alt="">
+                          <div>
+                            <span class="fw-bold text-dark d-block">test3</span>
+                            <small class="text-muted fs-9">jagnijaspu@necub.com</small>
+                          </div>
+                        </div>
+                      </td>
+
+                      <!-- Course & Lesson -->
+                      <td>
+                        <span class="fw-semibold text-dark d-block text-truncate" style="max-width: 220px;" title="Archaeology (BA / BSc)">
+                          Archaeology (BA / BSc)                        </span>
+                        <small class="text-muted d-block text-truncate" style="max-width: 220px;" title="Archaeological Methods &amp; Theory:">
+                          <i class="bi bi-play-circle me-1"></i>Archaeological Methods &amp; Theory:                        </small>
+                      </td>
+
+                      <!-- Assignment Name -->
+                      <td>
+                        <span class="fw-medium text-dark d-block text-truncate" style="max-width: 200px;" title="ටෙස්ට් assignment">
+                          ටෙස්ට් assignment                        </span>
+                                                  <small class="text-muted fs-9">
+                            <i class="bi bi-calendar-event me-0.5"></i>Due: Oct 15, 2026                          </small>
+                                              </td>
+
+                      <!-- Submitted File -->
+                      <td>
+                        <a href="download_assignment.php?type=submission&id=3" 
+                           class="btn btn-sm btn-light border py-1 px-2.5 rounded-pill text-dark fw-semibold text-nowrap shadow-xs d-inline-flex align-items-center gap-1.5"
+                           title="Download and view submitted student coursework">
+                          <i class="bi bi-file-earmark-arrow-down-fill text-primary fs-6"></i>
+                          <span class="text-truncate" style="max-width: 140px;">Screenshot (1).png</span>
+                          <small class="text-muted">(144.3 KB)</small>
+                        </a>
+                                              </td>
+
+                      <!-- Submitted Date -->
+                      <td>
+                        <span class="text-secondary d-block">Oct 13, 2026</span>
+                        <small class="text-muted fs-9">12:54 PM</small>
+                      </td>
+
+                      <!-- Grade / Status -->
+                      <td id="sub-status-cell-3">
+                                                  <span class="badge bg-warning bg-opacity-15 text-dark border border-warning border-opacity-35 rounded-pill px-2.5 py-1 fw-semibold">
+                            <i class="bi bi-hourglass-split text-warning me-1"></i>Pending Review
+                          </span>
+                                              </td>
+
+                      <!-- Actions -->
+                      <td class="text-end pe-4 text-nowrap">
+                        <button type="button" 
+                                class="btn btn-sm btn-primary rounded-pill px-3 py-1 fw-semibold shadow-xs btn-open-grade-modal"
+                                data-sub-id="3"
+                                data-student-name="test3"
+                                data-student-email="jagnijaspu@necub.com"
+                                data-course-title="Archaeology (BA / BSc)"
+                                data-lesson-title="Archaeological Methods &amp; Theory:"
+                                data-assignment-title="ටෙස්ට් assignment"
+                                data-file-name="Screenshot (1).png"
+                                data-file-size="144.3 KB"
+                                data-download-url="download_assignment.php?type=submission&id=3"
+                                data-student-notes=""
+                                data-current-grade=""
+                                data-current-feedback="">
+                          <i class="bi bi-award me-1"></i>
+                          Grade                        </button>
+                        <a href="watch_lesson.php?course_id=archaeology-ba-bsc&lesson_id=lesson-6a8ea9760e2bd" 
+                           target="_blank" 
+                           class="btn btn-sm btn-light border rounded-circle p-1 ms-1 d-inline-flex align-items-center justify-content-center" 
+                           style="width: 28px; height: 28px;" title="Open Lesson Workspace">
+                          <i class="bi bi-box-arrow-up-right fs-9"></i>
+                        </a>
+                      </td>
+                    </tr>
+                                  </tbody>
+              </table>
+            </div>
+                  </div>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- Grading & Evaluation Modal -->
+  <div class="modal fade text-dark" id="gradeAssignmentModal" tabindex="-1" aria-labelledby="gradeAssignmentModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+      <div class="modal-content border-0 shadow-lg rounded-4">
+        <div class="modal-header border-0 pb-0">
+          <h5 class="modal-title fw-bold text-dark d-flex align-items-center gap-2" id="gradeAssignmentModalLabel">
+            <i class="bi bi-award-fill text-primary"></i>
+            <span>Evaluate & Grade Student Coursework</span>
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+
+        <form id="gradeSubmissionForm" onsubmit="submitAssignmentGrade(event)">
+          <input type="hidden" id="modal-sub-id" name="submission_id" value="">
+
+          <div class="modal-body py-3">
+            <!-- Student & Course Details Brief Card -->
+            <div class="p-3 bg-light rounded-3 border mb-3">
+              <div class="row g-2">
+                <div class="col-sm-6">
+                  <small class="text-muted fs-9 fw-bold text-uppercase d-block">Student</small>
+                  <strong class="text-dark fs-7 d-block" id="modal-student-name">Student Name</strong>
+                  <span class="text-muted fs-8" id="modal-student-email">email@example.com</span>
+                </div>
+                <div class="col-sm-6">
+                  <small class="text-muted fs-9 fw-bold text-uppercase d-block">Course & Lesson</small>
+                  <strong class="text-dark fs-7 d-block text-truncate" id="modal-course-title">Course Title</strong>
+                  <span class="text-muted fs-8 text-truncate d-block" id="modal-lesson-title">Lesson Title</span>
+                </div>
+                <div class="col-12 mt-2 pt-2 border-top">
+                  <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+                    <div>
+                      <small class="text-muted fs-9 fw-bold text-uppercase d-block">Submitted Work</small>
+                      <span class="fw-semibold text-dark fs-8" id="modal-file-name">file.pdf</span>
+                      <small class="text-muted" id="modal-file-size">(1.2 MB)</small>
+                    </div>
+                    <a href="#" id="modal-download-btn" target="_blank" class="btn btn-outline-primary btn-sm rounded-pill px-3 py-1 fs-8 fw-semibold shadow-xs">
+                      <i class="bi bi-download me-1"></i>Download & Inspect File
+                    </a>
+                  </div>
+                </div>
+                <div class="col-12 mt-1" id="modal-notes-container">
+                  <small class="text-muted fs-9 fw-bold text-uppercase d-block">Student's Submission Remarks</small>
+                  <p class="fs-8 text-secondary mb-0 p-2 bg-white rounded border fst-italic" id="modal-student-notes">None</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Grade Inputs -->
+            <div class="row g-3">
+              <!-- Score Input -->
+              <div class="col-md-5">
+                <label for="modal-grade-score" class="form-label fw-semibold text-dark fs-8 mb-1">
+                  Score / Grade (0 - 100) <span class="text-danger">*</span>
+                </label>
+                <div class="input-group">
+                  <input type="number" step="0.5" min="0" max="100" class="form-control form-control-lg fw-bold text-primary rounded-start-2" 
+                         id="modal-grade-score" name="grade" placeholder="e.g. 85.0" required>
+                  <span class="input-group-text fw-semibold bg-light text-muted">/ 100</span>
+                </div>
+                <!-- Score Preset Buttons -->
+                <div class="d-flex gap-1.5 mt-1.5 flex-wrap">
+                  <small class="text-muted fs-9 me-1 align-self-center">Quick Set:</small>
+                  <button type="button" class="btn btn-xs btn-outline-secondary rounded-pill px-2 py-0.5 fs-9" onclick="setPresetScore(100)">100</button>
+                  <button type="button" class="btn btn-xs btn-outline-secondary rounded-pill px-2 py-0.5 fs-9" onclick="setPresetScore(90)">90</button>
+                  <button type="button" class="btn btn-xs btn-outline-secondary rounded-pill px-2 py-0.5 fs-9" onclick="setPresetScore(80)">80</button>
+                  <button type="button" class="btn btn-xs btn-outline-secondary rounded-pill px-2 py-0.5 fs-9" onclick="setPresetScore(75)">75</button>
+                  <button type="button" class="btn btn-xs btn-outline-secondary rounded-pill px-2 py-0.5 fs-9" onclick="setPresetScore(60)">60</button>
+                </div>
+              </div>
+
+              <!-- Feedback Textarea -->
+              <div class="col-md-7">
+                <label for="modal-feedback-text" class="form-label fw-semibold text-dark fs-8 mb-1">
+                  Teacher Feedback & Evaluation Remarks (Optional)
+                </label>
+                <textarea class="form-control form-control-sm rounded-2" id="modal-feedback-text" name="feedback" rows="4" 
+                          placeholder="Provide constructive feedback, commentary on areas for improvement, or commendation for the student..."></textarea>
+              </div>
+
+              <!-- Notification Checkbox -->
+              <div class="col-12">
+                <div class="form-check form-switch">
+                  <input class="form-check-input" type="checkbox" id="modal-send-notification" name="send_notification" value="1" checked>
+                  <label class="form-check-label fs-8 text-secondary fw-semibold cursor-pointer" for="modal-send-notification">
+                    <i class="bi bi-bell-fill text-warning me-1"></i>Send instant notification to the student with their score & feedback
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="modal-footer border-0 pt-0">
+            <button type="button" class="btn btn-light rounded-pill px-4" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" id="modal-submit-btn" class="btn btn-primary rounded-pill px-4 fw-bold shadow-sm" style="background-color: #0f4c81;">
+              <i class="bi bi-check-circle-fill me-1"></i> Save Grade & Notify Student
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Local Bootstrap 5 Bundle JS -->
+  <script src="assets/js/bootstrap.bundle.min.js"></script>
+  <!-- Modern Notification System Client -->
+  <script src="assets/js/notifications.js"></script>
+
+  <script>
+    let gradeModalInstance = null;
+
+    document.addEventListener('DOMContentLoaded', function() {
+      const modalEl = document.getElementById('gradeAssignmentModal');
+      if (modalEl) {
+        gradeModalInstance = new bootstrap.Modal(modalEl);
+      }
+
+      // Bind open modal buttons
+      document.querySelectorAll('.btn-open-grade-modal').forEach(btn => {
+        btn.addEventListener('click', function() {
+          const subId = this.getAttribute('data-sub-id');
+          const studentName = this.getAttribute('data-student-name');
+          const studentEmail = this.getAttribute('data-student-email');
+          const courseTitle = this.getAttribute('data-course-title');
+          const lessonTitle = this.getAttribute('data-lesson-title');
+          const fileName = this.getAttribute('data-file-name');
+          const fileSize = this.getAttribute('data-file-size');
+          const downloadUrl = this.getAttribute('data-download-url');
+          const studentNotes = this.getAttribute('data-student-notes');
+          const currentGrade = this.getAttribute('data-current-grade');
+          const currentFeedback = this.getAttribute('data-current-feedback');
+
+          document.getElementById('modal-sub-id').value = subId;
+          document.getElementById('modal-student-name').textContent = studentName;
+          document.getElementById('modal-student-email').textContent = studentEmail;
+          document.getElementById('modal-course-title').textContent = courseTitle;
+          document.getElementById('modal-lesson-title').textContent = lessonTitle;
+          document.getElementById('modal-file-name').textContent = fileName;
+          document.getElementById('modal-file-size').textContent = `(${fileSize})`;
+          document.getElementById('modal-download-btn').setAttribute('href', downloadUrl);
+
+          const notesBox = document.getElementById('modal-student-notes');
+          const notesContainer = document.getElementById('modal-notes-container');
+          if (studentNotes && studentNotes.trim() !== '') {
+            notesBox.textContent = `"${studentNotes}"`;
+            notesContainer.classList.remove('d-none');
+          } else {
+            notesBox.textContent = 'None provided';
+          }
+
+          document.getElementById('modal-grade-score').value = currentGrade || '';
+          document.getElementById('modal-feedback-text').value = currentFeedback || '';
+          document.getElementById('modal-send-notification').checked = true;
+
+          const submitBtn = document.getElementById('modal-submit-btn');
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i> Save Grade & Notify Student';
+
+          if (gradeModalInstance) {
+            gradeModalInstance.show();
+          }
+        });
+      });
+    });
+
+    function setPresetScore(val) {
+      const scoreInput = document.getElementById('modal-grade-score');
+      if (scoreInput) {
+        scoreInput.value = val;
+        scoreInput.focus();
+      }
+    }
+
+    function submitAssignmentGrade(e) {
+      e.preventDefault();
+      const form = document.getElementById('gradeSubmissionForm');
+      const submitBtn = document.getElementById('modal-submit-btn');
+      const subId = document.getElementById('modal-sub-id').value;
+      const grade = document.getElementById('modal-grade-score').value;
+      const feedback = document.getElementById('modal-feedback-text').value;
+      const sendNotif = document.getElementById('modal-send-notification').checked ? 1 : 0;
+
+      if (!grade || isNaN(grade) || parseFloat(grade) < 0 || parseFloat(grade) > 100) {
+        alert('Please enter a valid grade between 0 and 100.');
+        return;
+      }
+
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status"></span> Saving & Notifying...';
+
+      fetch('api/grade_assignment.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          submission_id: parseInt(subId),
+          grade: parseFloat(grade),
+          feedback: feedback,
+          send_notification: sendNotif
+        })
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          // Update row in table dynamically
+          const statusCell = document.getElementById(`sub-status-cell-${subId}`);
+          if (statusCell) {
+            let feedbackSnippet = '';
+            if (data.feedback && data.feedback.trim() !== '') {
+              const escFeed = data.feedback.replace(/"/g, '&quot;');
+              const shortFeed = escFeed.length > 30 ? escFeed.substring(0, 27) + '...' : escFeed;
+              feedbackSnippet = `<small class="d-block text-muted fs-9 text-truncate mt-1" style="max-width: 150px;" title="${escFeed}"><i class="bi bi-chat-quote me-0.5"></i>"${shortFeed}"</small>`;
+            }
+            statusCell.innerHTML = `
+              <span class="badge bg-success bg-opacity-15 text-success border border-success border-opacity-35 score-badge d-inline-flex align-items-center gap-1">
+                <i class="bi bi-award-fill"></i> ${parseFloat(data.grade)} / 100
+              </span>
+              ${feedbackSnippet}
+            `;
+          }
+
+          // Update trigger button state
+          const row = document.getElementById(`sub-row-${subId}`);
+          if (row) {
+            const btn = row.querySelector('.btn-open-grade-modal');
+            if (btn) {
+              btn.setAttribute('data-current-grade', data.grade);
+              btn.setAttribute('data-current-feedback', data.feedback || '');
+              btn.classList.remove('btn-primary');
+              btn.classList.add('btn-outline-primary');
+              btn.innerHTML = '<i class="bi bi-pencil-square me-1"></i> Edit Grade';
+            }
+          }
+
+          // Update Pending KPI count if available
+          const pendingKpi = document.getElementById('kpi-pending-subs');
+          if (pendingKpi) {
+            const currentPending = parseInt(pendingKpi.textContent) || 0;
+            if (currentPending > 0) pendingKpi.textContent = currentPending - 1;
+          }
+          const gradedKpi = document.getElementById('kpi-graded-subs');
+          if (gradedKpi) {
+            const currentGraded = parseInt(gradedKpi.textContent) || 0;
+            gradedKpi.textContent = currentGraded + 1;
+          }
+
+          if (gradeModalInstance) {
+            gradeModalInstance.hide();
+          }
+
+          alert('Success: Grade saved and notification delivered to student!');
+        } else {
+          alert('Error: ' + (data.message || 'Failed to save grade.'));
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i> Save Grade & Notify Student';
+        }
+      })
+      .catch(err => {
+        console.error(err);
+        alert('Server communication error. Please try again.');
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i> Save Grade & Notify Student';
+      });
+    }
+  </script>
+</body>
+</html>

@@ -32,6 +32,7 @@ try {
   }
 
   $is_teacher = (($student['role'] ?? 'student') === 'teacher');
+  $is_admin = in_array($student['role'] ?? '', ['admin', 'super_admin']);
 
   if ($is_teacher) {
     // Fetch courses taught by this teacher
@@ -57,6 +58,18 @@ try {
                                ORDER BY qr.score DESC LIMIT 5");
     $stmt->execute([$user_id]);
     $recent_submissions = $stmt->fetchAll();
+
+    // Fetch pending assignment submissions for grading in teacher's courses
+    if ($is_admin) {
+      $stmtPending = $pdo->query("SELECT COUNT(*) FROM assignment_submissions WHERE status != 'graded' OR grade IS NULL");
+      $pending_grading_count = (int)$stmtPending->fetchColumn();
+    } else {
+      $stmtPending = $pdo->prepare("SELECT COUNT(*) FROM assignment_submissions sub 
+                                    JOIN courses c ON c.id = sub.course_id 
+                                    WHERE c.tutor_id = ? AND (sub.status != 'graded' OR sub.grade IS NULL)");
+      $stmtPending->execute([$user_id]);
+      $pending_grading_count = (int)$stmtPending->fetchColumn();
+    }
 
     // Fetch all courses for sidebar (approved or taught by them)
     $stmt = $pdo->prepare("SELECT * FROM courses WHERE ((status = 'approved' OR status = 'active') AND is_archived = 0) OR tutor_id = ?");
@@ -238,26 +251,35 @@ try {
       </nav>
 
       <!-- Page title -->
-      <div class="mb-4 d-flex justify-content-between align-items-center">
+      <div class="mb-4 d-flex flex-column flex-sm-row justify-content-between align-items-start align-items-sm-center gap-3 panel-header-responsive">
         <h1 class="fw-bold text-dark mb-0 fs-3">
           <?php echo $is_teacher ? __('lecturer_console', 'Lecturer Console') : __('student_dashboard', 'Dashboard'); ?>
         </h1>
         <?php if ($is_teacher): ?>
-          <div class="d-flex gap-2">
+          <div class="d-flex flex-wrap gap-2 align-items-center w-100 w-sm-auto header-actions-group">
             <a href="student_analytics.php"
-              class="btn btn-outline-primary btn-sm px-3 rounded-pill d-inline-flex align-items-center gap-1">
+              class="btn btn-outline-primary btn-sm px-3 rounded-pill d-inline-flex align-items-center gap-1.5 shadow-xs">
               <i class="bi bi-graph-up-arrow"></i> <?php echo __('nav_student_analytics', 'Student Analytics'); ?>
             </a>
-            <button type="button" class="btn btn-primary btn-sm px-3 border-0 d-inline-flex align-items-center gap-1"
+            <a href="teacher_assignments.php"
+              class="btn btn-outline-success btn-sm px-3 rounded-pill d-inline-flex align-items-center gap-1.5 fw-semibold shadow-xs">
+              <i class="bi bi-journal-check"></i> <?php echo __('grade_assignments_btn', 'Grade Assignments'); ?>
+              <?php if (!empty($pending_grading_count) && $pending_grading_count > 0): ?>
+                <span class="badge bg-danger text-white rounded-pill ms-1 px-1.5 py-0.5 fs-9" title="<?php echo $pending_grading_count; ?> Ungraded Submissions"><?php echo $pending_grading_count; ?></span>
+              <?php endif; ?>
+            </a>
+            <button type="button" class="btn btn-primary btn-sm px-3 border-0 d-inline-flex align-items-center gap-1 shadow-xs"
               style="background-color: #0f4c81;" data-bs-toggle="collapse" data-bs-target="#createCourseCollapse">
               <i class="bi bi-plus-circle-fill"></i> <?php echo __('add_new_course', 'Add New Course'); ?>
             </button>
           </div>
         <?php else: ?>
-          <a href="index.php#courses-section" class="btn btn-primary btn-sm px-3 border-0"
-            style="background-color: #0f4c81;">
-            <i class="bi bi-search me-1"></i> <?php echo __('nav_courses', 'Course Catalog'); ?>
-          </a>
+          <div class="header-actions-group w-100 w-sm-auto">
+            <a href="index.php#courses-section" class="btn btn-primary btn-sm px-3 border-0"
+              style="background-color: #0f4c81;">
+              <i class="bi bi-search me-1"></i> <?php echo __('nav_courses', 'Course Catalog'); ?>
+            </a>
+          </div>
         <?php endif; ?>
       </div>
 
@@ -275,7 +297,7 @@ try {
                     class="bi bi-journal-plus text-primary me-2"></i>Add a New Course Syllabus</h4>
 
                 <!-- Step Indicator Header -->
-                <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
+                <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom wizard-steps-header">
                   <div class="d-flex align-items-center gap-2 pb-2 wizard-step-header active-step" id="step-1-indicator"
                     style="border-bottom: 2px solid #0f4c81;">
                     <span
@@ -650,7 +672,20 @@ try {
                     // Quiz completion check & performance summary
                     $c_quiz_check = check_course_quizzes_completed($pdo, $user_id, $course['id']);
                     $all_quizzes_done = $c_quiz_check['all_completed'];
-                    $can_request_cert = ($is_course_100 && $all_quizzes_done);
+
+                    // Assignment completion & grading check
+                    $c_assign_check = check_course_assignments_completed($pdo, $user_id, $course['id']);
+                    $all_assignments_done = $c_assign_check['all_completed'];
+                    $all_assignments_graded = $c_assign_check['all_graded'];
+
+                    // Mandatory coursework requirement: Assignments must be completed to reach 100%
+                    if (!$all_assignments_done) {
+                        $is_course_100 = false;
+                        $progress_percent = min(99, $progress_percent);
+                    }
+
+                    // In student panel: Certificate can be requested ONLY after marks have been assigned for the teacher assignment
+                    $can_request_cert = ($is_course_100 && $all_quizzes_done && $all_assignments_done && $all_assignments_graded);
 
                     $qStmt = $pdo->prepare("SELECT * FROM quiz_results WHERE user_id = ? AND course_id = ?");
                     $qStmt->execute([$user_id, $course['id']]);
@@ -708,10 +743,10 @@ try {
                     ?>
 
                     <!-- Moodle Course Row -->
-                    <div class="p-3 border rounded bg-white hover:shadow-sm transition-all">
+                    <div class="p-3 border rounded bg-white hover:shadow-sm transition-all moodle-course-item">
                       <div class="row align-items-center gy-3">
                         <div class="col-sm-2 col-3">
-                          <img src="<?php echo htmlspecialchars($course['thumbnail']); ?>" class="img-fluid rounded"
+                          <img src="<?php echo htmlspecialchars($course['thumbnail']); ?>" class="img-fluid rounded course-thumb-box-mobile"
                             alt="Thumbnail" style="width: 100%; max-height: 60px; object-fit: cover;">
                         </div>
                         <div class="col-sm-6 col-9">
@@ -729,34 +764,34 @@ try {
                             <span class="text-dark fs-8 fw-bold"><?php echo $progress_percent; ?>%</span>
                           </div>
                         </div>
-                        <div class="col-sm-4 text-center text-sm-end d-flex flex-wrap justify-content-end align-items-center gap-1.5">
+                        <div class="col-12 col-sm-4 text-start text-sm-end d-flex flex-wrap justify-content-start justify-content-sm-end align-items-center gap-1.5 course-actions-responsive">
                           <a href="classroom.php?course_id=<?php echo urlencode($course['id']); ?>"
-                            class="btn btn-outline-primary btn-sm px-3 rounded-pill">
+                            class="btn btn-outline-primary btn-sm px-3 rounded-pill flex-fill flex-sm-grow-0">
                             <i class="bi bi-folder2-open me-1"></i> <?php echo __('access', 'Access'); ?>
                           </a>
 
                           <?php if (!$is_teacher): ?>
                             <?php if ($existing_cert): ?>
                               <?php if (in_array($existing_cert['status'], ['approved', 'issued'])): ?>
-                                <a href="javascript:void(0)" class="btn btn-success btn-sm px-3 rounded-pill fw-bold shadow-sm d-inline-flex align-items-center gap-1 text-white cert-status-btn"
+                                <a href="javascript:void(0)" class="btn btn-success btn-sm px-3 rounded-pill fw-bold shadow-sm d-inline-flex align-items-center justify-content-center gap-1 text-white cert-status-btn flex-fill flex-sm-grow-0"
                                   data-cert='<?php echo $cert_json; ?>'
                                   onclick="handleOpenCertStatus(this)">
                                   <i class="bi bi-patch-check-fill"></i> <?php echo __('certificate_issued', 'Certificate Issued'); ?>
                                 </a>
                               <?php elseif ($existing_cert['status'] === 'dispatched'): ?>
-                                <a href="javascript:void(0)" class="btn btn-info text-white btn-sm px-3 rounded-pill fw-bold shadow-sm d-inline-flex align-items-center gap-1 cert-status-btn"
+                                <a href="javascript:void(0)" class="btn btn-info text-white btn-sm px-3 rounded-pill fw-bold shadow-sm d-inline-flex align-items-center justify-content-center gap-1 cert-status-btn flex-fill flex-sm-grow-0"
                                   data-cert='<?php echo $cert_json; ?>'
                                   onclick="handleOpenCertStatus(this)">
                                   <i class="bi bi-truck"></i> <?php echo __('certificate_dispatched', 'Certificate Dispatched'); ?>
                                 </a>
                               <?php elseif ($existing_cert['status'] === 'processing'): ?>
-                                <a href="javascript:void(0)" class="btn btn-primary btn-sm px-3 rounded-pill fw-bold shadow-sm d-inline-flex align-items-center gap-1 text-white cert-status-btn"
+                                <a href="javascript:void(0)" class="btn btn-primary btn-sm px-3 rounded-pill fw-bold shadow-sm d-inline-flex align-items-center justify-content-center gap-1 text-white cert-status-btn flex-fill flex-sm-grow-0"
                                   data-cert='<?php echo $cert_json; ?>'
                                   onclick="handleOpenCertStatus(this)">
                                   <i class="bi bi-gear-wide-connected"></i> <?php echo __('certificate_processing', 'Certificate Processing'); ?>
                                 </a>
                               <?php else: ?>
-                                <a href="javascript:void(0)" class="btn btn-warning bg-opacity-25 text-dark border-warning btn-sm px-3 rounded-pill fw-bold shadow-sm d-inline-flex align-items-center gap-1 cert-status-btn"
+                                <a href="javascript:void(0)" class="btn btn-warning bg-opacity-25 text-dark border-warning btn-sm px-3 rounded-pill fw-bold shadow-sm d-inline-flex align-items-center justify-content-center gap-1 cert-status-btn flex-fill flex-sm-grow-0"
                                   data-cert='<?php echo $cert_json; ?>'
                                   onclick="handleOpenCertStatus(this)">
                                   <i class="bi bi-clock-history"></i> <?php echo __('certificate_requested', 'Certificate Requested'); ?>
@@ -764,14 +799,14 @@ try {
                               <?php endif; ?>
                             <?php else: ?>
                               <?php if ($can_request_cert): ?>
-                                <a href="javascript:void(0)" class="btn btn-success btn-sm px-3.5 py-1.5 rounded-pill fw-bold shadow-sm d-inline-flex align-items-center gap-1 text-white cert-req-btn"
+                                <a href="javascript:void(0)" class="btn btn-success btn-sm px-3.5 py-1.5 rounded-pill fw-bold shadow-sm d-inline-flex align-items-center justify-content-center gap-1 text-white cert-req-btn flex-fill flex-sm-grow-0"
                                   style="background-color: #28a745; border-color: #28a745;"
                                   data-cert='<?php echo $cert_json; ?>'
                                   onclick="handleOpenCertModal(this)">
                                   <i class="bi bi-award-fill"></i> <?php echo __('request_certificate', 'Request Certificate'); ?>
                                 </a>
                               <?php else: ?>
-                                <a href="javascript:void(0)" class="btn btn-light border text-muted btn-sm px-3 rounded-pill d-inline-flex align-items-center gap-1 cert-locked-btn"
+                                <a href="javascript:void(0)" class="btn btn-light border text-muted btn-sm px-3 rounded-pill d-inline-flex align-items-center justify-content-center gap-1 cert-locked-btn flex-fill flex-sm-grow-0"
                                   style="cursor: pointer;"
                                   data-course-title="<?php echo htmlspecialchars($course['title']); ?>"
                                   data-progress="<?php echo $progress_percent; ?>"
@@ -779,10 +814,17 @@ try {
                                   data-quizzes-completed="<?php echo (int)$c_quiz_check['completed_quizzes']; ?>"
                                   data-quizzes-total="<?php echo (int)$c_quiz_check['total_quizzes']; ?>"
                                   data-missing-quizzes="<?php echo htmlspecialchars(implode(', ', $c_quiz_check['missing_quiz_titles'] ?? [])); ?>"
+                                  data-assignments-done="<?php echo $all_assignments_done ? '1' : '0'; ?>"
+                                  data-assignments-completed="<?php echo (int)$c_assign_check['completed_assignments']; ?>"
+                                  data-assignments-total="<?php echo (int)$c_assign_check['total_assignments']; ?>"
+                                  data-missing-assignments="<?php echo htmlspecialchars(implode(', ', $c_assign_check['missing_assignment_titles'] ?? [])); ?>"
                                   data-classroom-url="classroom.php?course_id=<?php echo urlencode($course['id']); ?>"
                                   data-quiz-url="quiz.php?course_id=<?php echo urlencode($course['id']); ?>"
+                                  data-assignments-graded="<?php echo $all_assignments_graded ? '1' : '0'; ?>"
+                                  data-assignments-graded-count="<?php echo (int)$c_assign_check['graded_assignments']; ?>"
+                                  data-pending-grading="<?php echo htmlspecialchars(implode(', ', $c_assign_check['pending_grading_titles'] ?? [])); ?>"
                                   onclick="handleLockedCertClick(this)"
-                                  title="<?php echo __('certificate_locked_tip', 'Complete 100% of course lessons & quizzes to unlock your certificate.'); ?>">
+                                  title="<?php echo __('certificate_locked_tip', 'Complete 100% of course lessons, quizzes, and have marks assigned for all assignments to unlock your certificate.'); ?>">
                                   <i class="bi bi-lock-fill text-secondary"></i> <?php echo __('request_certificate', 'Request Certificate'); ?>
                                 </a>
                               <?php endif; ?>
@@ -866,9 +908,9 @@ try {
                             $isDone = ($les['is_cl_completed'] || $les['is_lp_completed'] || $lesPct >= 90);
                             $displayPct = $isDone ? 100 : round($lesPct);
                             ?>
-                            <div class="d-flex align-items-center justify-content-between p-2.5 rounded bg-light border-0 fs-8">
-                              <div class="d-flex align-items-center gap-2 text-truncate me-2" style="max-width: 60%;">
-                                <div class="activity-icon-box <?php echo $isDone ? 'icon-green' : 'icon-blue'; ?> text-center"
+                            <div class="d-flex align-items-center justify-content-between p-2.5 rounded bg-light border-0 fs-8 lesson-progress-row">
+                              <div class="d-flex align-items-center gap-2 text-truncate me-2 lesson-progress-title" style="max-width: 60%;">
+                                <div class="activity-icon-box <?php echo $isDone ? 'icon-green' : 'icon-blue'; ?> text-center flex-shrink-0"
                                   style="width: 24px; height: 24px; font-size: 0.75rem;">
                                   <i class="bi bi-<?php echo $isDone ? 'check-circle-fill' : 'play-circle-fill'; ?>"></i>
                                 </div>
@@ -876,7 +918,7 @@ try {
                                   class="fw-semibold text-dark text-truncate"><?php echo htmlspecialchars($les['title']); ?></span>
                               </div>
 
-                              <div class="d-flex align-items-center gap-3">
+                              <div class="d-flex align-items-center gap-3 lesson-progress-status">
                                 <div class="d-none d-sm-flex align-items-center gap-2" style="width: 110px;">
                                   <div class="progress flex-grow-1" style="height: 5px;">
                                     <div class="progress-bar rounded bg-<?php echo $isDone ? 'success' : 'primary'; ?>"
@@ -1632,7 +1674,7 @@ try {
               <span class="badge bg-light text-secondary border fs-9 fw-normal" id="tracker-stage-indicator">Stage 1 of 4</span>
             </div>
 
-            <div class="d-flex justify-content-between align-items-start position-relative my-3 px-2">
+            <div class="d-flex justify-content-between align-items-start position-relative my-3 px-2 cert-tracker-stepper">
               <!-- Stepper Connecting Line Background -->
               <div class="position-absolute start-0 w-100 bg-secondary bg-opacity-20" style="top: 18px; height: 3px; z-index: 1;"></div>
               <!-- Stepper Active Progress Fill Line -->
@@ -1932,6 +1974,13 @@ try {
       const qCompleted = parseInt(el.getAttribute('data-quizzes-completed') || '0', 10);
       const qTotal = parseInt(el.getAttribute('data-quizzes-total') || '0', 10);
       const missingQuizzes = el.getAttribute('data-missing-quizzes') || '';
+      const assignDone = el.getAttribute('data-assignments-done') === '1';
+      const assignGraded = el.getAttribute('data-assignments-graded') === '1';
+      const aCompleted = parseInt(el.getAttribute('data-assignments-completed') || '0', 10);
+      const aGraded = parseInt(el.getAttribute('data-assignments-graded-count') || '0', 10);
+      const aTotal = parseInt(el.getAttribute('data-assignments-total') || '0', 10);
+      const missingAssignments = el.getAttribute('data-missing-assignments') || '';
+      const pendingGrading = el.getAttribute('data-pending-grading') || '';
       const classroomUrl = el.getAttribute('data-classroom-url') || 'classroom.php';
       const quizUrl = el.getAttribute('data-quiz-url') || classroomUrl;
 
@@ -1970,12 +2019,20 @@ try {
                     <span class="fw-semibold text-secondary fs-8">Course Quizzes</span>
                     <span class="fw-bold text-dark fs-8" id="locked-cert-quiz-text">0 / 0 Completed</span>
                   </div>
-                  <div class="progress" style="height: 8px;">
+                  <div class="progress mb-3" style="height: 8px;">
                     <div class="progress-bar bg-success" id="locked-cert-quiz-bar" style="width: 0%;"></div>
+                  </div>
+
+                  <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="fw-semibold text-secondary fs-8">Course Assignments</span>
+                    <span class="fw-bold text-dark fs-8" id="locked-cert-assign-text">0 / 0 Submitted</span>
+                  </div>
+                  <div class="progress" style="height: 8px;">
+                    <div class="progress-bar bg-info" id="locked-cert-assign-bar" style="width: 0%;"></div>
                   </div>
                 </div>
                 <p class="text-muted fs-7 mb-4 text-start" id="locked-cert-desc-text">
-                  Official verified certificates are unlocked once you have completed <strong>100%</strong> of the course lessons and all course quizzes.
+                  Official verified certificates are unlocked once you have completed <strong>100%</strong> of the course lessons, all chapter quizzes, and submitted all required assignments.
                 </p>
                 <div class="d-flex justify-content-center gap-2">
                   <button type="button" class="btn btn-light rounded-pill px-4" data-bs-dismiss="modal">Close</button>
@@ -1996,6 +2053,8 @@ try {
 
       const quizText = document.getElementById('locked-cert-quiz-text');
       const quizBar = document.getElementById('locked-cert-quiz-bar');
+      const assignText = document.getElementById('locked-cert-assign-text');
+      const assignBar = document.getElementById('locked-cert-assign-bar');
       const descText = document.getElementById('locked-cert-desc-text');
       const actionBtn = document.getElementById('locked-cert-continue-btn');
 
@@ -2008,13 +2067,32 @@ try {
         quizBar.style.width = '100%';
       }
 
-      if (progress >= 100 && !quizzesDone && qTotal > 0) {
-        descText.innerHTML = `You have watched and completed all lesson videos! <br><br><span class="text-danger fw-bold"><i class="bi bi-patch-question-fill me-1"></i>Action Required:</span> You must complete all course quizzes <strong>(${qCompleted} of ${qTotal} completed)</strong> to unlock and request your official Course Certificate.`;
+      if (aTotal > 0) {
+        const aPct = Math.round((aGraded / aTotal) * 100);
+        assignText.textContent = `${aCompleted} of ${aTotal} Submitted (${aGraded} of ${aTotal} Graded)`;
+        assignBar.style.width = `${aPct}%`;
+      } else {
+        assignText.textContent = 'No Assignments Required';
+        assignBar.style.width = '100%';
+      }
+
+      if (!assignDone && aTotal > 0) {
+        descText.innerHTML = `<span class="text-danger fw-bold"><i class="bi bi-clipboard-x-fill me-1"></i>Mandatory Assignment Required:</span> You must complete and submit all course assignments <strong>(${aCompleted} of ${aTotal} submitted)</strong> to reach 100% course completion and request your certificate.` + (missingAssignments ? `<br><small class="text-muted d-block mt-1">Pending: ${missingAssignments}</small>` : '');
+        actionBtn.href = classroomUrl;
+        actionBtn.innerHTML = '<i class="bi bi-upload me-1"></i> Submit Course Assignments';
+        actionBtn.className = 'btn btn-warning text-dark rounded-pill px-4 fw-bold shadow-sm';
+      } else if (!assignGraded && aTotal > 0) {
+        descText.innerHTML = `<span class="text-warning fw-bold"><i class="bi bi-hourglass-split me-1"></i>Teacher Marks Pending:</span> All assignments have been submitted, but marks have not yet been assigned by your instructor <strong>(${aGraded} of ${aTotal} graded)</strong>. A certificate can be requested only after marks have been assigned for the teacher assignment.` + (pendingGrading ? `<br><small class="text-muted d-block mt-1">Awaiting marks for: ${pendingGrading}</small>` : '');
+        actionBtn.href = classroomUrl;
+        actionBtn.innerHTML = '<i class="bi bi-journal-check me-1"></i> View Submitted Coursework';
+        actionBtn.className = 'btn btn-outline-primary rounded-pill px-4 fw-bold shadow-sm';
+      } else if (!quizzesDone && qTotal > 0) {
+        descText.innerHTML = `You have watched lessons, but <span class="text-danger fw-bold"><i class="bi bi-patch-question-fill me-1"></i>Quizzes Required:</span> You must complete all course quizzes <strong>(${qCompleted} of ${qTotal} completed)</strong> to unlock and request your official Course Certificate.` + (missingQuizzes ? `<br><small class="text-muted d-block mt-1">Pending: ${missingQuizzes}</small>` : '');
         actionBtn.href = quizUrl;
         actionBtn.innerHTML = '<i class="bi bi-patch-question-fill me-1"></i> Complete Course Quizzes';
         actionBtn.className = 'btn btn-warning text-dark rounded-pill px-4 fw-bold shadow-sm';
       } else {
-        descText.innerHTML = `Official verified certificates are unlocked once you have completed <strong>100%</strong> of the course lessons and all course quizzes. Continue your learning to earn your certificate!`;
+        descText.innerHTML = `Official verified certificates are unlocked once you have completed <strong>100%</strong> of the course lessons, all chapter quizzes, and marks have been assigned for all required assignments. Continue your learning to earn your certificate!`;
         actionBtn.href = classroomUrl;
         actionBtn.innerHTML = '<i class="bi bi-play-circle-fill me-1"></i> Continue Learning';
         actionBtn.className = 'btn btn-primary rounded-pill px-4 fw-bold shadow-sm';

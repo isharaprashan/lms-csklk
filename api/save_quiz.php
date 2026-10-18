@@ -65,9 +65,9 @@ try {
     }
 
     // Ensure upload directory exists
-    $uploadDir = __DIR__ . '/../uploads/quiz/';
+    $uploadDir = root_path('uploads/quiz/');
     if (!file_exists($uploadDir)) {
-        mkdir($uploadDir, 0777, true);
+        @mkdir($uploadDir, 0755, true);
     }
 
     // Save Course Quiz Settings
@@ -104,7 +104,6 @@ try {
     foreach ($questions_data as $q_idx => $q) {
         $q_id = !empty($q['question_id']) ? $q['question_id'] : 'q-' . uniqid();
         $q_text = trim($q['question_text'] ?? '');
-        $q_type = in_array($q['question_type'] ?? '', ['mcq', 'text']) ? $q['question_type'] : 'mcq';
         $time_sec = max(5, min(600, (int)($q['time_limit_seconds'] ?? 30)));
         $explanation = trim($q['explanation'] ?? 'Refer to course materials.');
 
@@ -130,27 +129,17 @@ try {
             }
         }
 
-        if ($q_type === 'mcq') {
-            $opt1 = trim($q['option_1'] ?? '');
-            $opt2 = trim($q['option_2'] ?? '');
-            $opt3 = trim($q['option_3'] ?? '');
-            $opt4 = trim($q['option_4'] ?? '');
-            $answer_idx = max(0, min(3, (int)($q['answer_index'] ?? 0)));
-            $correct_ans = (string)$answer_idx;
+        $opt1 = trim($q['option_1'] ?? '');
+        $opt2 = trim($q['option_2'] ?? '');
+        $opt3 = trim($q['option_3'] ?? '');
+        $opt4 = trim($q['option_4'] ?? '');
+        $answer_idx = max(0, min(3, (int)($q['answer_index'] ?? 0)));
+        $correct_ans = (string)$answer_idx;
 
-            $insertStmt->execute([
-                $q_id, $course_id, $lesson_id ?: null, $q_text, 'mcq', $image_path, $time_sec,
-                $opt1, $opt2, $opt3, $opt4, $answer_idx, $correct_ans, $explanation
-            ]);
-        } else {
-            // Text Input Question
-            $correct_ans = trim($q['correct_answer'] ?? '');
-
-            $insertStmt->execute([
-                $q_id, $course_id, $lesson_id ?: null, $q_text, 'text', $image_path, $time_sec,
-                null, null, null, null, -1, $correct_ans, $explanation
-            ]);
-        }
+        $insertStmt->execute([
+            $q_id, $course_id, $lesson_id ?: null, $q_text, 'mcq', $image_path, $time_sec,
+            $opt1, $opt2, $opt3, $opt4, $answer_idx, $correct_ans, $explanation
+        ]);
     }
 
     echo json_encode([

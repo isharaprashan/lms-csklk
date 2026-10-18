@@ -66,7 +66,27 @@ try {
     $c_id = $curr_info['course_id'] ?? '';
     $c_sort = (int)($curr_info['sort_order'] ?? 0);
 
-    if (!empty($c_id)) {
+    // Check if this lesson has an associated quiz
+    $qCheck = $pdo->prepare("SELECT COUNT(*) FROM quizzes WHERE course_id = ? AND lesson_id = ?");
+    $qCheck->execute([$c_id, $lesson_id]);
+    $has_quiz = ((int)$qCheck->fetchColumn() > 0);
+
+    $quiz_completed = false;
+    $quiz_url = '';
+    if ($has_quiz) {
+        $quiz_url = "quiz.php?course_id=" . urlencode($c_id) . "&lesson_id=" . urlencode($lesson_id);
+        $qaCheck = $pdo->prepare("SELECT COUNT(*) FROM quiz_attempts WHERE user_id = ? AND course_id = ? AND lesson_id = ? AND status IN ('completed', 'finalized')");
+        $qaCheck->execute([$user_id, $c_id, $lesson_id]);
+        $quiz_completed = ((int)$qaCheck->fetchColumn() > 0);
+
+        if (!$quiz_completed) {
+            $resCheck = $pdo->prepare("SELECT COUNT(*) FROM quiz_results WHERE user_id = ? AND course_id = ? AND lesson_id = ? AND (status IN ('completed', 'finalized') OR score > 0)");
+            $resCheck->execute([$user_id, $c_id, $lesson_id]);
+            $quiz_completed = ((int)$resCheck->fetchColumn() > 0);
+        }
+    }
+
+    if (!empty($c_id) && (!$has_quiz || $quiz_completed)) {
         $stmt = $pdo->prepare("SELECT id, title FROM lessons WHERE course_id = ? AND sort_order > ? ORDER BY sort_order ASC LIMIT 1");
         $stmt->execute([$c_id, $c_sort]);
         $next = $stmt->fetch();
@@ -97,6 +117,13 @@ try {
         $course_progress_percent = ($course_total_lessons > 0) ? (int)round(($course_completed_lessons / $course_total_lessons) * 100) : 0;
         if ($course_progress_percent > 100) $course_progress_percent = 100;
         $is_course_completed = ($course_completed_lessons >= $course_total_lessons && $course_total_lessons > 0);
+
+        // Enforce: For a course to reach 100% completion, students must submit any required assignments
+        $course_assignments_status = check_course_assignments_completed($pdo, $user_id, $c_id);
+        if (!$course_assignments_status['all_completed']) {
+            $is_course_completed = false;
+            $course_progress_percent = min(99, $course_progress_percent);
+        }
     }
 
     echo json_encode([
@@ -109,8 +136,13 @@ try {
         'course_total_lessons' => $course_total_lessons,
         'course_completed_lessons' => $course_completed_lessons,
         'course_progress_percent' => $course_progress_percent,
-        'is_course_completed' => $is_course_completed
+        'is_course_completed' => $is_course_completed,
+        'assignments_completed' => $course_assignments_status['all_completed'] ?? true,
+        'total_assignments' => $course_assignments_status['total_assignments'] ?? 0,
+        'completed_assignments' => $course_assignments_status['completed_assignments'] ?? 0,
+        'missing_assignment_titles' => $course_assignments_status['missing_assignment_titles'] ?? []
     ]);
+
 } catch (PDOException $e) {
     echo json_encode(['success' => false, 'message' => 'Database error: ' . $e->getMessage()]);
 }

@@ -147,6 +147,26 @@ try {
         exit;
     }
 
+    // 4b. Strict Assignment Submission & Marks Verification: Student must submit assignments AND teacher must assign marks
+    $assign_check = check_course_assignments_completed($pdo, $user_id, $course_id);
+    if (!$assign_check['all_completed']) {
+        $missingList = !empty($assign_check['missing_assignment_titles']) ? ' (' . implode(', ', array_slice($assign_check['missing_assignment_titles'], 0, 3)) . ')' : '';
+        echo json_encode([
+            'success' => false,
+            'message' => "You must complete and submit all mandatory assignments for this course before requesting your certificate ({$assign_check['completed_assignments']} of {$assign_check['total_assignments']} assignments submitted). Please complete and submit the required assignments{$missingList} to unlock your certificate."
+        ]);
+        exit;
+    }
+
+    if (!$assign_check['all_graded']) {
+        $pendingList = !empty($assign_check['pending_grading_titles']) ? ' (' . implode(', ', array_slice($assign_check['pending_grading_titles'], 0, 3)) . ')' : '';
+        echo json_encode([
+            'success' => false,
+            'message' => "A certificate can be requested only after marks have been assigned for your teacher assignment(s) ({$assign_check['graded_assignments']} of {$assign_check['total_assignments']} assignments graded). Your submitted coursework is currently awaiting teacher marks{$pendingList}. Please wait until marks have been posted to request your certificate."
+        ]);
+        exit;
+    }
+
     // 5. Gather Quiz Performance Summary
     $qStmt = $pdo->prepare("SELECT * FROM quiz_results WHERE user_id = ? AND course_id = ?");
     $qStmt->execute([$user_id, $course_id]);
@@ -173,6 +193,10 @@ try {
         if (!empty($quiz_attempt['last_attempt_at']) && (!$latest_activity_date || strtotime($quiz_attempt['last_attempt_at']) > strtotime($latest_activity_date))) {
             $latest_activity_date = $quiz_attempt['last_attempt_at'];
         }
+    }
+
+    if ($assign_check['total_assignments'] > 0 && $assign_check['average_grade'] !== null) {
+        $quiz_score_summary .= " | Coursework Score: {$assign_check['average_grade']}% ({$assign_check['graded_assignments']}/{$assign_check['total_assignments']} Graded)";
     }
 
     $completion_date = $latest_activity_date ? date('Y-m-d', strtotime($latest_activity_date)) : date('Y-m-d');

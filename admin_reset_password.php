@@ -88,7 +88,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $isValidToken) {
                 $_SESSION['login_flash_success'] = __('admin_password_updated_success', 'Administrator password updated successfully. Please sign in with your new credentials.');
 
                 // Redirect to Admin Login portal
-                header("Location: " . $adminPrefix . "login.php?reset=success");
+                header("Location: " . admin_url('login.php?reset=success'));
                 exit;
             } catch (Exception $e) {
                 error_log("Admin password reset save error: " . $e->getMessage());

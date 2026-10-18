@@ -62,9 +62,9 @@ try {
 
     // Handle local video upload if provided
     if (isset($_FILES['video_file']) && $_FILES['video_file']['error'] === UPLOAD_ERR_OK) {
-        $v_upload_dir = __DIR__ . '/../uploads/lesson_videos/';
+        $v_upload_dir = root_path('uploads/lesson_videos/');
         if (!is_dir($v_upload_dir)) {
-            @mkdir($v_upload_dir, 0777, true);
+            @mkdir($v_upload_dir, 0755, true);
         }
         $v_orig = $_FILES['video_file']['name'];
         $v_ext = strtolower(pathinfo($v_orig, PATHINFO_EXTENSION));
@@ -93,9 +93,9 @@ try {
     $saved_resources = [];
     $files_input = $_FILES['attachments'] ?? $_FILES['resources'] ?? null;
     if ($files_input && !empty($files_input['name'])) {
-        $upload_dir = __DIR__ . '/../uploads/lesson_resources/';
+        $upload_dir = root_path('uploads/lesson_resources/');
         if (!is_dir($upload_dir)) {
-            @mkdir($upload_dir, 0777, true);
+            @mkdir($upload_dir, 0755, true);
         }
 
         $allowed_extensions = ['pdf', 'doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx', 'txt', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'zip', 'rar'];

@@ -83,9 +83,9 @@ try {
             if (!in_array($ext, $allowed)) {
                 $error_msg = "Only JPG, JPEG, PNG, and PDF files are allowed.";
             } else {
-                $upload_dir = __DIR__ . '/uploads/slips';
+                $upload_dir = root_path('uploads/slips');
                 if (!file_exists($upload_dir)) {
-                    mkdir($upload_dir, 0777, true);
+                    @mkdir($upload_dir, 0755, true);
                 }
                 
                 $filename = 'slip_' . $user_id . '_' . time() . '.' . $ext;

@@ -64,6 +64,9 @@ if (!function_exists('format_notification_data')) {
                 case 'qa':
                     $title = 'Discussion & Q&A';
                     break;
+                case 'assignment':
+                    $title = 'Assignment Graded';
+                    break;
                 default:
                     $title = 'System Notification';
                     break;
@@ -85,6 +88,9 @@ if (!function_exists('format_notification_data')) {
                 case 'qa':
                     $link = 'dashboard.php';
                     break;
+                case 'assignment':
+                    $link = 'my_courses.php';
+                    break;
                 default:
                     $link = 'notifications.php';
                     break;
@@ -98,6 +104,12 @@ if (!function_exists('format_notification_data')) {
                 'color' => '#0284c7',
                 'bg' => '#e0f2fe',
                 'badge' => 'Course'
+            ],
+            'assignment' => [
+                'icon' => 'bi-journal-check',
+                'color' => '#16a34a',
+                'bg' => '#dcfce7',
+                'badge' => 'Assignment'
             ],
             'certificate' => [
                 'icon' => 'bi-award-fill',

@@ -111,6 +111,51 @@ try {
                          GROUP BY user_id, course_id, lesson_id");
     $quiz_attempts_data = $stmt->fetchAll();
 
+    // 8.1 Fetch all assignments
+    $stmt = $pdo->query("SELECT a.id, a.lesson_id, a.course_id, a.title, a.due_date, l.title as lesson_title, l.sort_order as lesson_order, c.title as course_title, c.tutor_id, u.name as tutor_name
+                         FROM lesson_assignments a
+                         JOIN lessons l ON a.lesson_id = l.id
+                         JOIN courses c ON a.course_id = c.id
+                         LEFT JOIN users u ON c.tutor_id = u.id
+                         ORDER BY c.title ASC, l.sort_order ASC, a.id ASC");
+    $all_assignments = $stmt->fetchAll();
+
+    // 8.2 Fetch all assignment submissions
+    $stmt = $pdo->query("SELECT s.id, s.assignment_id, s.lesson_id, s.course_id, s.user_id, s.submission_file, s.file_name, s.file_size, s.student_notes, s.status, s.grade, s.feedback, s.graded_at, s.submitted_at,
+                                u.name as student_name, u.email as student_email, u.academic_id as student_academic_id, u.avatar as student_avatar,
+                                a.title as assignment_title, a.due_date, l.title as lesson_title, c.title as course_title, c.tutor_id, t.name as tutor_name
+                         FROM assignment_submissions s
+                         JOIN users u ON s.user_id = u.id
+                         JOIN lesson_assignments a ON s.assignment_id = a.id
+                         JOIN lessons l ON s.lesson_id = l.id
+                         JOIN courses c ON s.course_id = c.id
+                         LEFT JOIN users t ON c.tutor_id = t.id
+                         ORDER BY s.submitted_at DESC");
+    $all_submissions = $stmt->fetchAll();
+
+    $course_assignments_map = [];
+    $lesson_assignment_map = [];
+    foreach ($all_assignments as $asg) {
+        $course_assignments_map[$asg['course_id']][] = $asg;
+        $lesson_assignment_map[$asg['lesson_id']] = $asg;
+    }
+
+    $assignment_submissions_map = [];
+    $all_graded_assignment_grades = [];
+    $total_pending_asg_submissions = 0;
+    $total_graded_asg_submissions = 0;
+
+    foreach ($all_submissions as $sub) {
+        $key = $sub['user_id'] . '_' . $sub['assignment_id'];
+        $assignment_submissions_map[$key] = $sub;
+        if ($sub['status'] === 'graded' && $sub['grade'] !== null) {
+            $total_graded_asg_submissions++;
+            $all_graded_assignment_grades[] = (float)$sub['grade'];
+        } else {
+            $total_pending_asg_submissions++;
+        }
+    }
+
     // Build indexing maps
     $course_lessons_map = [];
     foreach ($all_lessons as $l) {
@@ -162,6 +207,64 @@ try {
         $student_watch_seconds = 0;
         $student_lesson_details = [];
         $last_active_time = null;
+
+        $c_assignments = $course_assignments_map[$cid] ?? [];
+        $total_assignments_count = count($c_assignments);
+        $submitted_assignments_count = 0;
+        $graded_assignments_count = 0;
+        $student_assignment_grades = [];
+        $student_assignments_list = [];
+
+        foreach ($c_assignments as $asg) {
+            $asg_id = $asg['id'];
+            $asg_sub = $assignment_submissions_map[$uid . '_' . $asg_id] ?? null;
+            $is_sub = ($asg_sub !== null);
+
+            $s_grade = null;
+            $s_status = 'not_submitted';
+            $s_feedback = null;
+            $s_file = null;
+            $s_file_path = null;
+            $s_submitted_at = null;
+            $s_notes = null;
+
+            if ($is_sub) {
+                $submitted_assignments_count++;
+                $s_status = $asg_sub['status'] ?: 'submitted';
+                $s_file = $asg_sub['file_name'];
+                $s_file_path = $asg_sub['submission_file'];
+                $s_submitted_at = $asg_sub['submitted_at'];
+                $s_notes = $asg_sub['student_notes'];
+                if ($asg_sub['status'] === 'graded' && $asg_sub['grade'] !== null) {
+                    $graded_assignments_count++;
+                    $s_grade = (float)$asg_sub['grade'];
+                    $student_assignment_grades[] = $s_grade;
+                    $s_feedback = $asg_sub['feedback'];
+                }
+                if (!empty($asg_sub['submitted_at'])) {
+                    if (!$last_active_time || strtotime($asg_sub['submitted_at']) > strtotime($last_active_time)) {
+                        $last_active_time = $asg_sub['submitted_at'];
+                    }
+                }
+            }
+
+            $student_assignments_list[] = [
+                'assignment_id' => $asg_id,
+                'lesson_id' => $asg['lesson_id'],
+                'lesson_title' => $asg['lesson_title'],
+                'lesson_order' => $asg['lesson_order'],
+                'assignment_title' => $asg['title'],
+                'due_date' => $asg['due_date'],
+                'is_submitted' => $is_sub,
+                'status' => $s_status,
+                'grade' => $s_grade,
+                'feedback' => $s_feedback,
+                'file_name' => $s_file,
+                'submission_file' => $s_file_path,
+                'submitted_at' => $s_submitted_at ? date('M d, Y H:i', strtotime($s_submitted_at)) : null,
+                'student_notes' => $s_notes
+            ];
+        }
 
         foreach ($c_lessons as $idx => $les) {
             $lid = $les['id'];
@@ -232,7 +335,19 @@ try {
                 $active_learners_set[$uid] = true;
             }
 
-            $lesson_fully_completed = $is_completed_lesson && (!$has_quiz || $q_is_finalized);
+            // Assignment for this specific lesson
+            $asg_for_lesson = $lesson_assignment_map[$lid] ?? null;
+            $has_asg = ($asg_for_lesson !== null);
+            $asg_sub = $has_asg ? ($assignment_submissions_map[$uid . '_' . $asg_for_lesson['id']] ?? null) : null;
+            $asg_is_sub = ($asg_sub !== null);
+            $asg_status = $has_asg ? ($asg_sub ? ($asg_sub['status'] ?: 'submitted') : 'missing') : null;
+            $asg_grade = ($asg_sub && $asg_sub['grade'] !== null) ? (float)$asg_sub['grade'] : null;
+            $asg_feedback = $asg_sub ? ($asg_sub['feedback'] ?? null) : null;
+            $asg_file = $asg_sub ? ($asg_sub['file_name'] ?? null) : null;
+            $asg_file_path = $asg_sub ? ($asg_sub['submission_file'] ?? null) : null;
+            $asg_submitted_at = ($asg_sub && !empty($asg_sub['submitted_at'])) ? date('M d, Y H:i', strtotime($asg_sub['submitted_at'])) : null;
+
+            $lesson_fully_completed = $is_completed_lesson && (!$has_quiz || $q_is_finalized) && (!$has_asg || $asg_is_sub);
 
             $lesson_detail = [
                 'lesson_id' => $lid,
@@ -250,6 +365,17 @@ try {
                 'quiz_finalized' => $q_is_finalized,
                 'quiz_passed' => $q_passed,
                 'quiz_pct' => $q_pct,
+                'has_assignment' => $has_asg,
+                'assignment_id' => $has_asg ? $asg_for_lesson['id'] : null,
+                'assignment_title' => $has_asg ? $asg_for_lesson['title'] : null,
+                'assignment_is_submitted' => $asg_is_sub,
+                'assignment_status' => $asg_status,
+                'assignment_grade' => $asg_grade,
+                'assignment_feedback' => $asg_feedback,
+                'assignment_file' => $asg_file,
+                'assignment_file_path' => $asg_file_path,
+                'assignment_submitted_at' => $asg_submitted_at,
+                'assignment_due_date' => $has_asg ? $asg_for_lesson['due_date'] : null,
                 'is_fully_completed' => $lesson_fully_completed
             ];
 
@@ -280,20 +406,41 @@ try {
                 'quiz_attempts' => $q_attempts,
                 'quiz_finalized' => $q_is_finalized,
                 'quiz_passed' => $q_passed,
+                'has_assignment' => $has_asg,
+                'assignment_id' => $has_asg ? $asg_for_lesson['id'] : null,
+                'assignment_title' => $has_asg ? $asg_for_lesson['title'] : null,
+                'assignment_is_submitted' => $asg_is_sub,
+                'assignment_status' => $asg_status,
+                'assignment_grade' => $asg_grade,
+                'assignment_feedback' => $asg_feedback,
+                'assignment_file' => $asg_file,
+                'assignment_file_path' => $asg_file_path,
+                'assignment_submitted_at' => $asg_submitted_at,
                 'is_fully_completed' => $lesson_fully_completed
             ];
         }
 
-        $total_milestones = $total_lessons_count + $total_quizzes_count;
-        $completed_milestones = $completed_lessons_count + $finalized_quizzes_count;
+        $total_milestones = $total_lessons_count + $total_quizzes_count + $total_assignments_count;
+        $completed_milestones = $completed_lessons_count + $finalized_quizzes_count + $submitted_assignments_count;
         $overall_progress = ($total_milestones > 0) ? round(($completed_milestones / $total_milestones) * 100) : 0;
+
+        $all_assignments_done = ($total_assignments_count === 0 || $submitted_assignments_count >= $total_assignments_count);
+
+        // REQUIREMENT: For a course to reach 100% completion, students must submit any required assignments
+        if (!$all_assignments_done) {
+            $overall_progress = min(99, $overall_progress);
+        }
         $total_progress_accum += $overall_progress;
 
         $avg_quiz_score = count($student_quiz_scores_pct) > 0 ? round(array_sum($student_quiz_scores_pct) / count($student_quiz_scores_pct)) : null;
+        $avg_assignment_grade = count($student_assignment_grades) > 0 ? round(array_sum($student_assignment_grades) / count($student_assignment_grades), 1) : null;
 
-        if ($overall_progress >= 100) {
+        if ($overall_progress >= 100 && $all_assignments_done) {
             $learning_status = '100% Completed';
             $status_badge_class = 'bg-success text-white';
+        } elseif ($completed_lessons_count >= $total_lessons_count && !$all_assignments_done) {
+            $learning_status = 'Assignments Pending';
+            $status_badge_class = 'bg-warning text-dark';
         } elseif ($overall_progress >= 40) {
             $learning_status = 'On Track';
             $status_badge_class = 'bg-primary text-white';
@@ -323,6 +470,12 @@ try {
             'passed_quizzes' => $passed_quizzes_count,
             'finalized_quizzes' => $finalized_quizzes_count,
             'avg_quiz_score' => $avg_quiz_score,
+            'total_assignments' => $total_assignments_count,
+            'submitted_assignments' => $submitted_assignments_count,
+            'graded_assignments' => $graded_assignments_count,
+            'avg_assignment_grade' => $avg_assignment_grade,
+            'all_assignments_done' => $all_assignments_done,
+            'assignments' => $student_assignments_list,
             'overall_progress' => $overall_progress,
             'learning_status' => $learning_status,
             'status_badge_class' => $status_badge_class,
@@ -341,10 +494,15 @@ try {
     $total_quiz_attempts_count = $all_quiz_attempt_count;
     $quiz_pass_rate_overall = (count($all_finalized_quiz_scores) > 0) ? round(($all_quiz_pass_count / count($all_finalized_quiz_scores)) * 100) : 0;
 
-    // Format total study hours
-    $study_hours = floor($total_study_seconds / 3600);
-    $study_minutes = round(($total_study_seconds % 3600) / 60);
+    // Format total study hours and assignment stats
+    $int_study_seconds = (int)$total_study_seconds;
+    $study_hours = floor($int_study_seconds / 3600);
+    $study_minutes = round(($int_study_seconds % 3600) / 60);
     $study_time_display = ($study_hours > 0) ? "{$study_hours}h {$study_minutes}m" : "{$study_minutes}m";
+
+    $total_assignments_count_overall = count($all_assignments ?? []);
+    $total_submissions_count_overall = count($all_submissions ?? []);
+    $avg_asg_grade_overall = count($all_graded_assignment_grades ?? []) > 0 ? round(array_sum($all_graded_assignment_grades) / count($all_graded_assignment_grades), 1) : null;
 
     // 9. Lesson Insights & Drop-Off Bottlenecks (Tab 3)
     $lesson_insights = [];
@@ -641,10 +799,10 @@ try {
         </div>
       </div>
 
-      <!-- 4 Dynamic KPI Summary Cards -->
-      <div class="row g-3 mb-4">
+      <!-- 5 Dynamic KPI Summary Cards -->
+      <div class="row row-cols-1 row-cols-sm-2 row-cols-lg-3 row-cols-xl-5 g-2 g-md-3 mb-4">
         <!-- KPI 1: Enrolled Students -->
-        <div class="col-sm-6 col-xl-3">
+        <div class="col">
           <div class="analytics-kpi-card p-3.5 border-start border-4 border-primary">
             <div class="d-flex justify-content-between align-items-center">
               <div>
@@ -660,7 +818,7 @@ try {
         </div>
 
         <!-- KPI 2: Average Course Completion -->
-        <div class="col-sm-6 col-xl-3">
+        <div class="col">
           <div class="analytics-kpi-card p-3.5 border-start border-4 border-success">
             <div class="d-flex justify-content-between align-items-center">
               <div>
@@ -678,7 +836,7 @@ try {
         </div>
 
         <!-- KPI 3: Quiz Pass Rate & Average Score -->
-        <div class="col-sm-6 col-xl-3">
+        <div class="col">
           <div class="analytics-kpi-card p-3.5 border-start border-4 border-warning">
             <div class="d-flex justify-content-between align-items-center">
               <div>
@@ -693,8 +851,24 @@ try {
           </div>
         </div>
 
-        <!-- KPI 4: Total Study Hours -->
-        <div class="col-sm-6 col-xl-3">
+        <!-- KPI 4: Assignments & Coursework Submissions -->
+        <div class="col">
+          <div class="analytics-kpi-card p-3.5 border-start border-4" style="border-left-color: #0d9488 !important;">
+            <div class="d-flex justify-content-between align-items-center">
+              <div>
+                <small class="text-muted fw-bold text-uppercase fs-9 tracking-wider">Coursework Submissions</small>
+                <h3 class="fw-bold text-dark mb-0 mt-1"><span id="kpi-assignments-submitted"><?php echo $total_submissions_count_overall; ?></span></h3>
+                <small class="text-muted fs-9 fw-semibold"><i class="bi bi-clock-history text-warning me-1"></i><span id="kpi-assignments-pending"><?php echo $total_pending_asg_submissions; ?></span> Pending Review</small>
+              </div>
+              <div class="kpi-icon-box bg-opacity-10" style="background-color: rgba(13, 148, 136, 0.1); color: #0d9488;">
+                <i class="bi bi-journal-check"></i>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- KPI 5: Total Study Hours -->
+        <div class="col">
           <div class="analytics-kpi-card p-3.5 border-start border-4 border-info" style="border-left-color: #6f42c1 !important;">
             <div class="d-flex justify-content-between align-items-center">
               <div>
@@ -744,6 +918,7 @@ try {
             <select id="status-filter-select" class="form-select fs-8 bg-light border">
               <option value="">All Statuses</option>
               <option value="100% Completed">100% Completed</option>
+              <option value="Assignments Pending">Assignments Pending</option>
               <option value="On Track">On Track</option>
               <option value="Needs Attention">Needs Attention</option>
               <option value="Not Started">Not Started</option>
@@ -781,6 +956,12 @@ try {
               <span>Course Insights & Drop-off (<span id="tab-insights-count"><?php echo count($lesson_insights); ?></span>)</span>
             </button>
           </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link d-flex align-items-center gap-2" id="assignments-tab" data-bs-toggle="tab" data-bs-target="#assignments-pane" type="button" role="tab">
+              <i class="bi bi-journal-text"></i>
+              <span>Assignments & Coursework (<span id="tab-assignments-count"><?php echo count($all_submissions ?? []); ?></span>)</span>
+            </button>
+          </li>
         </ul>
 
         <!-- Tab Contents -->
@@ -799,6 +980,7 @@ try {
                     <th scope="col" style="min-width: 110px;">Lessons</th>
                     <th scope="col" style="min-width: 110px;">Quizzes</th>
                     <th scope="col" style="min-width: 100px;">Avg Score</th>
+                    <th scope="col" style="min-width: 140px;">Assignments</th>
                     <th scope="col" class="text-center" style="min-width: 140px;">Learning Status</th>
                     <th scope="col" class="text-center" style="min-width: 110px;">Actions</th>
                   </tr>
@@ -806,7 +988,7 @@ try {
                 <tbody class="fs-8" id="roster-tbody">
                   <?php if (empty($student_summaries)): ?>
                     <tr>
-                      <td colspan="9" class="text-center py-5 text-muted">
+                      <td colspan="10" class="text-center py-5 text-muted">
                         <i class="bi bi-folder-x fs-1 d-block mb-2 text-secondary"></i>
                         No student enrollment records found.
                       </td>
@@ -890,6 +1072,27 @@ try {
                           <?php endif; ?>
                         </td>
 
+                        <!-- Assignments Submitted -->
+                        <td>
+                          <?php if ($s['total_assignments'] > 0): ?>
+                            <div class="d-flex align-items-center gap-1.5 mb-0.5">
+                              <span class="badge <?php echo $s['all_assignments_done'] ? 'bg-success bg-opacity-10 text-success border border-success' : 'bg-warning bg-opacity-15 text-dark border border-warning'; ?> fs-8 fw-bold">
+                                <i class="bi bi-file-earmark-check<?php echo $s['all_assignments_done'] ? '-fill' : ''; ?> me-1"></i>
+                                <?php echo $s['submitted_assignments']; ?> / <?php echo $s['total_assignments']; ?>
+                              </span>
+                            </div>
+                            <?php if ($s['avg_assignment_grade'] !== null): ?>
+                              <small class="text-muted fs-9">Avg: <strong class="text-dark"><?php echo $s['avg_assignment_grade']; ?>%</strong></small>
+                            <?php elseif ($s['submitted_assignments'] > 0): ?>
+                              <small class="text-muted fs-9 italic">Awaiting grade</small>
+                            <?php else: ?>
+                              <small class="text-danger fs-9 fw-semibold">Pending submission</small>
+                            <?php endif; ?>
+                          <?php else: ?>
+                            <span class="text-muted fs-9 italic"><i class="bi bi-dash-circle me-1"></i>None</span>
+                          <?php endif; ?>
+                        </td>
+
                         <!-- Learning Status -->
                         <td class="text-center">
                           <span class="badge <?php echo $s['status_badge_class']; ?> px-3 py-1.5 rounded-pill fs-8 fw-semibold">
@@ -923,13 +1126,14 @@ try {
                     <th scope="col" style="min-width: 200px;">Course & Lesson</th>
                     <th scope="col" style="min-width: 200px;">Video Watch Progress</th>
                     <th scope="col" style="min-width: 200px;">Quiz Performance</th>
+                    <th scope="col" style="min-width: 170px;">Assignment</th>
                     <th scope="col" class="text-center" style="min-width: 140px;">Module Status</th>
                   </tr>
                 </thead>
                 <tbody class="fs-8" id="matrix-tbody">
                   <?php if (empty($matrix_rows)): ?>
                     <tr>
-                      <td colspan="6" class="text-center py-5 text-muted">
+                      <td colspan="7" class="text-center py-5 text-muted">
                         <i class="bi bi-folder-x fs-1 d-block mb-2 text-secondary"></i>
                         No granular progress records found.
                       </td>
@@ -1020,6 +1224,42 @@ try {
                             <?php endif; ?>
                           <?php else: ?>
                             <span class="text-muted fs-9"><i class="bi bi-slash-circle me-1"></i>No quiz for lesson</span>
+                          <?php endif; ?>
+                        </td>
+
+                        <!-- Assignment Status -->
+                        <td>
+                          <?php if ($row['has_assignment']): ?>
+                            <?php if ($row['assignment_is_submitted']): ?>
+                              <div class="d-flex align-items-center gap-1.5 mb-1">
+                                <?php if ($row['assignment_grade'] !== null): ?>
+                                  <span class="badge bg-success bg-opacity-10 text-success border border-success fs-9 fw-bold">
+                                    Grade: <?php echo $row['assignment_grade']; ?>%
+                                  </span>
+                                <?php else: ?>
+                                  <span class="badge bg-info bg-opacity-15 text-info-emphasis border border-info fs-9 fw-semibold">
+                                    Submitted
+                                  </span>
+                                <?php endif; ?>
+                                <?php if (!empty($row['assignment_file_path'])): ?>
+                                  <a href="../download_assignment.php?type=submission&id=<?php echo $row['assignment_id']; ?>&user_id=<?php echo $row['student_id']; ?>" class="btn btn-xs btn-outline-secondary py-0 px-1.5 fs-9 rounded" title="Download submission">
+                                    <i class="bi bi-download"></i>
+                                  </a>
+                                <?php endif; ?>
+                              </div>
+                              <small class="text-muted fs-9 d-block text-truncate" style="max-width: 160px;" title="<?php echo htmlspecialchars($row['assignment_title']); ?>">
+                                <?php echo htmlspecialchars($row['assignment_title']); ?>
+                              </small>
+                            <?php else: ?>
+                              <div class="mb-0.5">
+                                <span class="badge bg-danger bg-opacity-10 text-danger border border-danger fs-9">Missing</span>
+                              </div>
+                              <small class="text-muted fs-9 d-block text-truncate" style="max-width: 160px;" title="<?php echo htmlspecialchars($row['assignment_title']); ?>">
+                                <?php echo htmlspecialchars($row['assignment_title']); ?>
+                              </small>
+                            <?php endif; ?>
+                          <?php else: ?>
+                            <span class="text-muted fs-9"><i class="bi bi-slash-circle me-1"></i>No assignment</span>
                           <?php endif; ?>
                         </td>
 
@@ -1161,6 +1401,154 @@ try {
 
           </div>
 
+          <!-- TAB 4: Assignment Submissions & Coursework -->
+          <div class="tab-pane fade" id="assignments-pane" role="tabpanel">
+            
+            <div class="p-3 bg-light rounded-4 border mb-4 d-flex align-items-center justify-content-between flex-wrap gap-2">
+              <div>
+                <h6 class="fw-bold text-dark mb-1"><i class="bi bi-journal-text text-primary me-2"></i>Assignment Submissions & Coursework</h6>
+                <p class="text-muted fs-8 mb-0">Institution-wide log of student assignment submissions, submission files, and grading evaluations across all lecturers.</p>
+              </div>
+            </div>
+
+            <div class="table-responsive">
+              <table class="table custom-table align-middle mb-0" id="assignments-table">
+                <thead>
+                  <tr>
+                    <th scope="col" style="min-width: 200px;">Student Information</th>
+                    <th scope="col" style="min-width: 160px;">Lecturer</th>
+                    <th scope="col" style="min-width: 180px;">Course & Lesson</th>
+                    <th scope="col" style="min-width: 180px;">Assignment Title</th>
+                    <th scope="col" style="min-width: 130px;">Submitted File</th>
+                    <th scope="col" style="min-width: 140px;">Submitted Date</th>
+                    <th scope="col" style="min-width: 120px;">Status</th>
+                    <th scope="col" style="min-width: 100px;">Grade</th>
+                    <th scope="col" class="text-center" style="min-width: 120px;">Action</th>
+                  </tr>
+                </thead>
+                <tbody class="fs-8" id="assignments-tbody">
+                  <?php if (empty($all_submissions)): ?>
+                    <tr>
+                      <td colspan="9" class="text-center py-5 text-muted">
+                        <i class="bi bi-journal-x fs-1 d-block mb-2 text-secondary"></i>
+                        No assignment submissions recorded yet.
+                      </td>
+                    </tr>
+                  <?php else: ?>
+                    <?php foreach ($all_submissions as $sub): 
+                      $asg_grade = ($sub['status'] === 'graded' && $sub['grade'] !== null) ? (float)$sub['grade'] : null;
+                      $res_avatar = get_user_avatar($sub['student_avatar'], $sub['student_name'], '0f4c81', 'fff', '../');
+                    ?>
+                      <tr class="assignment-row"
+                          data-tutor-id="<?php echo $sub['tutor_id'] ?: 0; ?>"
+                          data-tutor-name="<?php echo htmlspecialchars($sub['tutor_name'] ?: 'Unassigned'); ?>"
+                          data-course="<?php echo htmlspecialchars($sub['course_title']); ?>"
+                          data-status="<?php echo htmlspecialchars($sub['status']); ?>"
+                          data-student-name="<?php echo htmlspecialchars($sub['student_name']); ?>"
+                          data-student-email="<?php echo htmlspecialchars($sub['student_email']); ?>"
+                          data-academic-id="<?php echo htmlspecialchars($sub['student_academic_id']); ?>"
+                          data-assignment-title="<?php echo htmlspecialchars($sub['assignment_title']); ?>">
+                        
+                        <!-- Student -->
+                        <td>
+                          <div class="d-flex align-items-center gap-2.5">
+                            <img src="<?php echo htmlspecialchars($res_avatar); ?>"
+                                 onerror="this.onerror=null; this.src='https://ui-avatars.com/api/?name=<?php echo urlencode($sub['student_name']); ?>&background=0f4c81&color=fff';"
+                                 class="rounded-circle border" style="width: 36px; height: 36px; object-fit: cover;" alt="Avatar">
+                            <div>
+                              <div class="fw-bold text-dark text-truncate" style="max-width: 160px;"><?php echo htmlspecialchars($sub['student_name']); ?></div>
+                              <small class="text-muted fs-9"><?php echo htmlspecialchars($sub['student_academic_id'] ?: 'N/A'); ?></small>
+                            </div>
+                          </div>
+                        </td>
+
+                        <!-- Lecturer -->
+                        <td>
+                          <span class="badge bg-light text-secondary border fs-9 fw-semibold">
+                            <?php echo htmlspecialchars($sub['tutor_name'] ?: 'Unassigned'); ?>
+                          </span>
+                        </td>
+
+                        <!-- Course & Lesson -->
+                        <td>
+                          <span class="badge bg-light text-primary border fs-9 mb-1 text-truncate d-inline-block" style="max-width: 200px;"><?php echo htmlspecialchars($sub['course_title']); ?></span>
+                          <div class="text-muted fs-9 text-truncate" style="max-width: 200px;">
+                            <i class="bi bi-play-btn me-1"></i><?php echo htmlspecialchars($sub['lesson_title']); ?>
+                          </div>
+                        </td>
+
+                        <!-- Assignment Title -->
+                        <td>
+                          <div class="fw-semibold text-dark text-truncate" style="max-width: 200px;">
+                            <?php echo htmlspecialchars($sub['assignment_title']); ?>
+                          </div>
+                          <?php if (!empty($sub['due_date'])): ?>
+                            <small class="text-muted fs-9"><i class="bi bi-calendar-event me-1"></i>Due: <?php echo date('M d, Y', strtotime($sub['due_date'])); ?></small>
+                          <?php endif; ?>
+                        </td>
+
+                        <!-- Submitted File -->
+                        <td>
+                          <?php if (!empty($sub['submission_file'])): ?>
+                            <a href="../download_assignment.php?type=submission&id=<?php echo $sub['assignment_id']; ?>&user_id=<?php echo $sub['user_id']; ?>" class="btn btn-sm btn-outline-primary py-1 px-2.5 rounded-pill fs-9 d-inline-flex align-items-center gap-1.5" title="Download File">
+                              <i class="bi bi-cloud-arrow-down-fill"></i>
+                              <span class="text-truncate" style="max-width: 110px;"><?php echo htmlspecialchars($sub['file_name'] ?: 'Download'); ?></span>
+                            </a>
+                          <?php else: ?>
+                            <span class="text-muted fs-9 italic">No file</span>
+                          <?php endif; ?>
+                        </td>
+
+                        <!-- Submission Date -->
+                        <td>
+                          <span class="text-muted fs-9">
+                            <i class="bi bi-clock me-1"></i><?php echo !empty($sub['submitted_at']) ? date('M d, Y H:i', strtotime($sub['submitted_at'])) : 'N/A'; ?>
+                          </span>
+                        </td>
+
+                        <!-- Status -->
+                        <td>
+                          <?php if ($sub['status'] === 'graded'): ?>
+                            <span class="badge bg-success bg-opacity-10 text-success border border-success px-2.5 py-1 rounded-pill fs-9 fw-semibold">
+                              <i class="bi bi-check2-all me-1"></i> Graded
+                            </span>
+                          <?php else: ?>
+                            <span class="badge bg-warning bg-opacity-15 text-dark border border-warning px-2.5 py-1 rounded-pill fs-9 fw-semibold">
+                              <i class="bi bi-hourglass-split me-1"></i> Submitted
+                            </span>
+                          <?php endif; ?>
+                        </td>
+
+                        <!-- Grade -->
+                        <td>
+                          <?php if ($asg_grade !== null): ?>
+                            <span class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 px-2.5 py-1 fs-9 fw-bold">
+                              <?php echo $asg_grade; ?>%
+                            </span>
+                          <?php else: ?>
+                            <span class="text-muted fs-9 italic">Pending</span>
+                          <?php endif; ?>
+                        </td>
+
+                        <!-- Action -->
+                        <td class="text-center">
+                          <?php if (!empty($sub['submission_file'])): ?>
+                            <a href="../download_assignment.php?type=submission&id=<?php echo $sub['assignment_id']; ?>&user_id=<?php echo $sub['user_id']; ?>" class="btn btn-sm btn-outline-secondary rounded-pill px-2.5 py-0.5 fs-9 fw-semibold" title="Download student submission">
+                              <i class="bi bi-download me-1"></i>Download
+                            </a>
+                          <?php else: ?>
+                            <span class="text-muted fs-9">-</span>
+                          <?php endif; ?>
+                        </td>
+                      </tr>
+                    <?php endforeach; ?>
+                  <?php endif; ?>
+                </tbody>
+              </table>
+            </div>
+
+          </div>
+
         </div>
 
       </div>
@@ -1185,29 +1573,35 @@ try {
         </div>
         
         <div class="modal-body p-4 bg-light">
-          <!-- Summary Cards Strip -->
-          <div class="row g-2.5 mb-4">
-            <div class="col-sm-3">
-              <div class="bg-white p-3 rounded-4 border text-center shadow-xs">
+          <!-- Summary Cards Strip (5 KPI metrics) -->
+          <div class="row g-2 mb-4">
+            <div class="col-6 col-md">
+              <div class="bg-white p-2.5 rounded-4 border text-center shadow-xs">
                 <small class="text-muted fs-9 fw-bold text-uppercase">Overall Progress</small>
                 <h4 class="fw-bold text-primary mb-0 mt-1" id="modal-overall-progress">0%</h4>
               </div>
             </div>
-            <div class="col-sm-3">
-              <div class="bg-white p-3 rounded-4 border text-center shadow-xs">
-                <small class="text-muted fs-9 fw-bold text-uppercase">Lessons Done</small>
+            <div class="col-6 col-md">
+              <div class="bg-white p-2.5 rounded-4 border text-center shadow-xs">
+                <small class="text-muted fs-9 fw-bold text-uppercase">Lessons</small>
                 <h4 class="fw-bold text-success mb-0 mt-1" id="modal-lessons-done">0 / 0</h4>
               </div>
             </div>
-            <div class="col-sm-3">
-              <div class="bg-white p-3 rounded-4 border text-center shadow-xs">
-                <small class="text-muted fs-9 fw-bold text-uppercase">Quizzes Passed</small>
+            <div class="col-6 col-md">
+              <div class="bg-white p-2.5 rounded-4 border text-center shadow-xs">
+                <small class="text-muted fs-9 fw-bold text-uppercase">Quizzes</small>
                 <h4 class="fw-bold text-warning mb-0 mt-1" id="modal-quizzes-passed">0 / 0</h4>
               </div>
             </div>
-            <div class="col-sm-3">
-              <div class="bg-white p-3 rounded-4 border text-center shadow-xs">
-                <small class="text-muted fs-9 fw-bold text-uppercase">Avg Quiz Score</small>
+            <div class="col-6 col-md">
+              <div class="bg-white p-2.5 rounded-4 border text-center shadow-xs">
+                <small class="text-muted fs-9 fw-bold text-uppercase">Assignments</small>
+                <h4 class="fw-bold mb-0 mt-1" style="color: #0d9488;" id="modal-assignments-done">0 / 0</h4>
+              </div>
+            </div>
+            <div class="col-6 col-md">
+              <div class="bg-white p-2.5 rounded-4 border text-center shadow-xs">
+                <small class="text-muted fs-9 fw-bold text-uppercase">Avg Quiz</small>
                 <h4 class="fw-bold text-dark mb-0 mt-1" id="modal-avg-score">N/A</h4>
               </div>
             </div>
@@ -1223,7 +1617,10 @@ try {
           </div>
 
           <!-- Syllabus Modules Detail Table -->
-          <div class="bg-white rounded-4 border overflow-hidden">
+          <div class="bg-white rounded-4 border overflow-hidden mb-4">
+            <div class="p-3 bg-light border-bottom">
+              <h6 class="fw-bold text-dark mb-0 fs-8"><i class="bi bi-collection-play-fill text-primary me-1.5"></i>Lesson Progress</h6>
+            </div>
             <div class="table-responsive">
               <table class="table align-middle mb-0 fs-8">
                 <thead class="table-light fs-9 text-uppercase text-secondary">
@@ -1239,6 +1636,33 @@ try {
                   <!-- Dynamically Rendered via JS -->
                 </tbody>
               </table>
+            </div>
+          </div>
+
+          <!-- Coursework & Assignment Submissions Detail Section -->
+          <div>
+            <div class="p-3 bg-light border rounded-top-4 border-bottom-0 d-flex align-items-center justify-content-between">
+              <h6 class="fw-bold text-dark mb-0 fs-8"><i class="bi bi-journal-check text-primary me-1.5"></i>Coursework & Assignments</h6>
+            </div>
+            <div class="bg-white rounded-bottom-4 border overflow-hidden">
+              <div class="table-responsive">
+                <table class="table align-middle mb-0 fs-8">
+                  <thead class="table-light fs-9 text-uppercase text-secondary">
+                    <tr>
+                      <th>#</th>
+                      <th>Assignment Title</th>
+                      <th>Due Date</th>
+                      <th>Submission</th>
+                      <th>Grade</th>
+                      <th>Feedback</th>
+                      <th class="text-center">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody id="modal-assignments-tbody">
+                    <!-- Dynamically Rendered via JS -->
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
 
@@ -1312,6 +1736,8 @@ try {
         let kpiQuizScores = [];
         let kpiQuizPassCount = 0;
         let kpiStudySeconds = 0;
+        let kpiAsgSubmitted = 0;
+        let kpiAsgPending = 0;
 
         // 1. Filter Roster Table
         document.querySelectorAll('.roster-row').forEach(row => {
@@ -1379,15 +1805,47 @@ try {
           }
         });
 
-        // 4. Update Tab Counts
+        // 4. Filter Assignments Table (Tab 4)
+        let visibleAssignmentsCount = 0;
+        document.querySelectorAll('.assignment-row').forEach(row => {
+          const tutorId = row.getAttribute('data-tutor-id');
+          const tutorName = (row.getAttribute('data-tutor-name') || '').toLowerCase();
+          const name = (row.getAttribute('data-student-name') || '').toLowerCase();
+          const email = (row.getAttribute('data-student-email') || '').toLowerCase();
+          const acId = (row.getAttribute('data-academic-id') || '').toLowerCase();
+          const course = (row.getAttribute('data-course') || '').toLowerCase();
+          const asgTitle = (row.getAttribute('data-assignment-title') || '').toLowerCase();
+          const status = (row.getAttribute('data-status') || '').toLowerCase();
+
+          const matchesTeacher = !selTutorId || tutorId === selTutorId;
+          const matchesSearch = !query || name.includes(query) || email.includes(query) || acId.includes(query) || course.includes(query) || asgTitle.includes(query) || tutorName.includes(query);
+          const matchesCourse = !selCourse || course === selCourse;
+          let matchesStatus = true;
+          if (selStatus === '100% Completed') {
+            matchesStatus = (status === 'graded');
+          } else if (selStatus === 'Assignments Pending' || selStatus === 'Needs Attention') {
+            matchesStatus = (status === 'submitted');
+          }
+
+          const isVisible = matchesTeacher && matchesSearch && matchesCourse && matchesStatus;
+          row.style.display = isVisible ? '' : 'none';
+
+          if (isVisible) {
+            visibleAssignmentsCount++;
+          }
+        });
+
+        // 5. Update Tab Counts
         const rosterCountEl = document.getElementById('tab-roster-count');
         const matrixCountEl = document.getElementById('tab-matrix-count');
         const insightsCountEl = document.getElementById('tab-insights-count');
+        const asgCountEl = document.getElementById('tab-assignments-count');
         if (rosterCountEl) rosterCountEl.textContent = visibleRosterCount;
         if (matrixCountEl) matrixCountEl.textContent = visibleMatrixCount;
         if (insightsCountEl) insightsCountEl.textContent = visibleInsightsCount;
+        if (asgCountEl) asgCountEl.textContent = visibleAssignmentsCount;
 
-        // 5. Update Dynamic KPI Summary Cards based on filtered student summaries
+        // 6. Update Dynamic KPI Summary Cards based on filtered student summaries
         const summaries = window.STUDENT_SUMMARIES || [];
         summaries.forEach(s => {
           const tutorMatch = !selTutorId || String(s.tutor_id) === selTutorId;
@@ -1397,7 +1855,7 @@ try {
 
           if (tutorMatch && courseMatch && statusMatch && searchMatch) {
             kpiStudentsSet.add(s.student_id);
-            if (s.total_watch_seconds > 0 || s.passed_quizzes > 0 || s.finalized_quizzes > 0) {
+            if (s.total_watch_seconds > 0 || s.passed_quizzes > 0 || s.finalized_quizzes > 0 || (s.submitted_assignments || 0) > 0) {
               kpiActiveSet.add(s.student_id);
             }
             kpiProgressSum += (s.overall_progress || 0);
@@ -1409,6 +1867,10 @@ try {
             }
             if (s.passed_quizzes > 0) {
               kpiQuizPassCount += s.passed_quizzes;
+            }
+            if (s.submitted_assignments > 0) {
+              kpiAsgSubmitted += s.submitted_assignments;
+              kpiAsgPending += (s.submitted_assignments - (s.graded_assignments || 0));
             }
           }
         });
@@ -1428,6 +1890,8 @@ try {
         const completionBarEl = document.getElementById('kpi-completion-bar');
         const avgScoreEl = document.getElementById('kpi-avg-score');
         const studyTimeEl = document.getElementById('kpi-study-time');
+        const asgSubEl = document.getElementById('kpi-assignments-submitted');
+        const asgPendEl = document.getElementById('kpi-assignments-pending');
 
         if (totalStudentsEl) totalStudentsEl.textContent = dynTotalStudents;
         if (activeLearnersEl) activeLearnersEl.textContent = dynActiveLearners;
@@ -1435,6 +1899,8 @@ try {
         if (completionBarEl) completionBarEl.style.width = dynAvgProgress + '%';
         if (avgScoreEl) avgScoreEl.textContent = dynAvgScore + '%';
         if (studyTimeEl) studyTimeEl.textContent = dynStudyDisplay;
+        if (asgSubEl) asgSubEl.textContent = kpiAsgSubmitted;
+        if (asgPendEl) asgPendEl.textContent = kpiAsgPending;
       }
 
       window.filterAllTables = filterAllTables;
@@ -1471,6 +1937,8 @@ try {
       document.getElementById('modal-overall-progress').textContent = student.overall_progress + '%';
       document.getElementById('modal-lessons-done').textContent = student.completed_lessons + ' / ' + student.total_lessons;
       document.getElementById('modal-quizzes-passed').textContent = student.passed_quizzes + ' / ' + student.total_quizzes;
+      const asgDoneEl = document.getElementById('modal-assignments-done');
+      if (asgDoneEl) asgDoneEl.textContent = (student.submitted_assignments || 0) + ' / ' + (student.total_assignments || 0);
       document.getElementById('modal-avg-score').textContent = student.avg_quiz_score !== null ? student.avg_quiz_score + '%' : 'N/A';
 
       const statusBadge = document.getElementById('modal-learning-status');
@@ -1537,6 +2005,53 @@ try {
         tbody.innerHTML = `<tr><td colspan="5" class="text-center text-muted py-3">No lessons found in this course.</td></tr>`;
       }
 
+      // Render Assignments Table
+      const asgTbody = document.getElementById('modal-assignments-tbody');
+      if (asgTbody) {
+        asgTbody.innerHTML = '';
+        if (student.assignments && student.assignments.length > 0) {
+          student.assignments.forEach((asg, aIdx) => {
+            const tr = document.createElement('tr');
+            const isSub = asg.is_submitted;
+            const isGraded = (asg.status === 'graded');
+            const gradeText = asg.grade !== null ? `${asg.grade}%` : (isSub ? 'Pending' : 'N/A');
+            const downloadBtn = asg.submission_file ? `
+              <a href="../download_assignment.php?type=submission&id=${asg.assignment_id}&user_id=${student.student_id}" class="btn btn-xs btn-outline-primary py-0.5 px-2 rounded-pill fs-9 d-inline-flex align-items-center gap-1" title="Download submission">
+                <i class="bi bi-cloud-arrow-down-fill"></i> <span class="text-truncate" style="max-width: 90px;">${escapeHtml(asg.file_name || 'File')}</span>
+              </a>
+            ` : (isSub ? '<span class="text-muted fs-9">Submitted</span>' : '<span class="text-muted fs-9 italic">No file</span>');
+
+            tr.innerHTML = `
+              <td class="fw-bold text-secondary">${aIdx + 1}</td>
+              <td>
+                <div class="fw-semibold text-dark">${escapeHtml(asg.assignment_title)}</div>
+                <small class="text-muted fs-9">${escapeHtml(asg.lesson_title || '')}</small>
+              </td>
+              <td><span class="text-muted fs-9">${asg.due_date ? escapeHtml(asg.due_date) : 'No due date'}</span></td>
+              <td>${downloadBtn}</td>
+              <td>
+                ${asg.grade !== null ? `
+                  <span class="badge bg-primary bg-opacity-10 text-primary border border-primary fs-9 fw-bold">${gradeText}</span>
+                ` : `<span class="text-muted fs-9">${gradeText}</span>`}
+              </td>
+              <td><small class="text-muted fs-9 text-truncate d-inline-block" style="max-width: 140px;" title="${escapeHtml(asg.feedback || '')}">${escapeHtml(asg.feedback || 'None')}</small></td>
+              <td class="text-center">
+                ${isGraded ? `
+                  <span class="badge bg-success bg-opacity-10 text-success border border-success px-2 py-0.5 rounded-pill fs-9">Graded</span>
+                ` : (isSub ? `
+                  <span class="badge bg-warning bg-opacity-15 text-dark border border-warning px-2 py-0.5 rounded-pill fs-9">Submitted</span>
+                ` : `
+                  <span class="badge bg-danger bg-opacity-10 text-danger border border-danger px-2 py-0.5 rounded-pill fs-9">Missing</span>
+                `)}
+              </td>
+            `;
+            asgTbody.appendChild(tr);
+          });
+        } else {
+          asgTbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted py-3">No assignments assigned in this course.</td></tr>`;
+        }
+      }
+
       const modal = new bootstrap.Modal(document.getElementById('studentDossierModal'));
       modal.show();
     }
@@ -1549,7 +2064,7 @@ try {
       }
 
       const rows = [
-        ['Student ID', 'Student Name', 'Student Email', 'Academic ID', 'Assigned Lecturer', 'Course Title', 'Lessons Completed', 'Total Lessons', 'Quizzes Passed', 'Total Quizzes', 'Avg Quiz Score (%)', 'Overall Progress (%)', 'Learning Status', 'Last Active']
+        ['Student ID', 'Student Name', 'Student Email', 'Academic ID', 'Assigned Lecturer', 'Course Title', 'Lessons Completed', 'Total Lessons', 'Quizzes Passed', 'Total Quizzes', 'Avg Quiz Score (%)', 'Assignments Submitted', 'Total Assignments', 'Avg Assignment Grade (%)', 'Overall Progress (%)', 'Learning Status', 'Last Active']
       ];
 
       STUDENT_SUMMARIES.forEach(s => {
@@ -1565,6 +2080,9 @@ try {
           s.passed_quizzes,
           s.total_quizzes,
           s.avg_quiz_score !== null ? s.avg_quiz_score : 'N/A',
+          s.submitted_assignments || 0,
+          s.total_assignments || 0,
+          s.avg_assignment_grade !== null ? s.avg_assignment_grade : 'N/A',
           s.overall_progress,
           s.learning_status,
           s.last_active

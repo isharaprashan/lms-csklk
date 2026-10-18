@@ -69,7 +69,12 @@ try {
                 'avg_course_completion' => 0,
                 'avg_quiz_score' => 0,
                 'quiz_pass_rate' => 0,
-                'total_study_time' => '0m'
+                'total_study_time' => '0m',
+                'total_assignments' => 0,
+                'total_submissions' => 0,
+                'pending_submissions' => 0,
+                'graded_submissions' => 0,
+                'avg_assignment_grade' => null
             ],
             'student_summaries' => [],
             'matrix_rows' => [],
@@ -134,10 +139,52 @@ try {
     $stmt->execute($course_ids);
     $quiz_attempts_data = $stmt->fetchAll();
 
+    // 7. Assignments for accessible courses
+    $stmt = $pdo->prepare("SELECT a.id, a.lesson_id, a.course_id, a.title, a.instructions, a.attachment_path, a.attachment_name, a.attachment_size, a.due_date,
+                                  l.title as lesson_title, l.sort_order as lesson_order
+                           FROM lesson_assignments a
+                           INNER JOIN lessons l ON a.lesson_id = l.id
+                           WHERE a.course_id IN ($in_clause)
+                           ORDER BY a.course_id, l.sort_order ASC, a.id ASC");
+    $stmt->execute($course_ids);
+    $all_assignments = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    // 8. Assignment Submissions for accessible courses
+    $stmt = $pdo->prepare("SELECT sub.id, sub.assignment_id, sub.lesson_id, sub.course_id, sub.user_id,
+                                  sub.submission_file, sub.file_name, sub.file_size, sub.student_notes,
+                                  sub.status, sub.grade, sub.feedback, sub.graded_at, sub.submitted_at
+                           FROM assignment_submissions sub
+                           WHERE sub.course_id IN ($in_clause)");
+    $stmt->execute($course_ids);
+    $all_submissions = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
     // Indexing maps
     $course_lessons_map = [];
     foreach ($all_lessons as $l) {
         $course_lessons_map[$l['course_id']][] = $l;
+    }
+
+    $course_assignments_map = [];
+    $lesson_assignment_map = [];
+    foreach ($all_assignments as $asg) {
+        $course_assignments_map[$asg['course_id']][] = $asg;
+        $lesson_assignment_map[$asg['lesson_id']] = $asg;
+    }
+
+    $assignment_submissions_map = [];
+    $all_graded_assignment_grades = [];
+    $total_pending_asg_submissions = 0;
+    $total_graded_asg_submissions = 0;
+
+    foreach ($all_submissions as $sub) {
+        $key = $sub['user_id'] . '_' . $sub['assignment_id'];
+        $assignment_submissions_map[$key] = $sub;
+        if ($sub['status'] === 'graded' && $sub['grade'] !== null) {
+            $total_graded_asg_submissions++;
+            $all_graded_assignment_grades[] = (float)$sub['grade'];
+        } else {
+            $total_pending_asg_submissions++;
+        }
     }
 
     $progress_map = [];
@@ -166,6 +213,7 @@ try {
     $all_finalized_quiz_scores = [];
     $all_quiz_pass_count = 0;
 
+
     foreach ($enrollments as $enr) {
         $uid = $enr['user_id'];
         $cid = $enr['course_id'];
@@ -185,6 +233,65 @@ try {
         $student_watch_seconds = 0;
         $student_lesson_details = [];
         $last_active_time = null;
+
+        // Assignments for this course
+        $c_assignments = $course_assignments_map[$cid] ?? [];
+        $total_assignments_count = count($c_assignments);
+        $submitted_assignments_count = 0;
+        $graded_assignments_count = 0;
+        $student_assignment_grades = [];
+        $student_assignments_list = [];
+
+        foreach ($c_assignments as $asg) {
+            $asg_id = $asg['id'];
+            $asg_sub = $assignment_submissions_map[$uid . '_' . $asg_id] ?? null;
+            $is_sub = ($asg_sub !== null);
+
+            $s_grade = null;
+            $s_status = 'not_submitted';
+            $s_feedback = null;
+            $s_file = null;
+            $s_file_path = null;
+            $s_submitted_at = null;
+            $s_notes = null;
+
+            if ($is_sub) {
+                $submitted_assignments_count++;
+                $s_status = $asg_sub['status'] ?: 'submitted';
+                $s_file = $asg_sub['file_name'];
+                $s_file_path = $asg_sub['submission_file'];
+                $s_submitted_at = $asg_sub['submitted_at'];
+                $s_notes = $asg_sub['student_notes'];
+                if ($asg_sub['status'] === 'graded' && $asg_sub['grade'] !== null) {
+                    $graded_assignments_count++;
+                    $s_grade = (float)$asg_sub['grade'];
+                    $student_assignment_grades[] = $s_grade;
+                    $s_feedback = $asg_sub['feedback'];
+                }
+                if (!empty($asg_sub['submitted_at'])) {
+                    if (!$last_active_time || strtotime($asg_sub['submitted_at']) > strtotime($last_active_time)) {
+                        $last_active_time = $asg_sub['submitted_at'];
+                    }
+                }
+            }
+
+            $student_assignments_list[] = [
+                'assignment_id' => $asg_id,
+                'lesson_id' => $asg['lesson_id'],
+                'lesson_title' => $asg['lesson_title'],
+                'lesson_order' => $asg['lesson_order'],
+                'assignment_title' => $asg['title'],
+                'due_date' => $asg['due_date'],
+                'is_submitted' => $is_sub,
+                'status' => $s_status,
+                'grade' => $s_grade,
+                'feedback' => $s_feedback,
+                'file_name' => $s_file,
+                'submission_file' => $s_file_path,
+                'submitted_at' => $s_submitted_at ? date('M d, Y H:i', strtotime($s_submitted_at)) : null,
+                'student_notes' => $s_notes
+            ];
+        }
 
         foreach ($c_lessons as $idx => $les) {
             $lid = $les['id'];
@@ -253,7 +360,19 @@ try {
                 $active_learners_set[$uid] = true;
             }
 
-            $lesson_fully_completed = $is_completed_lesson && (!$has_quiz || $q_is_finalized);
+            // Assignment for this specific lesson
+            $asg_for_lesson = $lesson_assignment_map[$lid] ?? null;
+            $has_asg = ($asg_for_lesson !== null);
+            $asg_sub = $has_asg ? ($assignment_submissions_map[$uid . '_' . $asg_for_lesson['id']] ?? null) : null;
+            $asg_is_sub = ($asg_sub !== null);
+            $asg_status = $has_asg ? ($asg_sub ? ($asg_sub['status'] ?: 'submitted') : 'missing') : null;
+            $asg_grade = ($asg_sub && $asg_sub['grade'] !== null) ? (float)$asg_sub['grade'] : null;
+            $asg_feedback = $asg_sub ? ($asg_sub['feedback'] ?? null) : null;
+            $asg_file = $asg_sub ? ($asg_sub['file_name'] ?? null) : null;
+            $asg_file_path = $asg_sub ? ($asg_sub['submission_file'] ?? null) : null;
+            $asg_submitted_at = ($asg_sub && !empty($asg_sub['submitted_at'])) ? date('M d, Y H:i', strtotime($asg_sub['submitted_at'])) : null;
+
+            $lesson_fully_completed = $is_completed_lesson && (!$has_quiz || $q_is_finalized) && (!$has_asg || $asg_is_sub);
 
             $lesson_detail = [
                 'lesson_id' => $lid,
@@ -271,6 +390,17 @@ try {
                 'quiz_finalized' => $q_is_finalized,
                 'quiz_passed' => $q_passed,
                 'quiz_pct' => $q_pct,
+                'has_assignment' => $has_asg,
+                'assignment_id' => $has_asg ? $asg_for_lesson['id'] : null,
+                'assignment_title' => $has_asg ? $asg_for_lesson['title'] : null,
+                'assignment_is_submitted' => $asg_is_sub,
+                'assignment_status' => $asg_status,
+                'assignment_grade' => $asg_grade,
+                'assignment_feedback' => $asg_feedback,
+                'assignment_file' => $asg_file,
+                'assignment_file_path' => $asg_file_path,
+                'assignment_submitted_at' => $asg_submitted_at,
+                'assignment_due_date' => $has_asg ? $asg_for_lesson['due_date'] : null,
                 'is_fully_completed' => $lesson_fully_completed
             ];
 
@@ -301,20 +431,41 @@ try {
                 'quiz_finalized' => $q_is_finalized,
                 'quiz_passed' => $q_passed,
                 'quiz_pct' => $q_pct,
+                'has_assignment' => $has_asg,
+                'assignment_id' => $has_asg ? $asg_for_lesson['id'] : null,
+                'assignment_title' => $has_asg ? $asg_for_lesson['title'] : null,
+                'assignment_is_submitted' => $asg_is_sub,
+                'assignment_status' => $asg_status,
+                'assignment_grade' => $asg_grade,
+                'assignment_feedback' => $asg_feedback,
+                'assignment_file' => $asg_file,
+                'assignment_file_path' => $asg_file_path,
+                'assignment_submitted_at' => $asg_submitted_at,
                 'is_fully_completed' => $lesson_fully_completed
             ];
         }
 
-        $total_milestones = $total_lessons_count + $total_quizzes_count;
-        $completed_milestones = $completed_lessons_count + $finalized_quizzes_count;
+        $total_milestones = $total_lessons_count + $total_quizzes_count + $total_assignments_count;
+        $completed_milestones = $completed_lessons_count + $finalized_quizzes_count + $submitted_assignments_count;
         $overall_progress = ($total_milestones > 0) ? round(($completed_milestones / $total_milestones) * 100) : 0;
+
+        $all_assignments_done = ($total_assignments_count === 0 || $submitted_assignments_count >= $total_assignments_count);
+
+        // REQUIREMENT: For a course to reach 100% completion, students must submit any required assignments
+        if (!$all_assignments_done) {
+            $overall_progress = min(99, $overall_progress);
+        }
         $total_progress_accum += $overall_progress;
 
         $avg_quiz_score = count($student_quiz_scores_pct) > 0 ? round(array_sum($student_quiz_scores_pct) / count($student_quiz_scores_pct)) : null;
+        $avg_assignment_grade = count($student_assignment_grades) > 0 ? round(array_sum($student_assignment_grades) / count($student_assignment_grades), 1) : null;
 
-        if ($overall_progress >= 100) {
+        if ($overall_progress >= 100 && $all_assignments_done) {
             $learning_status = '100% Completed';
             $status_badge_class = 'bg-success text-white';
+        } elseif ($completed_lessons_count >= $total_lessons_count && !$all_assignments_done) {
+            $learning_status = 'Assignments Pending';
+            $status_badge_class = 'bg-warning text-dark';
         } elseif ($overall_progress >= 40) {
             $learning_status = 'On Track';
             $status_badge_class = 'bg-primary text-white';
@@ -342,6 +493,12 @@ try {
             'passed_quizzes' => $passed_quizzes_count,
             'finalized_quizzes' => $finalized_quizzes_count,
             'avg_quiz_score' => $avg_quiz_score,
+            'total_assignments' => $total_assignments_count,
+            'submitted_assignments' => $submitted_assignments_count,
+            'graded_assignments' => $graded_assignments_count,
+            'avg_assignment_grade' => $avg_assignment_grade,
+            'all_assignments_done' => $all_assignments_done,
+            'assignments' => $student_assignments_list,
             'overall_progress' => $overall_progress,
             'learning_status' => $learning_status,
             'status_badge_class' => $status_badge_class,
@@ -350,6 +507,7 @@ try {
             'lessons' => $student_lesson_details
         ];
     }
+
 
     // 7. Compute Lesson Insights (Tab 3)
     $lesson_insights = [];
@@ -417,6 +575,30 @@ try {
             }
         }
 
+        // Assignment metrics for this lesson
+        $asg_for_lesson = $lesson_assignment_map[$lid] ?? null;
+        $has_asg = ($asg_for_lesson !== null);
+        $asg_submitted_count = 0;
+        $asg_graded_count = 0;
+        $asg_scores_list = [];
+
+        if ($has_asg) {
+            foreach ($enrolled_in_course as $enr) {
+                $uid = $enr['user_id'];
+                $asub = $assignment_submissions_map[$uid . '_' . $asg_for_lesson['id']] ?? null;
+                if ($asub) {
+                    $asg_submitted_count++;
+                    if ($asub['status'] === 'graded' && $asub['grade'] !== null) {
+                        $asg_graded_count++;
+                        $asg_scores_list[] = (float)$asub['grade'];
+                    }
+                }
+            }
+        }
+
+        $asg_submission_rate = ($c_total_enrolled > 0 && $has_asg) ? round(($asg_submitted_count / $c_total_enrolled) * 100) : null;
+        $asg_avg_score = count($asg_scores_list) > 0 ? round(array_sum($asg_scores_list) / count($asg_scores_list), 1) : null;
+
         $lesson_insights[] = [
             'course_id' => $cid,
             'course_title' => $c_info['title'] ?? $cid,
@@ -435,7 +617,13 @@ try {
             'quiz_pass_rate' => $quiz_pass_rate_l,
             'avg_attempts' => $avg_attempts,
             'difficulty_badge' => $diff_badge,
-            'difficulty_class' => $diff_class
+            'difficulty_class' => $diff_class,
+            'has_assignment' => $has_asg,
+            'assignment_id' => $has_asg ? $asg_for_lesson['id'] : null,
+            'assignment_title' => $has_asg ? $asg_for_lesson['title'] : null,
+            'assignment_submitted_count' => $asg_submitted_count,
+            'assignment_submission_rate' => $asg_submission_rate,
+            'assignment_avg_grade' => $asg_avg_score
         ];
     }
 
@@ -446,8 +634,9 @@ try {
     $avg_quiz_score_overall = (count($all_finalized_quiz_scores) > 0) ? round(array_sum($all_finalized_quiz_scores) / count($all_finalized_quiz_scores)) : 0;
     $quiz_pass_rate_overall = (count($all_finalized_quiz_scores) > 0) ? round(($all_quiz_pass_count / count($all_finalized_quiz_scores)) * 100) : 0;
 
-    $study_hours = floor($total_study_seconds / 3600);
-    $study_minutes = round(($total_study_seconds % 3600) / 60);
+    $int_study_seconds = (int)$total_study_seconds;
+    $study_hours = floor($int_study_seconds / 3600);
+    $study_minutes = round(($int_study_seconds % 3600) / 60);
 
     echo json_encode([
         'success' => true,
@@ -459,12 +648,18 @@ try {
             'avg_course_completion' => $avg_course_completion,
             'avg_quiz_score' => $avg_quiz_score_overall,
             'quiz_pass_rate' => $quiz_pass_rate_overall,
-            'total_study_time' => ($study_hours > 0) ? "{$study_hours}h {$study_minutes}m" : "{$study_minutes}m"
+            'total_study_time' => ($study_hours > 0) ? "{$study_hours}h {$study_minutes}m" : "{$study_minutes}m",
+            'total_assignments' => count($all_assignments),
+            'total_submissions' => count($all_submissions),
+            'pending_submissions' => $total_pending_asg_submissions,
+            'graded_submissions' => $total_graded_asg_submissions,
+            'avg_assignment_grade' => count($all_graded_assignment_grades) > 0 ? round(array_sum($all_graded_assignment_grades) / count($all_graded_assignment_grades), 1) : null
         ],
         'student_summaries' => $student_summaries,
         'matrix_rows' => $matrix_rows,
         'lesson_insights' => $lesson_insights
     ]);
+
 
 } catch (PDOException $e) {
     echo json_encode(['success' => false, 'message' => 'Database error: ' . $e->getMessage()]);

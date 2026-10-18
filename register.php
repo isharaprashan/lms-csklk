@@ -74,9 +74,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     
                     $allowedfileExtensions = ['jpg', 'gif', 'png', 'jpeg', 'webp'];
                     if (in_array($fileExtension, $allowedfileExtensions)) {
-                        $upload_dir = __DIR__ . '/uploads/';
+                        $upload_dir = root_path('uploads/');
                         if (!file_exists($upload_dir)) {
-                            mkdir($upload_dir, 0777, true);
+                            @mkdir($upload_dir, 0755, true);
                         }
                         $newFileName = md5(time() . $fileName) . '.' . $fileExtension;
                         $dest_path = $upload_dir . $newFileName;

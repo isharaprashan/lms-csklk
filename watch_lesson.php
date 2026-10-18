@@ -10,7 +10,7 @@ if (!isset($_SESSION['user_id'])) {
 }
 
 $user_id = $_SESSION['user_id'];
-$course_id = $_GET['course_id'] ?? '';
+$course_id = $_GET['course_id'] ?? $_GET['id'] ?? '';
 $lesson_id = $_GET['lesson_id'] ?? '';
 $locked_warning = isset($_GET['locked_warning']);
 
@@ -82,17 +82,23 @@ try {
     $stmt->execute([$user_id, $course_id]);
     $watched_lessons = array_unique(array_merge($completed_lessons ?? [], $stmt->fetchAll(PDO::FETCH_COLUMN)));
 
-    // Fetch lessons with finalized quizzes for the student
-    $stmt = $pdo->prepare("SELECT DISTINCT lesson_id FROM quiz_attempts WHERE user_id = ? AND course_id = ? AND status = 'finalized'");
+    // Fetch lessons with completed or finalized quizzes for the student
+    $stmt = $pdo->prepare("SELECT DISTINCT lesson_id FROM quiz_attempts WHERE user_id = ? AND course_id = ? AND status IN ('completed', 'finalized')");
     $stmt->execute([$user_id, $course_id]);
-    $finalized_quiz_lessons = $stmt->fetchAll(PDO::FETCH_COLUMN);
+    $completed_quiz_lessons = $stmt->fetchAll(PDO::FETCH_COLUMN) ?: [];
 
-    // Fetch all lessons that actually have quizzes configured
-    $stmt = $pdo->prepare("SELECT DISTINCT lesson_id FROM quizzes WHERE course_id = ?");
+    $stmt = $pdo->prepare("SELECT DISTINCT lesson_id FROM quiz_results WHERE user_id = ? AND course_id = ? AND (status IN ('completed', 'finalized') OR score > 0)");
+    $stmt->execute([$user_id, $course_id]);
+    $completed_quiz_lessons = array_unique(array_filter(array_merge($completed_quiz_lessons, $stmt->fetchAll(PDO::FETCH_COLUMN) ?: [])));
+    $finalized_quiz_lessons = $completed_quiz_lessons;
+
+    // Fetch question counts for all lessons that have quizzes configured
+    $stmt = $pdo->prepare("SELECT lesson_id, COUNT(*) as q_count FROM quizzes WHERE course_id = ? AND lesson_id IS NOT NULL AND lesson_id != '' GROUP BY lesson_id");
     $stmt->execute([$course_id]);
-    $lessons_with_quizzes = $stmt->fetchAll(PDO::FETCH_COLUMN);
+    $quiz_counts_by_lesson = $stmt->fetchAll(PDO::FETCH_KEY_PAIR) ?: [];
+    $lessons_with_quizzes = array_keys(array_filter($quiz_counts_by_lesson, fn($cnt) => $cnt > 0));
 
-    // Determine unlocked lessons (Lesson 1 is unlocked; subsequent require previous lesson watched/completed)
+    // Determine unlocked lessons (Lesson 1 is unlocked; subsequent require previous lesson watched AND its quiz completed if quiz exists)
     $unlocked_lessons = [];
     foreach ($lessons as $idx => $l) {
         if ($is_teacher || $is_admin || $idx === 0) {
@@ -100,8 +106,10 @@ try {
         } else {
             $prev_l = $lessons[$idx - 1];
             $prev_watched = in_array($prev_l['id'], $watched_lessons) || in_array($prev_l['id'], $completed_lessons);
+            $prev_has_quiz = in_array($prev_l['id'], $lessons_with_quizzes);
+            $prev_quiz_done = !$prev_has_quiz || in_array($prev_l['id'], $completed_quiz_lessons);
 
-            if ($prev_watched) {
+            if ($prev_watched && $prev_quiz_done) {
                 $unlocked_lessons[] = $l['id'];
             }
         }
@@ -120,6 +128,14 @@ try {
         }
     }
 
+    $admin_preview_param = ($is_admin || isset($_GET['admin_preview'])) ? '&admin_preview=1' : '';
+
+    // Active lesson quiz details
+    $active_has_quiz = in_array($active_lesson['id'], $lessons_with_quizzes);
+    $active_quiz_completed = in_array($active_lesson['id'], $completed_quiz_lessons);
+    $active_quiz_count = $quiz_counts_by_lesson[$active_lesson['id']] ?? 0;
+    $quiz_url = "quiz.php?course_id=" . urlencode($course_id) . "&lesson_id=" . urlencode($active_lesson['id']) . $admin_preview_param;
+
     // Prev / Next lesson navigation
     $total_lessons_count = count($lessons);
     $prev_lesson = ($active_index > 0) ? $lessons[$active_index - 1] : null;
@@ -134,7 +150,22 @@ try {
     }
     $completed_percent = ($total_lessons_count > 0) ? round(($completed_count / $total_lessons_count) * 100) : 0;
 
-    $admin_preview_param = ($is_admin || isset($_GET['admin_preview'])) ? '&admin_preview=1' : '';
+    // Fetch saved progress for active lesson
+    $saved_position = 0;
+    $is_active_completed = in_array($active_lesson['id'], $completed_lessons);
+    try {
+        $stmt = $pdo->prepare("SELECT position_seconds, progress_percent, completed FROM lesson_progress WHERE user_id = ? AND lesson_id = ?");
+        $stmt->execute([$user_id, $active_lesson['id']]);
+        $active_lesson_progress = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($active_lesson_progress) {
+            $saved_position = floatval($active_lesson_progress['position_seconds'] ?? 0);
+            if (!empty($active_lesson_progress['completed']) || floatval($active_lesson_progress['progress_percent'] ?? 0) >= 90) {
+                $is_active_completed = true;
+            }
+        }
+    } catch (PDOException $e) {
+        $saved_position = 0;
+    }
 
     // Backend direct URL access protection
     if (!$is_teacher && !$is_admin && !in_array($active_lesson['id'], $unlocked_lessons)) {
@@ -173,6 +204,67 @@ try {
         $resources_by_lesson[$res['lesson_id']][] = $res;
     }
     $active_lesson_resources = $resources_by_lesson[$active_lesson['id']] ?? [];
+
+    // Fetch assignment for active lesson
+    $active_assignment = null;
+    $stmt = $pdo->prepare("SELECT * FROM lesson_assignments WHERE lesson_id = ?");
+    $stmt->execute([$active_lesson['id']]);
+    $active_assignment = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if ($active_assignment && !empty($active_assignment['attachment_size'])) {
+        $bytes = (int)$active_assignment['attachment_size'];
+        $active_assignment['formatted_size'] = ($bytes >= 1048576) ? round($bytes / 1048576, 2) . ' MB' : (($bytes >= 1024) ? round($bytes / 1024, 1) . ' KB' : $bytes . ' B');
+    }
+
+    // Fetch student's submission or all student submissions if teacher/admin
+    $active_submission = null;
+    $assignment_submissions_list = [];
+    if ($active_assignment) {
+        if ($is_teacher || $is_admin) {
+            $stmt = $pdo->prepare("SELECT sub.*, u.name, u.email, u.avatar 
+                                   FROM assignment_submissions sub 
+                                   INNER JOIN users u ON u.id = sub.user_id 
+                                   WHERE sub.assignment_id = ? 
+                                   ORDER BY sub.submitted_at DESC");
+            $stmt->execute([$active_assignment['id']]);
+            $assignment_submissions_list = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            foreach ($assignment_submissions_list as &$sub) {
+                $bytes = (int)($sub['file_size'] ?? 0);
+                $sub['formatted_size'] = ($bytes >= 1048576) ? round($bytes / 1048576, 2) . ' MB' : (($bytes >= 1024) ? round($bytes / 1024, 1) . ' KB' : $bytes . ' B');
+            }
+            unset($sub);
+        } else {
+            $stmt = $pdo->prepare("SELECT * FROM assignment_submissions WHERE assignment_id = ? AND user_id = ?");
+            $stmt->execute([$active_assignment['id'], $user_id]);
+            $active_submission = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($active_submission && !empty($active_submission['file_size'])) {
+                $bytes = (int)$active_submission['file_size'];
+                $active_submission['formatted_size'] = ($bytes >= 1048576) ? round($bytes / 1048576, 2) . ' MB' : (($bytes >= 1024) ? round($bytes / 1024, 1) . ' KB' : $bytes . ' B');
+            }
+        }
+    }
+
+    // Fetch all course assignments and student submissions for syllabus badging
+    $stmt = $pdo->prepare("SELECT a.id, a.lesson_id, a.title FROM lesson_assignments a INNER JOIN lessons l ON l.id = a.lesson_id WHERE l.course_id = ?");
+    $stmt->execute([$course_id]);
+    $course_assignments_raw = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $assignments_by_lesson = [];
+    foreach ($course_assignments_raw as $cas) {
+        $assignments_by_lesson[$cas['lesson_id']] = $cas;
+    }
+
+    $user_submitted_assignment_ids = [];
+    if (!$is_teacher && !$is_admin) {
+        $stmt = $pdo->prepare("SELECT sub.assignment_id FROM assignment_submissions sub INNER JOIN lesson_assignments a ON a.id = sub.assignment_id INNER JOIN lessons l ON l.id = a.lesson_id WHERE l.course_id = ? AND sub.user_id = ?");
+        $stmt->execute([$course_id, $user_id]);
+        $user_submitted_assignment_ids = $stmt->fetchAll(PDO::FETCH_COLUMN) ?: [];
+    }
+
+    // Verify course-wide assignment completion for student
+    $course_assignments_status = check_course_assignments_completed($pdo, $user_id, $course_id);
+    if (!$is_teacher && !$is_admin && !$course_assignments_status['all_completed']) {
+        $completed_percent = min(99, $completed_percent);
+    }
 
     // Fetch unread notifications for header
     $unread_count = 0;
@@ -258,8 +350,16 @@ try {
             border: 1px solid rgba(0, 0, 0, 0.1);
         }
 
-        .video-container video {
+        .video-container iframe,
+        .video-container video,
+        #player-container iframe,
+        #player-container video,
+        #yt-player-target {
             display: block;
+            width: 100% !important;
+            height: 100% !important;
+            min-height: 420px;
+            border: 0;
             outline: none;
         }
 
@@ -404,6 +504,28 @@ try {
                 opacity: 1;
             }
         }
+
+        @media (max-width: 767.98px) {
+            .video-container,
+            #player-container,
+            #yt-player-target {
+                min-height: auto !important;
+                height: auto !important;
+                aspect-ratio: 16 / 9 !important;
+            }
+            .enter-quiz-banner {
+                flex-direction: column !important;
+                align-items: stretch !important;
+                padding: 1rem 1.25rem !important;
+                gap: 0.85rem !important;
+            }
+            .enter-quiz-banner a.enter-quiz-btn,
+            .enter-quiz-banner #enter-quiz-banner-btn {
+                width: 100% !important;
+                text-align: center !important;
+                justify-content: center !important;
+            }
+        }
     </style>
 </head>
 
@@ -518,7 +640,7 @@ try {
                     <div class="d-flex align-items-center gap-3">
                         <span class="fs-7 text-muted">Course Progress:</span>
                         <div class="progress" style="height: 8px; width: 120px;">
-                            <div class="progress-bar" role="progressbar"
+                            <div class="progress-bar" id="overall-progress-bar" role="progressbar"
                                 style="width: <?php echo $completed_percent; ?>%; background-color: #0f4c81;"
                                 aria-valuenow="<?php echo $completed_percent; ?>" aria-valuemin="0" aria-valuemax="100">
                             </div>
@@ -535,17 +657,29 @@ try {
 
             <!-- Locked Direct URL Warning Toast Alert -->
             <?php if ($locked_warning): ?>
-                <div class="alert alert-warning alert-dismissible fade show border-warning shadow-sm rounded-3 mb-4 d-flex align-items-center gap-3"
+                <div class="alert alert-warning alert-dismissible fade show border-warning shadow-sm rounded-4 mb-4 d-flex align-items-center gap-3 p-3"
                     role="alert">
-                    <i class="bi bi-lock-fill fs-4 text-warning"></i>
-                    <div>
-                        <h6 class="fw-bold mb-0">
-                            <?php echo __('locked_lesson_warning', 'Access Locked: Please complete the previous lesson first.'); ?>
-                        </h6>
-                        <small class="text-secondary">Lessons must be completed in sequential order to unlock subsequent
-                            syllabus modules.</small>
+                    <div class="rounded-circle bg-warning bg-opacity-20 text-warning p-2 d-flex align-items-center justify-content-center flex-shrink-0" style="width: 44px; height: 44px;">
+                        <i class="bi bi-lock-fill fs-4 text-warning"></i>
                     </div>
-                    <button type="button" class="btn-close ms-auto" data-bs-dismiss="alert" aria-label="Close"></button>
+                    <div class="flex-grow-1">
+                        <h6 class="fw-bold mb-0 text-dark">
+                            <?php echo __('locked_lesson_warning', 'Access Locked: Sequential progression required.'); ?>
+                        </h6>
+                        <small class="text-secondary">
+                            <?php if ($active_has_quiz && !$active_quiz_completed): ?>
+                                You must complete the quiz for this lesson before you can view the next lesson.
+                            <?php else: ?>
+                                Lessons must be completed in sequential order to unlock subsequent syllabus modules.
+                            <?php endif; ?>
+                        </small>
+                    </div>
+                    <?php if ($active_has_quiz && !$active_quiz_completed): ?>
+                        <a href="<?php echo htmlspecialchars($quiz_url); ?>" class="btn btn-warning btn-sm rounded-pill fw-bold text-dark px-3 py-1.5 shadow-sm text-nowrap flex-shrink-0">
+                            <i class="bi bi-play-circle-fill me-1"></i><?php echo __('start_quiz', 'Start Quiz'); ?>
+                        </a>
+                    <?php endif; ?>
+                    <button type="button" class="btn-close ms-2" data-bs-dismiss="alert" aria-label="Close"></button>
                 </div>
             <?php endif; ?>
 
@@ -592,8 +726,9 @@ try {
                                         Next <i class="bi bi-chevron-right ms-1"></i>
                                     </a>
                                 <?php else: ?>
-                                    <button id="lesson-nav-next-btn" class="btn btn-secondary btn-sm rounded-pill px-3 fw-semibold" disabled
-                                        title="Complete current lesson to unlock next">
+                                    <button id="lesson-nav-next-btn" class="btn btn-secondary btn-sm rounded-pill px-3 fw-semibold"
+                                        <?php echo ($active_has_quiz && !$active_quiz_completed) ? 'onclick="showLessonQuizModal()"' : 'disabled'; ?>
+                                        title="<?php echo ($active_has_quiz && !$active_quiz_completed) ? 'Complete the lesson quiz to unlock the next lesson' : 'Complete current lesson to unlock next'; ?>">
                                         Next <i class="bi bi-lock-fill ms-1"></i>
                                     </button>
                                 <?php endif; ?>
@@ -629,29 +764,370 @@ try {
                                     <i class="bi bi-patch-question-fill fs-4 text-white"></i>
                                 </div>
                                 <div>
-                                    <h5 class="fw-bold mb-1 text-white">
-                                        <?php echo __('quiz_title', 'Course Knowledge Quiz'); ?>
-                                    </h5>
+                                    <div class="d-flex align-items-center gap-2 mb-1">
+                                        <h5 class="fw-bold mb-0 text-white">
+                                            <?php echo __('quiz_title', 'Course Knowledge Quiz'); ?>
+                                        </h5>
+                                        <?php if ($active_has_quiz): ?>
+                                            <?php if ($active_quiz_completed): ?>
+                                                <span class="badge bg-success text-white rounded-pill px-2 py-0.5 fs-9">
+                                                    <i class="bi bi-check-circle-fill me-1"></i>Completed
+                                                </span>
+                                            <?php else: ?>
+                                                <span class="badge bg-warning text-dark rounded-pill px-2 py-0.5 fs-9 fw-bold">
+                                                    <i class="bi bi-exclamation-circle-fill me-1"></i>Required to Unlock Next
+                                                </span>
+                                            <?php endif; ?>
+                                        <?php endif; ?>
+                                    </div>
                                     <p class="mb-0 text-white-50 fs-7">
                                         <?php echo __('quiz_subtitle', 'Test your understanding of this course chapter with single-question timed challenges.'); ?>
                                     </p>
                                 </div>
                             </div>
-                            <a href="quiz.php?course_id=<?php echo urlencode($course_id); ?>&lesson_id=<?php echo urlencode($active_lesson['id']); ?><?php echo $admin_preview_param; ?>"
+                            <a href="<?php echo htmlspecialchars($quiz_url); ?>"
                                 class="btn btn-light btn-lg px-4 py-2 fw-bold text-primary border-0 shadow-sm text-nowrap rounded-pill">
-                                <i class="bi bi-play-circle-fill me-2"></i><?php echo __('enter_quiz', 'Enter Quiz'); ?>
+                                <i class="bi bi-play-circle-fill me-2"></i><?php echo $active_quiz_completed ? __('retake_quiz', 'Retake Quiz') : __('start_quiz', 'Start Quiz'); ?>
                             </a>
                         </div>
 
-                        <!-- Lesson Content & Topic Notes -->
-                        <div class="border rounded-3 p-4 bg-light mb-3">
-                            <h6 class="fw-bold text-dark mb-2.5 d-flex align-items-center gap-2">
-                                <i class="bi bi-file-earmark-text-fill text-primary fs-5"></i>
-                                <span><?php echo __('topic_resources_notes', 'Topic Resources & Notes'); ?></span>
-                            </h6>
-                            <p class="text-secondary fs-7 mb-0 leading-relaxed">
-                                <?php echo nl2br(htmlspecialchars($active_lesson['content'])); ?>
-                            </p>
+                        <!-- Lesson Content & Topic Resources & Notes Section -->
+                        <div class="border rounded-3 p-4 bg-light mb-3" id="topic-resources-notes-container">
+                            <div class="d-flex align-items-center justify-content-between mb-3 border-bottom pb-2">
+                                <h6 class="fw-bold text-dark mb-0 d-flex align-items-center gap-2">
+                                    <i class="bi bi-file-earmark-text-fill text-primary fs-5"></i>
+                                    <span><?php echo __('topic_resources_notes', 'Topic Resources & Notes'); ?></span>
+                                </h6>
+                                <?php if ($active_assignment): ?>
+                                    <span class="badge <?php echo ($is_teacher || $is_admin) ? 'bg-primary' : ($active_submission ? 'bg-success' : 'bg-warning text-dark'); ?> rounded-pill px-3 py-1 fs-9 fw-bold">
+                                        <i class="bi <?php echo ($active_submission || $is_teacher) ? 'bi-check-circle-fill' : 'bi-exclamation-circle-fill'; ?> me-1"></i>
+                                        <?php echo ($is_teacher || $is_admin) ? 'Assignment Attached' : ($active_submission ? __('assignment_completed_badge', 'Submitted & Completed') : __('assignment_pending_badge', 'Mandatory - Submission Pending')); ?>
+                                    </span>
+                                <?php endif; ?>
+                            </div>
+
+                            <!-- Topic Notes Text -->
+                            <div class="bg-white p-3.5 rounded-3 border mb-3">
+                                <div class="text-secondary fs-7 leading-relaxed">
+                                    <?php echo !empty(trim($active_lesson['content'] ?? '')) ? nl2br(htmlspecialchars($active_lesson['content'])) : '<span class="text-muted fst-italic">No additional lecture notes for this topic.</span>'; ?>
+                                </div>
+                            </div>
+
+                            <!-- Topic Assignment & Coursework Card (Mandatory Submission for 100% Course Completion) -->
+                            <div class="card border rounded-3 shadow-sm overflow-hidden mb-1" id="topic-assignment-card" style="border-color: #d0d7de !important;">
+                                <div class="card-header bg-white py-3 px-3.5 d-flex flex-wrap align-items-center justify-content-between gap-2 border-bottom">
+                                    <div class="d-flex align-items-center gap-2.5">
+                                        <div class="rounded-circle bg-primary bg-opacity-10 p-2 text-primary d-flex align-items-center justify-content-center" style="width: 38px; height: 38px;">
+                                            <i class="bi bi-journal-check fs-5"></i>
+                                        </div>
+                                        <div>
+                                            <h6 class="fw-bold text-dark mb-0 fs-7 d-flex align-items-center gap-2">
+                                                <span><?php echo __('topic_assignment_coursework', 'Topic Assignment & Coursework'); ?></span>
+                                                <span class="badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25 rounded-pill fs-9 fw-semibold">Mandatory</span>
+                                            </h6>
+                                            <small class="text-muted fs-8">Required to reach 100% course completion and request official certificate</small>
+                                        </div>
+                                    </div>
+                                    <div class="d-flex align-items-center gap-2">
+                                        <?php if ($is_teacher || $is_admin): ?>
+                                            <button type="button" class="btn btn-primary btn-sm rounded-pill px-3 fw-semibold shadow-sm" onclick="openTeacherAssignmentModal()">
+                                                <i class="bi <?php echo $active_assignment ? 'bi-pencil-square' : 'bi-plus-circle-fill'; ?> me-1"></i>
+                                                <?php echo $active_assignment ? __('edit_assignment_btn', 'Edit / Replace Assignment') : __('upload_assignment_btn', 'Upload Assignment Attachment'); ?>
+                                            </button>
+                                            <?php if ($active_assignment): ?>
+                                                <button type="button" class="btn btn-outline-danger btn-sm rounded-pill px-2.5 fw-semibold" onclick="deleteTeacherAssignment(<?php echo (int)$active_assignment['id']; ?>)" title="Delete Assignment">
+                                                    <i class="bi bi-trash3"></i>
+                                                </button>
+                                            <?php endif; ?>
+                                        <?php endif; ?>
+                                    </div>
+                                </div>
+
+                                <div class="card-body p-3.5 bg-light">
+                                    <?php if ($active_assignment): ?>
+                                        <!-- Assignment Details Banner -->
+                                        <div class="p-3.5 bg-white rounded-3 border mb-3">
+                                            <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
+                                                <h6 class="fw-bold text-dark mb-0 fs-6"><?php echo htmlspecialchars($active_assignment['title']); ?></h6>
+                                                <div class="d-flex align-items-center gap-2">
+                                                    <?php if (!empty($active_assignment['due_date'])): ?>
+                                                        <span class="badge bg-light text-secondary border rounded-pill fs-8">
+                                                            <i class="bi bi-calendar-event me-1"></i>Deadline: <?php echo date('M d, Y h:i A', strtotime($active_assignment['due_date'])); ?>
+                                                        </span>
+                                                    <?php endif; ?>
+                                                </div>
+                                            </div>
+
+                                            <?php if (!empty($active_assignment['instructions'])): ?>
+                                                <p class="text-secondary fs-7 mb-3 leading-relaxed">
+                                                    <?php echo nl2br(htmlspecialchars($active_assignment['instructions'])); ?>
+                                                </p>
+                                            <?php endif; ?>
+
+                                            <!-- Teacher's Attached Assignment Brief File -->
+                                            <?php if (!empty($active_assignment['attachment_path'])): 
+                                                $task_ext = strtolower(pathinfo($active_assignment['attachment_name'] ?: $active_assignment['attachment_path'], PATHINFO_EXTENSION));
+                                                $task_icon = 'bi-file-earmark-arrow-down-fill text-primary';
+                                                if ($task_ext === 'pdf') $task_icon = 'bi-file-earmark-pdf-fill text-danger';
+                                                elseif (in_array($task_ext, ['doc', 'docx'])) $task_icon = 'bi-file-earmark-word-fill text-primary';
+                                                elseif (in_array($task_ext, ['zip', 'rar', '7z'])) $task_icon = 'bi-file-earmark-zip-fill text-secondary';
+                                            ?>
+                                                <div class="d-flex flex-wrap align-items-center justify-content-between p-2.5 px-3 bg-light rounded-3 border gap-2">
+                                                    <div class="d-flex align-items-center gap-2.5 text-truncate me-2">
+                                                        <i class="bi <?php echo $task_icon; ?> fs-3 flex-shrink-0"></i>
+                                                        <div class="text-truncate">
+                                                            <span class="fw-semibold text-dark fs-7 d-block text-truncate"><?php echo htmlspecialchars($active_assignment['attachment_name']); ?></span>
+                                                            <small class="text-muted fs-8"><?php echo $active_assignment['formatted_size'] ?? ''; ?> &bull; Assignment Brief Attachment</small>
+                                                        </div>
+                                                    </div>
+                                                    <a href="download_assignment.php?type=task&id=<?php echo urlencode($active_assignment['id']); ?>" 
+                                                       class="btn btn-outline-primary btn-sm rounded-pill px-3 fw-bold shadow-sm text-nowrap">
+                                                        <i class="bi bi-download me-1"></i> <?php echo __('download_assignment_brief', 'Download Assignment File'); ?>
+                                                    </a>
+                                                </div>
+                                            <?php endif; ?>
+                                        </div>
+
+                                        <?php if ($is_teacher || $is_admin): ?>
+                                            <!-- Teacher View: Student Submissions Panel -->
+                                            <div class="border rounded-3 bg-white p-3">
+                                                <div class="d-flex align-items-center justify-content-between mb-2 pb-2 border-bottom">
+                                                    <h6 class="fw-bold text-dark mb-0 fs-7 d-flex align-items-center gap-2">
+                                                        <i class="bi bi-people-fill text-primary"></i>
+                                                        <span><?php echo __('student_submissions', 'Student Submissions'); ?></span>
+                                                    </h6>
+                                                    <span class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 rounded-pill px-2.5 py-1 fs-9 fw-bold">
+                                                        <?php echo count($assignment_submissions_list); ?> Submitted
+                                                    </span>
+                                                </div>
+
+                                                <?php if (empty($assignment_submissions_list)): ?>
+                                                    <div class="text-center py-3 text-muted fs-8 fst-italic">
+                                                        <i class="bi bi-clock me-1"></i>No student has submitted this assignment yet.
+                                                    </div>
+                                                <?php else: ?>
+                                                    <div class="table-responsive">
+                                                        <table class="table table-sm table-hover align-middle mb-0 fs-8">
+                                                            <thead class="table-light">
+                                                                <tr>
+                                                                    <th>Student</th>
+                                                                    <th>Submitted File</th>
+                                                                    <th>Student Notes</th>
+                                                                    <th>Submitted At</th>
+                                                                    <th>Status</th>
+                                                                    <th>Grade / Score</th>
+                                                                    <th class="text-end">Actions</th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody>
+                                                                <?php foreach ($assignment_submissions_list as $sub): 
+                                                                    $is_sub_graded = ($sub['status'] === 'graded' && $sub['grade'] !== null);
+                                                                ?>
+                                                                    <tr id="watch-sub-row-<?php echo $sub['id']; ?>">
+                                                                        <td>
+                                                                            <div class="d-flex align-items-center gap-2">
+                                                                                <img src="<?php echo htmlspecialchars($sub['avatar'] ?: 'assets/default-avatar.png'); ?>" class="rounded-circle border" style="width: 26px; height: 26px; object-fit: cover;" alt="">
+                                                                                <div>
+                                                                                    <span class="fw-bold text-dark d-block"><?php echo htmlspecialchars($sub['name']); ?></span>
+                                                                                    <small class="text-muted fs-9"><?php echo htmlspecialchars($sub['email']); ?></small>
+                                                                                </div>
+                                                                            </div>
+                                                                        </td>
+                                                                        <td>
+                                                                            <a href="download_assignment.php?type=submission&id=<?php echo urlencode($sub['id']); ?>" class="btn btn-sm btn-light border py-1 px-2.5 rounded-pill text-primary fw-semibold text-nowrap shadow-xs">
+                                                                                <i class="bi bi-file-earmark-arrow-down-fill me-1"></i><?php echo htmlspecialchars($sub['file_name']); ?>
+                                                                                <small class="text-muted ms-1">(<?php echo $sub['formatted_size']; ?>)</small>
+                                                                            </a>
+                                                                        </td>
+                                                                        <td>
+                                                                            <span class="text-secondary"><?php echo !empty($sub['student_notes']) ? htmlspecialchars($sub['student_notes']) : '<span class="text-muted fst-italic">None</span>'; ?></span>
+                                                                        </td>
+                                                                        <td>
+                                                                            <span class="text-muted"><?php echo date('M d, Y h:i A', strtotime($sub['submitted_at'])); ?></span>
+                                                                        </td>
+                                                                        <td>
+                                                                            <span class="badge <?php echo $is_sub_graded ? 'bg-success' : 'bg-primary'; ?> bg-opacity-10 text-<?php echo $is_sub_graded ? 'success' : 'primary'; ?> border border-<?php echo $is_sub_graded ? 'success' : 'primary'; ?> border-opacity-25 rounded-pill px-2 py-0.5">
+                                                                                <i class="bi <?php echo $is_sub_graded ? 'bi-check-circle-fill' : 'bi-check2'; ?> me-1"></i><?php echo $is_sub_graded ? 'Graded' : 'Submitted'; ?>
+                                                                            </span>
+                                                                        </td>
+                                                                        <td id="watch-sub-score-<?php echo $sub['id']; ?>">
+                                                                            <?php if ($is_sub_graded): ?>
+                                                                                <span class="badge bg-success bg-opacity-15 text-success border border-success border-opacity-35 rounded-pill px-2.5 py-1 fw-bold">
+                                                                                    <i class="bi bi-award-fill me-1"></i><?php echo (float)$sub['grade']; ?> / 100
+                                                                                </span>
+                                                                                <?php if (!empty($sub['feedback'])): ?>
+                                                                                    <small class="d-block text-muted fs-9 text-truncate mt-0.5" style="max-width: 130px;" title="<?php echo htmlspecialchars($sub['feedback']); ?>">
+                                                                                        "<?php echo htmlspecialchars($sub['feedback']); ?>"
+                                                                                    </small>
+                                                                                <?php endif; ?>
+                                                                            <?php else: ?>
+                                                                                <span class="badge bg-warning bg-opacity-15 text-dark border border-warning border-opacity-35 rounded-pill px-2 py-0.5">
+                                                                                    Pending
+                                                                                </span>
+                                                                            <?php endif; ?>
+                                                                        </td>
+                                                                        <td class="text-end text-nowrap">
+                                                                            <button type="button" class="btn btn-sm <?php echo $is_sub_graded ? 'btn-outline-primary' : 'btn-primary'; ?> rounded-pill px-2.5 py-0.5 fs-9 fw-semibold shadow-xs"
+                                                                                onclick="openWatchLessonGradeModal(<?php echo $sub['id']; ?>, '<?php echo htmlspecialchars(addslashes($sub['name'])); ?>', '<?php echo $is_sub_graded ? (float)$sub['grade'] : ''; ?>', '<?php echo htmlspecialchars(addslashes($sub['feedback'] ?? '')); ?>')">
+                                                                                <i class="bi <?php echo $is_sub_graded ? 'bi-pencil-square' : 'bi-award'; ?> me-0.5"></i><?php echo $is_sub_graded ? 'Edit Grade' : 'Grade'; ?>
+                                                                            </button>
+                                                                        </td>
+                                                                    </tr>
+                                                                <?php endforeach; ?>
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                <?php endif; ?>
+                                            </div>
+
+                                        <?php else: ?>
+                                            <!-- Student View: Mandatory Notice + Submission Status + Form -->
+                                            <div class="mb-1">
+                                                <?php if ($active_submission): ?>
+                                                    <!-- Already Submitted Banner -->
+                                                    <div class="alert alert-success border-success border-opacity-25 rounded-3 d-flex align-items-start gap-2.5 mb-3 p-3 shadow-sm">
+                                                        <i class="bi bi-check-circle-fill text-success fs-4 flex-shrink-0 mt-0.5"></i>
+                                                        <div class="w-100">
+                                                            <div class="d-flex flex-wrap align-items-center justify-content-between gap-1 mb-1">
+                                                                <strong class="text-success fs-7">Assignment Successfully Submitted!</strong>
+                                                                <span class="text-muted fs-8"><i class="bi bi-clock me-1"></i><?php echo date('M d, Y h:i A', strtotime($active_submission['submitted_at'])); ?></span>
+                                                            </div>
+                                                            <p class="fs-8 text-secondary mb-2">
+                                                                Your assignment submission has been recorded. This satisfies the mandatory assignment requirement for this lesson.
+                                                            </p>
+
+                                                            <?php if ($active_submission['grade'] !== null || $active_submission['status'] === 'graded'): ?>
+                                                                <!-- Evaluated & Graded Score Card at exact student submission location -->
+                                                                <div class="p-3 bg-white rounded-3 border border-success border-opacity-40 mb-2.5 shadow-xs">
+                                                                    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+                                                                        <div class="d-flex align-items-center gap-2">
+                                                                            <span class="badge bg-success text-white px-3 py-1.5 rounded-pill fs-7 fw-bold d-inline-flex align-items-center gap-1.5 shadow-xs">
+                                                                                <i class="bi bi-award-fill"></i> Score: <?php echo (float)$active_submission['grade']; ?> / 100
+                                                                            </span>
+                                                                            <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 rounded-pill px-2.5 py-1 fs-9 fw-semibold">
+                                                                                <i class="bi bi-check2-all me-1"></i>Graded &amp; Evaluated
+                                                                            </span>
+                                                                        </div>
+                                                                        <?php if (!empty($active_submission['graded_at'])): ?>
+                                                                            <small class="text-muted fs-9">
+                                                                                <i class="bi bi-calendar-check me-1"></i>Graded on <?php echo date('M d, Y h:i A', strtotime($active_submission['graded_at'])); ?>
+                                                                            </small>
+                                                                        <?php endif; ?>
+                                                                    </div>
+                                                                    <?php if (!empty($active_submission['feedback'])): ?>
+                                                                        <div class="p-2.5 bg-light rounded-2 border">
+                                                                            <div class="fw-bold fs-8 text-primary mb-1 d-flex align-items-center gap-1">
+                                                                                <i class="bi bi-chat-quote-fill"></i> Instructor Feedback &amp; Evaluation Remarks:
+                                                                            </div>
+                                                                            <div class="fs-8 text-dark leading-relaxed">
+                                                                                <?php echo nl2br(htmlspecialchars($active_submission['feedback'])); ?>
+                                                                            </div>
+                                                                        </div>
+                                                                    <?php endif; ?>
+                                                                </div>
+                                                            <?php else: ?>
+                                                                <!-- Awaiting Grading Indicator -->
+                                                                <div class="mb-2.5">
+                                                                    <span class="badge bg-warning bg-opacity-15 text-dark border border-warning border-opacity-35 rounded-pill px-2.5 py-1 fs-8 fw-semibold d-inline-flex align-items-center gap-1">
+                                                                        <i class="bi bi-hourglass-split text-warning"></i> Awaiting Teacher Grading
+                                                                    </span>
+                                                                    <small class="text-muted fs-9 d-block mt-1.5"><i class="bi bi-info-circle text-primary me-1"></i>Note: Course certificate can be requested once marks have been assigned for this coursework by your instructor.</small>
+                                                                </div>
+                                                            <?php endif; ?>
+
+                                                            <div class="d-flex flex-wrap align-items-center justify-content-between bg-white p-2.5 px-3 rounded-2 border gap-2">
+                                                                <div class="d-flex align-items-center gap-2 text-truncate">
+                                                                    <i class="bi bi-file-earmark-check-fill text-success fs-4"></i>
+                                                                    <div class="text-truncate">
+                                                                        <span class="fw-semibold text-dark fs-8 d-block text-truncate"><?php echo htmlspecialchars($active_submission['file_name']); ?></span>
+                                                                        <small class="text-muted fs-9"><?php echo $active_submission['formatted_size']; ?></small>
+                                                                    </div>
+                                                                </div>
+                                                                <div class="d-flex align-items-center gap-2">
+                                                                    <a href="download_assignment.php?type=submission&id=<?php echo urlencode($active_submission['id']); ?>" class="btn btn-sm btn-outline-success rounded-pill px-3 py-1 fs-8 fw-semibold">
+                                                                        <i class="bi bi-download me-1"></i> View Submitted File
+                                                                    </a>
+                                                                    <button type="button" class="btn btn-sm btn-light border rounded-pill px-3 py-1 fs-8 fw-semibold" onclick="document.getElementById('student-resubmit-box').classList.toggle('d-none')">
+                                                                        <i class="bi bi-arrow-repeat me-1"></i> <?php echo __('resubmit_assignment', 'Resubmit'); ?>
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                            <?php if (!empty($active_submission['student_notes'])): ?>
+                                                                <div class="mt-2 text-muted fs-8">
+                                                                    <strong>Your Note:</strong> <?php echo htmlspecialchars($active_submission['student_notes']); ?>
+                                                                </div>
+                                                            <?php endif; ?>
+                                                        </div>
+                                                    </div>
+                                                <?php else: ?>
+                                                    <!-- Mandatory Requirement Alert -->
+                                                    <div class="alert alert-warning border-warning border-opacity-50 rounded-3 d-flex align-items-center gap-3 mb-3 p-3 shadow-sm bg-warning bg-opacity-10">
+                                                        <div class="rounded-circle bg-warning bg-opacity-25 p-2 text-dark d-flex align-items-center justify-content-center flex-shrink-0" style="width: 36px; height: 36px;">
+                                                            <i class="bi bi-exclamation-triangle-fill fs-5 text-warning"></i>
+                                                        </div>
+                                                        <div class="fs-7 text-dark leading-tight">
+                                                            <strong>Mandatory Requirement:</strong> You must complete and submit your coursework file below to achieve <strong>100% course completion</strong> and request your verified certificate.
+                                                        </div>
+                                                    </div>
+                                                <?php endif; ?>
+
+                                                <!-- Student Upload / Submission Box -->
+                                                <div id="student-resubmit-box" class="<?php echo $active_submission ? 'd-none' : ''; ?> p-3.5 bg-white rounded-3 border">
+                                                    <h6 class="fw-bold text-dark fs-7 mb-3 d-flex align-items-center gap-2">
+                                                        <i class="bi bi-cloud-arrow-up-fill text-primary"></i>
+                                                        <span><?php echo $active_submission ? __('resubmit_assignment', 'Resubmit Completed Work') : __('submit_assignment', 'Submit Completed Assignment'); ?></span>
+                                                    </h6>
+                                                    <form id="studentAssignmentForm" onsubmit="handleStudentAssignmentSubmit(event)">
+                                                        <input type="hidden" name="assignment_id" value="<?php echo (int)$active_assignment['id']; ?>">
+                                                        <div class="mb-3">
+                                                            <label class="form-label fw-semibold fs-8 text-dark mb-1">
+                                                                <?php echo __('upload_work_file_label', 'Attach Completed Assignment File'); ?> <span class="text-danger">*</span>
+                                                            </label>
+                                                            <input type="file" name="submission_file" class="form-control form-control-sm rounded-2" required
+                                                                   accept=".pdf,.doc,.docx,.zip,.rar,.7z,.txt,.png,.jpg,.jpeg">
+                                                            <div class="form-text fs-9 text-muted">
+                                                                Accepted formats: PDF, DOC, DOCX, ZIP, RAR, TXT, Images (Max 25MB)
+                                                            </div>
+                                                        </div>
+                                                        <div class="mb-3">
+                                                            <label class="form-label fw-semibold fs-8 text-dark mb-1">
+                                                                <?php echo __('submission_notes_label', 'Submission Notes / Student Comments (Optional)'); ?>
+                                                            </label>
+                                                            <textarea name="student_notes" class="form-control form-control-sm rounded-2" rows="2" placeholder="Provide any comments or explanations regarding your submission..."></textarea>
+                                                        </div>
+                                                        <div class="d-flex justify-content-end">
+                                                            <button type="submit" id="studentSubmitBtn" class="btn btn-primary rounded-pill px-4 py-2 fs-7 fw-bold shadow-sm" style="background-color: #0f4c81; border: none;">
+                                                                <i class="bi bi-send-fill me-1.5"></i> <?php echo $active_submission ? __('resubmit_assignment', 'Upload & Resubmit') : __('submit_assignment', 'Submit Assignment'); ?>
+                                                            </button>
+                                                        </div>
+                                                    </form>
+                                                </div>
+                                            </div>
+                                        <?php endif; ?>
+
+                                    <?php else: ?>
+                                        <!-- No Assignment Attached Yet -->
+                                        <div class="p-4 text-center rounded-3 bg-white border border-dashed">
+                                            <div class="rounded-circle bg-light p-3 text-muted d-inline-flex align-items-center justify-content-center mb-2" style="width: 48px; height: 48px;">
+                                                <i class="bi bi-journal-x fs-4 text-secondary"></i>
+                                            </div>
+                                            <h6 class="fw-bold text-dark fs-7 mb-1"><?php echo __('no_assignment_for_lesson', 'No assignment attached to this topic.'); ?></h6>
+                                            <p class="text-muted fs-8 mb-3">
+                                                <?php if ($is_teacher || $is_admin): ?>
+                                                    Upload an assignment brief with instructions and attachment files for your students to complete and submit.
+                                                <?php else: ?>
+                                                    Complete the lesson video and chapter quizzes to maintain course progress.
+                                                <?php endif; ?>
+                                            </p>
+                                            <?php if ($is_teacher || $is_admin): ?>
+                                                <button type="button" class="btn btn-primary btn-sm rounded-pill px-3.5 py-1.5 fw-semibold shadow-sm" onclick="openTeacherAssignmentModal()">
+                                                    <i class="bi bi-cloud-arrow-up-fill me-1"></i> <?php echo __('upload_assignment_btn', 'Upload Assignment Attachment'); ?>
+                                                </button>
+                                            <?php endif; ?>
+                                        </div>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
                         </div>
 
                         <!-- Supplementary Lesson Resources & Files -->
@@ -739,10 +1215,18 @@ try {
                                     </span>
                                 </div>
                             </div>
-                            <div class="d-flex align-items-center justify-content-between text-muted fs-8 mb-2">
+                            <div class="d-flex align-items-center justify-content-between text-muted fs-8 mb-1">
                                 <span>Progress: <span id="syllabus-progress-text"><?php echo $completed_count; ?> of <?php echo $total_lessons_count; ?> Completed</span></span>
                                 <span class="fw-bold text-success" id="syllabus-progress-percent"><?php echo $completed_percent; ?>%</span>
                             </div>
+                            <?php if (!empty($course_assignments_status['total_assignments'])): ?>
+                                <div class="d-flex align-items-center justify-content-between text-muted fs-9 mb-2">
+                                    <span><i class="bi bi-journal-check me-1 text-primary"></i>Assignments: <?php echo $course_assignments_status['completed_assignments']; ?> of <?php echo $course_assignments_status['total_assignments']; ?> Submitted</span>
+                                    <?php if (!$course_assignments_status['all_completed'] && !$is_teacher && !$is_admin): ?>
+                                        <span class="text-danger fw-semibold">Mandatory</span>
+                                    <?php endif; ?>
+                                </div>
+                            <?php endif; ?>
                             <div class="progress" style="height: 6px; border-radius: 10px; background-color: #e2e8f0;">
                                 <div class="progress-bar bg-success rounded-pill" id="syllabus-progress-bar" role="progressbar"
                                     style="width: <?php echo $completed_percent; ?>%; transition: width 0.4s ease;"
@@ -795,6 +1279,13 @@ try {
                                                                 <i class="bi bi-paperclip"></i> <?php echo $l_res_count; ?>
                                                             </span>
                                                         <?php endif; ?>
+                                                        <?php if (isset($assignments_by_lesson[$l['id']])): 
+                                                            $has_sub = in_array($assignments_by_lesson[$l['id']]['id'], $user_submitted_assignment_ids);
+                                                        ?>
+                                                            <span class="badge <?php echo ($is_teacher || $is_admin || $has_sub) ? 'bg-success bg-opacity-10 text-success border border-success border-opacity-25' : 'bg-warning bg-opacity-10 text-dark border border-warning border-opacity-25'; ?> py-0.5 px-1.5 rounded-pill" style="font-size: 0.65rem;" title="<?php echo ($has_sub || $is_teacher || $is_admin) ? 'Assignment Submitted' : 'Mandatory Assignment Required'; ?>">
+                                                                <i class="bi <?php echo ($has_sub || $is_teacher || $is_admin) ? 'bi-clipboard-check-fill text-success' : 'bi-clipboard-pulse text-warning'; ?>"></i> Assignment
+                                                            </span>
+                                                        <?php endif; ?>
                                                         <?php if ($is_current): ?>
                                                             <span class="now-playing-pill">NOW PLAYING</span>
                                                         <?php endif; ?>
@@ -824,7 +1315,9 @@ try {
                                     <!-- Locked Lesson Item -->
                                     <div id="sidebar-item-<?php echo htmlspecialchars($l['id']); ?>"
                                         class="syllabus-item locked"
-                                        title="<?php echo __('locked_previous_required', 'Locked - Complete previous lesson first'); ?>"
+                                        title="<?php echo ($active_has_quiz && !$active_quiz_completed) ? 'Locked - Complete current lesson quiz first' : __('locked_previous_required', 'Locked - Complete previous lesson first'); ?>"
+                                        <?php echo ($active_has_quiz && !$active_quiz_completed) ? 'onclick="showLessonQuizModal()"' : ''; ?>
+                                        style="<?php echo ($active_has_quiz && !$active_quiz_completed) ? 'cursor: pointer;' : ''; ?>"
                                         data-bs-toggle="tooltip">
                                         <div class="d-flex align-items-center justify-content-between">
                                             <div class="d-flex align-items-center gap-3">
@@ -860,18 +1353,156 @@ try {
                             <p class="text-muted fs-8 mb-3">
                                 <?php echo __('quiz_sidebar_desc', 'Test your knowledge across all syllabus modules.'); ?>
                             </p>
-                            <a href="quiz.php?course_id=<?php echo urlencode($course_id); ?>&lesson_id=<?php echo urlencode($active_lesson['id']); ?><?php echo $admin_preview_param; ?>"
-                                class="btn btn-primary w-100 rounded-pill border-0 py-2 fs-8 fw-semibold shadow-sm"
-                                style="background-color: #0f4c81;">
-                                <i
-                                    class="bi bi-patch-question-fill me-1.5"></i><?php echo __('enter_quiz', 'Enter Quiz'); ?>
-                            </a>
+                            <?php 
+                                $is_active_lesson_completed = in_array($active_lesson['id'], $watched_lessons) || in_array($active_lesson['id'], $completed_lessons) || $is_admin || $is_teacher;
+                            ?>
+                            <?php if ($is_active_lesson_completed): ?>
+                                <a href="quiz.php?course_id=<?php echo urlencode($course_id); ?>&lesson_id=<?php echo urlencode($active_lesson['id']); ?><?php echo $admin_preview_param; ?>"
+                                    id="sidebar-enter-quiz-btn"
+                                    class="btn btn-primary w-100 rounded-pill border-0 py-2 fs-8 fw-semibold shadow-sm"
+                                    style="background-color: #0f4c81;">
+                                    <i class="bi bi-patch-question-fill me-1.5"></i><?php echo __('enter_quiz', 'Enter Quiz'); ?>
+                                </a>
+                            <?php else: ?>
+                                <button type="button" id="sidebar-enter-quiz-btn" class="btn btn-light border text-muted w-100 rounded-pill py-2 fs-8 fw-semibold opacity-75" disabled style="cursor: not-allowed;" title="Watch this lesson video in its entirety (100%) to unlock the quiz">
+                                    <i class="bi bi-lock-fill me-1.5 text-secondary"></i><?php echo __('quiz_locked', 'Quiz Locked'); ?> (Watch 100% First)
+                                </button>
+                            <?php endif; ?>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
     </main>
+
+    <!-- Modal: Lesson Finished Pop-Up with "Start Quiz" Button -->
+    <div class="modal fade" id="lessonQuizModal" tabindex="-1" aria-labelledby="lessonQuizModalLabel" aria-hidden="true" data-bs-backdrop="static">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 rounded-4 shadow-lg overflow-hidden" style="background: #ffffff;">
+                <!-- Header with vibrant gradient and celebratory icon -->
+                <div class="modal-header border-0 text-white p-4 position-relative" style="background: linear-gradient(135deg, #0f4c81 0%, #1e3a8a 100%);">
+                    <div class="d-flex align-items-center gap-3">
+                        <div class="rounded-circle bg-white bg-opacity-20 d-flex align-items-center justify-content-center p-3 shadow-sm flex-shrink-0" style="width: 56px; height: 56px;">
+                            <i class="bi bi-award-fill fs-2 text-warning"></i>
+                        </div>
+                        <div>
+                            <span class="badge bg-warning text-dark px-2.5 py-1 rounded-pill fs-9 fw-bold text-uppercase tracking-wider mb-1">
+                                <i class="bi bi-check2-circle me-1"></i><?php echo __('lesson_completed', 'Lesson Finished!'); ?>
+                            </span>
+                            <h4 class="modal-title fw-bold text-white mb-0" id="lessonQuizModalLabel">
+                                <?php echo $active_has_quiz ? ($active_quiz_completed ? __('quiz_already_completed', 'Quiz Already Completed!') : __('ready_for_quiz', 'Ready for the Quiz?')) : __('lesson_completed', 'Lesson Finished!'); ?>
+                            </h4>
+                        </div>
+                    </div>
+                    <button type="button" class="btn-close btn-close-white position-absolute top-0 end-0 m-3" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+
+                <!-- Modal Body -->
+                <div class="modal-body p-4 text-center">
+                    <?php if ($active_has_quiz): ?>
+                        <?php if (!$active_quiz_completed): ?>
+                            <div class="mb-3">
+                                <div class="d-inline-flex p-3 rounded-circle bg-primary bg-opacity-10 text-primary mb-2">
+                                    <i class="bi bi-patch-question-fill fs-1"></i>
+                                </div>
+                                <h5 class="fw-bold text-dark mb-1">
+                                    <?php echo htmlspecialchars($active_lesson['title']); ?>
+                                </h5>
+                                <p class="text-secondary fs-7 mb-0">
+                                    <?php echo __('quiz_required_instruction', 'You have finished watching this lesson. To unlock the next lesson, you must complete the quiz associated with this lesson.'); ?>
+                                </p>
+                            </div>
+
+                            <div class="p-3 bg-light rounded-3 border mb-4 d-flex justify-content-around align-items-center text-center">
+                                <div>
+                                    <small class="text-muted d-block fs-8 fw-semibold text-uppercase tracking-wider">Assessment</small>
+                                    <span class="fw-bold text-primary fs-7">
+                                        <i class="bi bi-patch-question me-1"></i><?php echo $active_quiz_count; ?> <?php echo ($active_quiz_count === 1) ? 'Question' : 'Questions'; ?>
+                                    </span>
+                                </div>
+                                <div class="vr" style="height: 32px;"></div>
+                                <div>
+                                    <small class="text-muted d-block fs-8 fw-semibold text-uppercase tracking-wider">Next Lesson</small>
+                                    <span class="badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25 px-2.5 py-1 rounded-pill fs-8 fw-bold">
+                                        <i class="bi bi-lock-fill me-1"></i>Locked Until Quiz Done
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div class="d-grid gap-2">
+                                <a href="<?php echo htmlspecialchars($quiz_url); ?>" id="start-quiz-modal-btn"
+                                    class="btn btn-primary btn-lg rounded-pill fw-bold py-2.5 shadow-sm d-flex align-items-center justify-content-center gap-2"
+                                    style="background: linear-gradient(135deg, #0f4c81 0%, #1e3a8a 100%); border: none;">
+                                    <i class="bi bi-play-circle-fill fs-5"></i>
+                                    <span><?php echo __('start_quiz', 'Start Quiz'); ?></span>
+                                </a>
+                                <button type="button" class="btn btn-light rounded-pill py-2 text-secondary fs-8 fw-semibold border" data-bs-dismiss="modal">
+                                    <?php echo __('review_lesson_notes', 'Review Lesson / Stay on Page'); ?>
+                                </button>
+                            </div>
+                        <?php else: ?>
+                            <!-- Quiz Already Completed -->
+                            <div class="mb-3">
+                                <div class="d-inline-flex p-3 rounded-circle bg-success bg-opacity-10 text-success mb-2">
+                                    <i class="bi bi-check-circle-fill fs-1"></i>
+                                </div>
+                                <h5 class="fw-bold text-dark mb-1">
+                                    <?php echo htmlspecialchars($active_lesson['title']); ?>
+                                </h5>
+                                <p class="text-secondary fs-7 mb-0">
+                                    <?php echo __('quiz_completed_proceed', 'You have finished watching this lesson and your quiz has already been completed.'); ?>
+                                </p>
+                            </div>
+
+                            <div class="d-grid gap-2">
+                                <?php if ($next_lesson && in_array($next_lesson['id'], $unlocked_lessons)): ?>
+                                    <a href="watch_lesson.php?course_id=<?php echo urlencode($course_id); ?>&lesson_id=<?php echo urlencode($next_lesson['id']); ?><?php echo $admin_preview_param; ?>"
+                                        class="btn btn-primary btn-lg rounded-pill fw-bold py-2.5 shadow-sm d-flex align-items-center justify-content-center gap-2"
+                                        style="background: linear-gradient(135deg, #0f4c81 0%, #1e3a8a 100%); border: none;">
+                                        <span><?php echo __('go_to_next_lesson', 'Go to Next Lesson'); ?></span>
+                                        <i class="bi bi-arrow-right"></i>
+                                    </a>
+                                <?php endif; ?>
+                                <a href="<?php echo htmlspecialchars($quiz_url); ?>" class="btn btn-outline-primary rounded-pill py-2 fw-semibold fs-8">
+                                    <i class="bi bi-arrow-repeat me-1"></i><?php echo __('retake_quiz', 'Retake Quiz'); ?>
+                                </a>
+                                <button type="button" class="btn btn-light rounded-pill py-2 text-secondary fs-8 fw-semibold border" data-bs-dismiss="modal">
+                                    <?php echo __('close', 'Close'); ?>
+                                </button>
+                            </div>
+                        <?php endif; ?>
+                    <?php else: ?>
+                        <!-- Lesson without quiz -->
+                        <div class="mb-3">
+                            <div class="d-inline-flex p-3 rounded-circle bg-success bg-opacity-10 text-success mb-2">
+                                <i class="bi bi-check-circle-fill fs-1"></i>
+                            </div>
+                            <h5 class="fw-bold text-dark mb-1">
+                                <?php echo htmlspecialchars($active_lesson['title']); ?>
+                            </h5>
+                            <p class="text-secondary fs-7 mb-0">
+                                <?php echo __('no_quiz_for_lesson', 'You have finished watching this lesson. You can now proceed to the next lesson.'); ?>
+                            </p>
+                        </div>
+
+                        <div class="d-grid gap-2">
+                            <?php if ($next_lesson): ?>
+                                <a href="watch_lesson.php?course_id=<?php echo urlencode($course_id); ?>&lesson_id=<?php echo urlencode($next_lesson['id']); ?><?php echo $admin_preview_param; ?>"
+                                    class="btn btn-primary btn-lg rounded-pill fw-bold py-2.5 shadow-sm d-flex align-items-center justify-content-center gap-2"
+                                    style="background: linear-gradient(135deg, #0f4c81 0%, #1e3a8a 100%); border: none;">
+                                    <span><?php echo __('go_to_next_lesson', 'Go to Next Lesson'); ?></span>
+                                    <i class="bi bi-arrow-right"></i>
+                                </a>
+                            <?php endif; ?>
+                            <button type="button" class="btn btn-light rounded-pill py-2 text-secondary fs-8 fw-semibold border" data-bs-dismiss="modal">
+                                <?php echo __('close', 'Close'); ?>
+                            </button>
+                        </div>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- Container for Next Lesson Unlocked Instant Toast -->
     <div id="unlocked-toast-container"></div>
@@ -882,13 +1513,26 @@ try {
     <!-- Dynamic JS Seeking Control & Progress Script -->
     <script>
         const ACTIVE_LESSON_ID = <?php echo json_encode($active_lesson['id']); ?>;
+        const ACTIVE_LESSON_TITLE = <?php echo json_encode($active_lesson['title']); ?>;
         const COURSE_ID = <?php echo json_encode($course_id); ?>;
         const USER_ROLE = <?php echo json_encode($_SESSION['user_role'] ?? ($student['role'] ?? 'student')); ?>;
         const IS_REVIEW_MODE = (USER_ROLE === 'admin' || USER_ROLE === 'super_admin' || USER_ROLE === 'teacher');
         const YOUTUBE_VIDEO_ID = <?php echo json_encode($yt_id); ?>;
+        const SAVED_PROGRESS_SECONDS = <?php echo json_encode($saved_position); ?>;
+        const IS_LESSON_COMPLETED = <?php echo json_encode($is_active_completed); ?>;
+        const HAS_LESSON_QUIZ = <?php echo json_encode($active_has_quiz); ?>;
+        const IS_QUIZ_COMPLETED = <?php echo json_encode($active_quiz_completed); ?>;
+        const QUIZ_QUESTION_COUNT = <?php echo json_encode($active_quiz_count); ?>;
+        const QUIZ_URL = <?php echo json_encode($quiz_url); ?>;
+        let hasShownQuizModal = false;
+
+        let player = null;
+        let ytPlayer = null; // Alias for consistency
+        let maxWatchedTime = parseFloat(SAVED_PROGRESS_SECONDS) || 0;
+        let timeCheckInterval = null;
+        let lastProgressSaveTime = 0;
         let hasTriggeredUnlock = false;
-        let ytPlayer = null;
-        let progressInterval = null;
+        let seekWarningTimer = null;
 
         document.addEventListener('DOMContentLoaded', () => {
             // Enable Bootstrap tooltips
@@ -912,53 +1556,150 @@ try {
             window.onYouTubeIframeAPIReady = function () {
                 initYouTubePlayer();
             };
-            const tag = document.createElement('script');
-            tag.src = 'https://www.youtube.com/iframe_api';
-            document.head.appendChild(tag);
+            if (!document.getElementById('youtube-iframe-api-script')) {
+                const tag = document.createElement('script');
+                tag.id = 'youtube-iframe-api-script';
+                tag.src = 'https://www.youtube.com/iframe_api';
+                document.head.appendChild(tag);
+            }
         }
 
         function initYouTubePlayer() {
-            let maxWatchedTime = 0;
-            ytPlayer = new YT.Player('yt-player-target', {
+            stopTimeTracking();
+            player = new YT.Player('yt-player-target', {
+                width: '100%',
+                height: '100%',
                 videoId: YOUTUBE_VIDEO_ID,
-                playerVars: { rel: 0, modestbranding: 1, enablejsapi: 1, autoplay: 0 },
+                playerVars: {
+                    'playsinline': 1,
+                    'rel': 0,
+                    'modestbranding': 1,
+                    'enablejsapi': 1,
+                    'autoplay': 0
+                },
                 events: {
-                    onStateChange: function (event) {
-                        if (event.data === YT.PlayerState.PLAYING) {
-                            if (!progressInterval) {
-                                progressInterval = setInterval(() => {
-                                    if (!ytPlayer || typeof ytPlayer.getCurrentTime !== 'function') return;
-                                    const current = ytPlayer.getCurrentTime();
-                                    const dur = ytPlayer.getDuration();
-
-                                    if (!IS_REVIEW_MODE) {
-                                        if (current > maxWatchedTime + 1.5) {
-                                            ytPlayer.seekTo(maxWatchedTime, true);
-                                            showSeekWarning();
-                                        } else if (current > maxWatchedTime) {
-                                            maxWatchedTime = current;
-                                        }
-                                        sendWatchProgress(ACTIVE_LESSON_ID, current, dur);
-                                    }
-                                }, 5000);
-                            }
-                        } else if (event.data === YT.PlayerState.PAUSED || event.data === YT.PlayerState.ENDED) {
-                            if (progressInterval) {
-                                clearInterval(progressInterval);
-                                progressInterval = null;
-                            }
-                            if (ytPlayer && typeof ytPlayer.getCurrentTime === 'function') {
-                                const current = ytPlayer.getCurrentTime();
-                                const dur = ytPlayer.getDuration();
-                                if (event.data === YT.PlayerState.ENDED) {
-                                    maxWatchedTime = dur;
-                                }
-                                sendWatchProgress(ACTIVE_LESSON_ID, current, dur);
-                            }
-                        }
-                    }
+                    'onReady': onPlayerReady,
+                    'onStateChange': onPlayerStateChange
                 }
             });
+            ytPlayer = player;
+        }
+
+        function onPlayerReady(event) {
+            // Player is ready; maxWatchedTime is initialized from SAVED_PROGRESS_SECONDS
+            if (maxWatchedTime > 0 && !IS_REVIEW_MODE) {
+                // If student has saved position, maxWatchedTime retains that point
+            }
+        }
+
+        function showLessonQuizModal() {
+            const modalEl = document.getElementById('lessonQuizModal');
+            if (modalEl && window.bootstrap && bootstrap.Modal) {
+                let modalInstance = bootstrap.Modal.getInstance(modalEl);
+                if (!modalInstance) {
+                    modalInstance = new bootstrap.Modal(modalEl, { backdrop: 'static', keyboard: true });
+                }
+                modalInstance.show();
+            }
+        }
+
+        function onLessonVideoFinished() {
+            markLessonAsCompleted();
+            if (!hasShownQuizModal) {
+                hasShownQuizModal = true;
+                setTimeout(() => {
+                    showLessonQuizModal();
+                }, 400);
+            }
+        }
+
+        function onPlayerStateChange(event) {
+            if (event.data === YT.PlayerState.PLAYING) {
+                startTimeTracking();
+            } else {
+                stopTimeTracking();
+            }
+
+            // Video Finished -> Trigger AJAX Completion and Quiz Pop-up
+            if (event.data === YT.PlayerState.ENDED) {
+                onLessonVideoFinished();
+            } else if (event.data === YT.PlayerState.PAUSED) {
+                if (player && typeof player.getCurrentTime === 'function') {
+                    const current = player.getCurrentTime();
+                    const dur = (typeof player.getDuration === 'function') ? player.getDuration() : 0;
+                    sendWatchProgress(ACTIVE_LESSON_ID, current, dur);
+                }
+            }
+        }
+
+        function startTimeTracking() {
+            stopTimeTracking();
+            timeCheckInterval = setInterval(() => {
+                if (!player || typeof player.getCurrentTime !== 'function') return;
+
+                // Player State Guard: pause/ignore checks while BUFFERING, UNSTARTED, or CUED
+                if (typeof player.getPlayerState === 'function') {
+                    const state = player.getPlayerState();
+                    if (state === YT.PlayerState.BUFFERING || state === YT.PlayerState.UNSTARTED || state === YT.PlayerState.CUED || state !== YT.PlayerState.PLAYING) {
+                        return;
+                    }
+                }
+
+                const currentTime = player.getCurrentTime();
+                const duration = (typeof player.getDuration === 'function') ? player.getDuration() : 0;
+
+                if (IS_REVIEW_MODE) {
+                    if (currentTime > maxWatchedTime) {
+                        maxWatchedTime = currentTime;
+                    }
+                    return;
+                }
+
+                // Normal playback progression with 2.5s tolerance
+                if (currentTime <= maxWatchedTime + 2.5) {
+                    if (currentTime > maxWatchedTime) {
+                        maxWatchedTime = currentTime;
+                    }
+                } else {
+                    // Illegal forward scrub detected -> clamp back to max watched point (DO NOT reset to 0)
+                    player.seekTo(maxWatchedTime, true);
+                    showSeekWarning();
+                }
+
+                // Throttled periodic progress sync to server every 5 seconds or near end (>= 90%)
+                if (duration > 0 && (currentTime - lastProgressSaveTime >= 5 || currentTime >= duration * 0.9)) {
+                    lastProgressSaveTime = currentTime;
+                    sendWatchProgress(ACTIVE_LESSON_ID, currentTime, duration);
+                }
+
+                // End of video reached via playback
+                if (duration > 0 && currentTime >= duration - 0.5 && !hasShownQuizModal) {
+                    onLessonVideoFinished();
+                }
+            }, 500);
+        }
+
+        function stopTimeTracking() {
+            if (timeCheckInterval) {
+                clearInterval(timeCheckInterval);
+                timeCheckInterval = null;
+            }
+        }
+
+        function markLessonAsCompleted() {
+            let duration = 0;
+            if (player && typeof player.getDuration === 'function') {
+                duration = player.getDuration() || 0;
+            } else {
+                const videoEl = document.getElementById('lesson-video-player');
+                if (videoEl && videoEl.duration) {
+                    duration = videoEl.duration;
+                }
+            }
+            if (duration > 0) {
+                maxWatchedTime = duration;
+            }
+            sendWatchProgress(ACTIVE_LESSON_ID, duration || 1, duration || 1);
         }
 
         function initHtml5Player() {
@@ -970,15 +1711,21 @@ try {
             if (IS_REVIEW_MODE) {
                 // Review mode: full seeking unlocked
             } else {
-                let maxWatchedTime = 0;
                 let isSeekingLock = false;
                 let lastSaveTime = 0;
+
+                // Restore saved position if available
+                videoElement.addEventListener('loadedmetadata', () => {
+                    if (maxWatchedTime > 0 && maxWatchedTime < videoElement.duration) {
+                        videoElement.currentTime = maxWatchedTime;
+                    }
+                });
 
                 videoElement.addEventListener('timeupdate', () => {
                     if (!videoElement.duration) return;
 
                     if (!isSeekingLock) {
-                        if (videoElement.currentTime <= maxWatchedTime + 1.5) {
+                        if (videoElement.currentTime <= maxWatchedTime + 2.5) {
                             if (videoElement.currentTime > maxWatchedTime) {
                                 maxWatchedTime = videoElement.currentTime;
                             }
@@ -996,10 +1743,14 @@ try {
                         lastSaveTime = currentTime;
                         sendWatchProgress(ACTIVE_LESSON_ID, currentTime, duration);
                     }
+
+                    if (duration > 0 && currentTime >= duration - 0.5 && !hasShownQuizModal) {
+                        onLessonVideoFinished();
+                    }
                 });
 
                 videoElement.addEventListener('seeking', () => {
-                    if (videoElement.currentTime > maxWatchedTime + 1.5) {
+                    if (videoElement.currentTime > maxWatchedTime + 2.5) {
                         isSeekingLock = true;
                         videoElement.currentTime = maxWatchedTime;
                         showSeekWarning();
@@ -1008,15 +1759,16 @@ try {
                 });
 
                 videoElement.addEventListener('ended', () => {
-                    sendWatchProgress(ACTIVE_LESSON_ID, videoElement.duration || 1, videoElement.duration || 1);
+                    maxWatchedTime = videoElement.duration || maxWatchedTime;
+                    onLessonVideoFinished();
                 });
             }
         }
 
         function showSeekWarning() {
             const msg = (typeof window.i18n__ === 'function')
-                ? window.i18n__('forward_seeking_restricted', 'Forward seeking is restricted until you watch this section.')
-                : 'Forward seeking is restricted until you watch this section.';
+                ? window.i18n__('forward_seeking_restricted', '⚠️ Fast-forwarding is restricted. Please complete the video sequentially.')
+                : '⚠️ Fast-forwarding is restricted. Please complete the video sequentially.';
 
             let toast = document.getElementById('seek-warning-toast');
             if (!toast) {
@@ -1026,12 +1778,18 @@ try {
                 toast.style.zIndex = '2000';
                 toast.innerHTML = `<i class="bi bi-exclamation-triangle-fill me-2"></i><span>${msg}</span>`;
                 document.body.appendChild(toast);
+            } else {
+                const textSpan = toast.querySelector('span');
+                if (textSpan) textSpan.textContent = msg;
             }
             toast.style.display = 'block';
-            setTimeout(() => { toast.style.display = 'none'; }, 3000);
+            if (seekWarningTimer) {
+                clearTimeout(seekWarningTimer);
+            }
+            seekWarningTimer = setTimeout(() => {
+                toast.style.display = 'none';
+            }, 3000);
         }
-
-        let hasTriggeredCelebration = false;
 
         async function sendWatchProgress(lessonId, currentTime, duration) {
             if (IS_REVIEW_MODE) return;
@@ -1071,12 +1829,26 @@ try {
                     bar.style.width = pct + '%';
                     bar.setAttribute('aria-valuenow', pct);
                 }
+                const overallBar = document.getElementById('overall-progress-bar');
+                if (overallBar) {
+                    overallBar.style.width = pct + '%';
+                    overallBar.setAttribute('aria-valuenow', pct);
+                }
                 if (pctText) {
                     pctText.textContent = pct + '%';
                 }
-                if (progText && data.course_completed_lessons !== undefined && data.course_total_lessons !== undefined) {
-                    progText.textContent = `${data.course_completed_lessons} of ${data.course_total_lessons} Completed`;
+                const overallText = document.getElementById('overall-progress-text');
+                if (overallText) {
+                    overallText.textContent = pct + '%';
                 }
+                if (progText && data.course_completed_lessons !== undefined && data.course_total_lessons !== undefined) {
+                    let text = `${data.course_completed_lessons} of ${data.course_total_lessons} Completed`;
+                    if (data.total_assignments > 0 && !data.assignments_completed) {
+                        text += ` (Assignments required for 100%)`;
+                    }
+                    progText.textContent = text;
+                }
+
             }
 
             // 2. Update Completed Lesson Sidebar Item Badge
@@ -1098,46 +1870,39 @@ try {
                 }
             }
 
-            // 3. Unlock Next Lesson
+            // 2.1 Dynamically Unlock Sidebar Enter Quiz Button upon 100% video completion
+            if (data.completed && data.lesson_id === ACTIVE_LESSON_ID) {
+                const sidebarQuizBtn = document.getElementById('sidebar-enter-quiz-btn');
+                if (sidebarQuizBtn && sidebarQuizBtn.tagName.toLowerCase() === 'button') {
+                    const quizUrl = `quiz.php?course_id=${encodeURIComponent(COURSE_ID)}&lesson_id=${encodeURIComponent(ACTIVE_LESSON_ID)}${ADMIN_PREVIEW_PARAM || ''}`;
+                    const newAnchor = document.createElement('a');
+                    newAnchor.href = quizUrl;
+                    newAnchor.id = 'sidebar-enter-quiz-btn';
+                    newAnchor.className = 'btn btn-primary w-100 rounded-pill border-0 py-2 fs-8 fw-semibold shadow-sm';
+                    newAnchor.style.backgroundColor = '#0f4c81';
+                    newAnchor.innerHTML = '<i class="bi bi-patch-question-fill me-1.5"></i>Enter Quiz';
+                    sidebarQuizBtn.parentNode.replaceChild(newAnchor, sidebarQuizBtn);
+                }
+            }
+
+            // 3. Unlock Next Lesson ONLY IF server returned next_unlocked_lesson (meaning quiz is completed or not required)
             if (data.completed && data.next_unlocked_lesson && !hasTriggeredUnlock) {
                 hasTriggeredUnlock = true;
                 handleInstantNextLessonUnlock(data.next_unlocked_lesson);
             }
 
-            // 4. If Course is 100% Completed, show celebration banner/toast
-            if (data.is_course_completed && !hasTriggeredCelebration) {
-                hasTriggeredCelebration = true;
-                showCourseCompletionCelebration();
+            // If lesson is completed and video playback finished, ensure pop-up modal is displayed
+            if (data.completed && !hasShownQuizModal) {
+                const videoEl = document.getElementById('lesson-video-player');
+                const currTime = (player && typeof player.getCurrentTime === 'function') ? player.getCurrentTime() : (videoEl ? videoEl.currentTime : 0);
+                const dur = (player && typeof player.getDuration === 'function') ? player.getDuration() : (videoEl ? videoEl.duration : 0);
+                if (dur > 0 && currTime >= dur - 1) {
+                    onLessonVideoFinished();
+                }
             }
 
-            // 5. Broadcast custom event for other widgets/listeners
+            // Broadcast custom event for other widgets/listeners
             window.dispatchEvent(new CustomEvent('lms:course_progress_updated', { detail: data }));
-        }
-
-        function showCourseCompletionCelebration() {
-            const toastContainer = document.getElementById('unlocked-toast-container');
-            if (!toastContainer) return;
-            const certUrl = `my_courses.php?course_id=${encodeURIComponent(COURSE_ID)}#certificates`;
-
-            const celebrationDiv = document.createElement('div');
-            celebrationDiv.className = 'unlocked-toast border-warning shadow-lg mt-2';
-            celebrationDiv.style.background = 'linear-gradient(135deg, #fef9c3 0%, #ffffff 100%)';
-            celebrationDiv.innerHTML = `
-                <div class="rounded-circle bg-warning text-dark p-2 d-flex align-items-center justify-content-center shadow-xs" style="width: 44px; height: 44px;">
-                    <i class="bi bi-trophy-fill fs-4 text-dark"></i>
-                </div>
-                <div>
-                    <h6 class="fw-bold text-dark mb-0 d-flex align-items-center gap-1.5">
-                        <span>Course Completed 100%!</span>
-                        <span class="badge bg-success text-white rounded-pill px-2 py-0.5 fs-9">Graduated</span>
-                    </h6>
-                    <small class="text-secondary fs-8">Congratulations! Your official Course Certificate is now ready for application.</small>
-                </div>
-                <a href="${certUrl}" class="btn btn-warning btn-sm fw-bold fs-8 text-dark rounded-pill px-3 py-1.5 ms-2 shadow-sm text-nowrap">
-                    <i class="bi bi-award-fill me-1"></i>Get Certificate
-                </a>
-            `;
-            toastContainer.appendChild(celebrationDiv);
         }
 
         function handleInstantNextLessonUnlock(nextLesson) {
@@ -1217,7 +1982,348 @@ try {
                 .replace(/"/g, '&quot;')
                 .replace(/'/g, '&#039;');
         }
+
+        // --- Topic Assignment & Submission Handlers ---
+        function openTeacherAssignmentModal() {
+            const modalEl = document.getElementById('teacherAssignmentModal');
+            if (modalEl) {
+                const modal = new bootstrap.Modal(modalEl);
+                modal.show();
+            }
+        }
+
+        async function handleTeacherAssignmentSubmit(e) {
+            e.preventDefault();
+            const form = e.target;
+            const submitBtn = document.getElementById('teacherSubmitBtn');
+            const origHtml = submitBtn.innerHTML;
+
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Saving...';
+
+            try {
+                const formData = new FormData(form);
+                const resp = await fetch('api/upload_assignment.php', {
+                    method: 'POST',
+                    body: formData
+                });
+                const res = await resp.json();
+
+                if (res.success) {
+                    if (window.showToastNotification) {
+                        showToastNotification(res.message || 'Assignment saved successfully!', 'success');
+                    } else {
+                        alert(res.message || 'Assignment saved successfully!');
+                    }
+                    setTimeout(() => location.reload(), 700);
+                } else {
+                    alert(res.message || 'Error saving assignment.');
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = origHtml;
+                }
+            } catch (err) {
+                console.error(err);
+                alert('A network or server error occurred. Please try again.');
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = origHtml;
+            }
+        }
+
+        async function deleteTeacherAssignment(assignmentId) {
+            if (!confirm('Are you sure you want to delete this assignment attachment? Any student submissions will also be removed.')) {
+                return;
+            }
+
+            try {
+                const formData = new FormData();
+                formData.append('action', 'delete');
+                formData.append('course_id', COURSE_ID);
+                formData.append('lesson_id', ACTIVE_LESSON_ID);
+
+                const resp = await fetch('api/upload_assignment.php', {
+                    method: 'POST',
+                    body: formData
+                });
+                const res = await resp.json();
+
+                if (res.success) {
+                    if (window.showToastNotification) {
+                        showToastNotification(res.message || 'Assignment deleted.', 'success');
+                    }
+                    setTimeout(() => location.reload(), 600);
+                } else {
+                    alert(res.message || 'Failed to delete assignment.');
+                }
+            } catch (err) {
+                console.error(err);
+                alert('Error connecting to server.');
+            }
+        }
+
+        async function handleStudentAssignmentSubmit(e) {
+            e.preventDefault();
+            const form = e.target;
+            const submitBtn = document.getElementById('studentSubmitBtn');
+            const origHtml = submitBtn.innerHTML;
+
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Submitting...';
+
+            try {
+                const formData = new FormData(form);
+                const resp = await fetch('api/submit_assignment.php', {
+                    method: 'POST',
+                    body: formData
+                });
+                const res = await resp.json();
+
+                if (res.success) {
+                    if (window.showToastNotification) {
+                        showToastNotification(res.message || 'Assignment submitted successfully!', 'success');
+                    } else {
+                        alert(res.message || 'Assignment submitted successfully!');
+                    }
+                    setTimeout(() => location.reload(), 800);
+                } else {
+                    alert(res.message || 'Error submitting assignment.');
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = origHtml;
+                }
+            } catch (err) {
+                console.error(err);
+                alert('A network or server error occurred while uploading your submission.');
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = origHtml;
+            }
+        }
+
+        function openWatchLessonGradeModal(subId, studentName, currentGrade, currentFeedback) {
+            document.getElementById('watch-grade-sub-id').value = subId;
+            document.getElementById('watch-grade-student-name').textContent = studentName;
+            document.getElementById('watch-grade-score-input').value = currentGrade || '';
+            document.getElementById('watch-grade-feedback-input').value = currentFeedback || '';
+            document.getElementById('watch-grade-notify-student').checked = true;
+
+            const modalEl = document.getElementById('watchLessonGradeModal');
+            if (modalEl) {
+                const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+                modal.show();
+            }
+        }
+
+        async function submitWatchLessonGrade(e) {
+            e.preventDefault();
+            const submitBtn = document.getElementById('watch-grade-submit-btn');
+            const subId = document.getElementById('watch-grade-sub-id').value;
+            const grade = document.getElementById('watch-grade-score-input').value;
+            const feedback = document.getElementById('watch-grade-feedback-input').value;
+            const sendNotif = document.getElementById('watch-grade-notify-student').checked ? 1 : 0;
+
+            if (!grade || isNaN(grade) || parseFloat(grade) < 0 || parseFloat(grade) > 100) {
+                alert('Please enter a valid grade between 0 and 100.');
+                return;
+            }
+
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status"></span>Saving...';
+
+            try {
+                const resp = await fetch('api/grade_assignment.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        submission_id: parseInt(subId),
+                        grade: parseFloat(grade),
+                        feedback: feedback,
+                        send_notification: sendNotif
+                    })
+                });
+                const res = await resp.json();
+
+                if (res.success) {
+                    const scoreCell = document.getElementById(`watch-sub-score-${subId}`);
+                    if (scoreCell) {
+                        scoreCell.innerHTML = `
+                            <span class="badge bg-success bg-opacity-15 text-success border border-success border-opacity-35 rounded-pill px-2.5 py-1 fw-bold">
+                                <i class="bi bi-award-fill me-1"></i>${parseFloat(res.grade)} / 100
+                            </span>
+                        `;
+                    }
+                    const row = document.getElementById(`watch-sub-row-${subId}`);
+                    if (row) {
+                        const btn = row.querySelector('.btn-quick-grade');
+                        if (btn) {
+                            btn.classList.remove('btn-primary');
+                            btn.classList.add('btn-outline-primary');
+                            btn.innerHTML = '<i class="bi bi-pencil-square me-0.5"></i>Edit Grade';
+                        }
+                    }
+                    const modalEl = document.getElementById('watchLessonGradeModal');
+                    if (modalEl) {
+                        const modal = bootstrap.Modal.getInstance(modalEl);
+                        if (modal) modal.hide();
+                    }
+                    if (window.showToastNotification) {
+                        showToastNotification('Grade saved & student notified!', 'success');
+                    } else {
+                        alert('Grade saved successfully and student notified!');
+                    }
+                } else {
+                    alert(res.message || 'Failed to grade submission.');
+                }
+            } catch (err) {
+                console.error(err);
+                alert('Server error saving grade.');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = 'Save Grade & Notify';
+            }
+        }
     </script>
+
+    <?php if ($is_teacher || $is_admin): ?>
+    <!-- Teacher Assignment Upload / Edit Modal -->
+    <div class="modal fade" id="teacherAssignmentModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+                <div class="modal-header border-0 bg-light p-4 pb-3">
+                    <div class="d-flex align-items-center gap-3">
+                        <div class="rounded-circle bg-primary bg-opacity-10 p-3 text-primary d-flex align-items-center justify-content-center" style="width: 48px; height: 48px;">
+                            <i class="bi bi-journal-plus fs-4"></i>
+                        </div>
+                        <div>
+                            <h5 class="modal-title fw-bold text-dark mb-0 fs-6">
+                                <?php echo $active_assignment ? __('edit_assignment_btn', 'Edit / Replace Assignment') : __('upload_assignment_btn', 'Upload Assignment Attachment'); ?>
+                            </h5>
+                            <small class="text-muted fs-8"><?php echo htmlspecialchars($active_lesson['title']); ?></small>
+                        </div>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <form id="teacherAssignmentForm" onsubmit="handleTeacherAssignmentSubmit(event)" enctype="multipart/form-data">
+                    <div class="modal-body p-4 pt-3">
+                        <input type="hidden" name="course_id" value="<?php echo htmlspecialchars($course_id); ?>">
+                        <input type="hidden" name="lesson_id" value="<?php echo htmlspecialchars($active_lesson['id']); ?>">
+                        <input type="hidden" name="action" value="save">
+
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold fs-8 text-dark mb-1">
+                                Assignment Title <span class="text-danger">*</span>
+                            </label>
+                            <input type="text" name="title" class="form-control rounded-2 fs-7" required 
+                                   placeholder="e.g., Chapter Practical Task: Binary Search Trees"
+                                   value="<?php echo htmlspecialchars($active_assignment['title'] ?? ''); ?>">
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold fs-8 text-dark mb-1">
+                                Instructions / Assignment Brief
+                            </label>
+                            <textarea name="instructions" class="form-control rounded-2 fs-8" rows="3" 
+                                      placeholder="Provide instructions or submission guidelines for students..."><?php echo htmlspecialchars($active_assignment['instructions'] ?? ''); ?></textarea>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold fs-8 text-dark mb-1">
+                                Deadline / Due Date (Optional)
+                            </label>
+                            <input type="datetime-local" name="due_date" class="form-control rounded-2 fs-8"
+                                   value="<?php echo !empty($active_assignment['due_date']) ? date('Y-m-d\TH:i', strtotime($active_assignment['due_date'])) : ''; ?>">
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold fs-8 text-dark mb-1">
+                                <?php echo __('assignment_attachment', 'Assignment Brief & Attachment'); ?>
+                                <?php if (!$active_assignment): ?><span class="text-danger">*</span><?php endif; ?>
+                            </label>
+                            <input type="file" name="attachment" class="form-control rounded-2 fs-8" 
+                                   <?php echo (!$active_assignment) ? 'required' : ''; ?>
+                                   accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.zip,.rar,.7z,.png,.jpg,.jpeg">
+                            <div class="form-text fs-9 text-muted">
+                                Supported formats: PDF, Word, PowerPoint, Excel, ZIP, RAR, TXT, Images (Max 50MB)
+                            </div>
+                            <?php if ($active_assignment && !empty($active_assignment['attachment_name'])): ?>
+                                <div class="mt-2 text-muted fs-8">
+                                    <i class="bi bi-paperclip me-1"></i>Current attachment: <strong><?php echo htmlspecialchars($active_assignment['attachment_name']); ?></strong> (Leave blank to keep existing file)
+                                </div>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                    <div class="modal-footer border-0 bg-light p-3 px-4 d-flex justify-content-end gap-2">
+                        <button type="button" class="btn btn-light rounded-pill px-3" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" id="teacherSubmitBtn" class="btn btn-primary rounded-pill px-4 fw-bold shadow-sm" style="background-color: #0f4c81;">
+                            <i class="bi bi-cloud-arrow-up-fill me-1"></i> Save Assignment
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Grade Modal for Instructor in Watch Lesson -->
+    <div class="modal fade text-dark" id="watchLessonGradeModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+                <div class="modal-header border-0 bg-light p-4 pb-3">
+                    <div class="d-flex align-items-center gap-3">
+                        <div class="rounded-circle bg-primary bg-opacity-10 p-2.5 text-primary d-flex align-items-center justify-content-center" style="width: 44px; height: 44px;">
+                            <i class="bi bi-award-fill fs-5"></i>
+                        </div>
+                        <div>
+                            <h5 class="modal-title fw-bold text-dark mb-0 fs-6">
+                                Grade Student Submission
+                            </h5>
+                            <small class="text-muted fs-8" id="watch-grade-student-name">Student</small>
+                        </div>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <form id="watchLessonGradeForm" onsubmit="submitWatchLessonGrade(event)">
+                    <input type="hidden" id="watch-grade-sub-id" name="submission_id" value="">
+                    <div class="modal-body p-4 pt-3">
+                        <div class="mb-3">
+                            <label for="watch-grade-score-input" class="form-label fw-semibold text-dark fs-8 mb-1">
+                                Score / Grade (0 - 100) <span class="text-danger">*</span>
+                            </label>
+                            <div class="input-group">
+                                <input type="number" step="0.5" min="0" max="100" class="form-control form-control-lg fw-bold text-primary rounded-start-2" 
+                                       id="watch-grade-score-input" name="grade" placeholder="e.g. 90" required>
+                                <span class="input-group-text fw-semibold bg-light text-muted">/ 100</span>
+                            </div>
+                            <div class="d-flex gap-1.5 mt-1.5 flex-wrap">
+                                <small class="text-muted fs-9 align-self-center me-1">Quick Set:</small>
+                                <button type="button" class="btn btn-xs btn-outline-secondary rounded-pill px-2 py-0.5 fs-9" onclick="document.getElementById('watch-grade-score-input').value = 100">100</button>
+                                <button type="button" class="btn btn-xs btn-outline-secondary rounded-pill px-2 py-0.5 fs-9" onclick="document.getElementById('watch-grade-score-input').value = 90">90</button>
+                                <button type="button" class="btn btn-xs btn-outline-secondary rounded-pill px-2 py-0.5 fs-9" onclick="document.getElementById('watch-grade-score-input').value = 80">80</button>
+                                <button type="button" class="btn btn-xs btn-outline-secondary rounded-pill px-2 py-0.5 fs-9" onclick="document.getElementById('watch-grade-score-input').value = 75">75</button>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="watch-grade-feedback-input" class="form-label fw-semibold text-dark fs-8 mb-1">
+                                Feedback & Evaluation Remarks (Optional)
+                            </label>
+                            <textarea class="form-control form-control-sm rounded-2" id="watch-grade-feedback-input" name="feedback" rows="3" 
+                                      placeholder="Provide constructive feedback or commendations..."></textarea>
+                        </div>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="watch-grade-notify-student" checked>
+                            <label class="form-check-label fs-8 text-secondary fw-semibold cursor-pointer" for="watch-grade-notify-student">
+                                <i class="bi bi-bell-fill text-warning me-1"></i>Send instant notification to student with score & feedback
+                            </label>
+                        </div>
+                    </div>
+                    <div class="modal-footer border-0 bg-light p-3 px-4 d-flex justify-content-end gap-2">
+                        <button type="button" class="btn btn-light rounded-pill px-3" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" id="watch-grade-submit-btn" class="btn btn-primary rounded-pill px-4 fw-bold shadow-sm" style="background-color: #0f4c81;">
+                            <i class="bi bi-check-circle-fill me-1"></i> Save Grade & Notify
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
+
     <!-- Modern Notification System JS Client -->
     <script src="assets/js/notifications.js"></script>
 </body>

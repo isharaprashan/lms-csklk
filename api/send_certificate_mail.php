@@ -105,13 +105,13 @@ try {
     }
 
     // 4. Generate Official Certificate PDF using FPDF
-    require_once __DIR__ . '/../includes/fpdf/fpdf.php';
+    require_once root_path('includes/fpdf/fpdf.php');
 
     $pdf = new FPDF('L', 'mm', 'A4'); // A4 Landscape (297mm x 210mm)
     $pdf->SetAutoPageBreak(false);
     $pdf->AddPage();
 
-    $certImgPath = !empty($cert['certificate_image']) ? __DIR__ . '/../' . ltrim($cert['certificate_image'], '/') : null;
+    $certImgPath = !empty($cert['certificate_image']) ? root_path(ltrim($cert['certificate_image'], '/')) : null;
 
     if ($certImgPath && file_exists($certImgPath)) {
         // Embed the generated high-resolution certificate image across the A4 landscape canvas

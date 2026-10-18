@@ -64,27 +64,48 @@ try {
 
         $stmt = $pdo->prepare("SELECT lesson_id FROM completed_lessons WHERE user_id = ?");
         $stmt->execute([$user_id]);
-        $comp = $stmt->fetchAll(PDO::FETCH_COLUMN);
+        $comp = $stmt->fetchAll(PDO::FETCH_COLUMN) ?: [];
 
         $stmt = $pdo->prepare("SELECT lp.lesson_id FROM lesson_progress lp INNER JOIN lessons l ON l.id = lp.lesson_id WHERE lp.user_id = ? AND l.course_id = ? AND (lp.completed = 1 OR lp.progress_percent >= 90)");
         $stmt->execute([$user_id, $course_id]);
-        $watched = array_unique(array_merge($comp ?? [], $stmt->fetchAll(PDO::FETCH_COLUMN)));
+        $watched = array_unique(array_merge($comp, $stmt->fetchAll(PDO::FETCH_COLUMN) ?: []));
 
-        $unlocked_ids = [];
-        foreach ($course_lessons as $idx => $l) {
-            if ($idx === 0) {
-                $unlocked_ids[] = $l['id'];
-            } else {
-                $prev_l = $course_lessons[$idx - 1];
-                if (in_array($prev_l['id'], $watched)) {
-                    $unlocked_ids[] = $l['id'];
-                }
-            }
+        $stmt = $pdo->prepare("SELECT DISTINCT lesson_id FROM quiz_attempts WHERE user_id = ? AND course_id = ? AND status IN ('completed', 'finalized')");
+        $stmt->execute([$user_id, $course_id]);
+        $comp_quizzes = $stmt->fetchAll(PDO::FETCH_COLUMN) ?: [];
+
+        $stmt = $pdo->prepare("SELECT DISTINCT lesson_id FROM quizzes WHERE course_id = ? AND lesson_id IS NOT NULL AND lesson_id != ''");
+        $stmt->execute([$course_id]);
+        $l_with_q = $stmt->fetchAll(PDO::FETCH_COLUMN) ?: [];
+
+        // 1. Strict check: Student MUST have watched this relevant lesson video in its entirety (100%)
+        $is_this_watched = in_array($lesson_id, $watched) || in_array($lesson_id, $comp);
+        if (!$is_this_watched) {
+            echo json_encode([
+                'success' => false,
+                'locked' => true,
+                'message' => __('quiz_locked_watch_video', 'This quiz is locked. You must watch the relevant lesson video in its entirety (100%) before accessing the quiz.')
+            ]);
+            exit;
         }
 
-        if (!in_array($lesson_id, $unlocked_ids)) {
-            echo json_encode(['success' => false, 'message' => __('quiz_locked', 'This quiz is locked because the corresponding lesson is not unlocked yet.')]);
-            exit;
+        // 2. Strict check: All preceding lessons must have their videos watched (100%) and quizzes completed
+        foreach ($course_lessons as $idx => $l) {
+            if ($l['id'] === $lesson_id) {
+                break; // Current lesson reached
+            }
+            $prev_watched = in_array($l['id'], $watched) || in_array($l['id'], $comp);
+            $prev_has_quiz = in_array($l['id'], $l_with_q);
+            $prev_quiz_done = !$prev_has_quiz || in_array($l['id'], $comp_quizzes);
+
+            if (!$prev_watched || !$prev_quiz_done) {
+                echo json_encode([
+                    'success' => false,
+                    'locked' => true,
+                    'message' => __('quiz_locked_prev_incomplete', 'This quiz is locked. You must complete the previous lessons and quizzes first.')
+                ]);
+                exit;
+            }
         }
     }
 
@@ -160,31 +181,10 @@ try {
         }
 
         $current_q = $questions[$curr_idx];
-        $q_type = $current_q['question_type'] ?? 'mcq';
-        $is_correct = false;
-        $user_given_answer = null;
-
-        if ($q_type === 'mcq') {
-            $selected_index = isset($input['selected_index']) ? (int) $input['selected_index'] : -1;
-            $user_given_answer = $selected_index;
-            $correct_index = (int) $current_q['answer_index'];
-            $is_correct = ($selected_index === $correct_index);
-        } else {
-            // Text Input Question grading
-            $user_text = trim($input['user_answer_text'] ?? '');
-            $user_given_answer = $user_text;
-            $target_pattern = trim($current_q['correct_answer'] ?? '');
-
-            if (!empty($target_pattern)) {
-                $user_clean = mb_strtolower(trim($user_text));
-                $target_clean = mb_strtolower(trim($target_pattern));
-
-                // Exact match or substring keyword match
-                if ($user_clean === $target_clean || ($target_clean !== '' && strpos($user_clean, $target_clean) !== false)) {
-                    $is_correct = true;
-                }
-            }
-        }
+        $selected_index = isset($input['selected_index']) ? (int) $input['selected_index'] : -1;
+        $user_given_answer = $selected_index;
+        $correct_index = (int) $current_q['answer_index'];
+        $is_correct = ($selected_index === $correct_index);
 
         $answers = json_decode($latest_attempt['answers_json'] ?? '{}', true) ?: [];
         $answers[$current_q['question_id']] = $user_given_answer;
@@ -301,7 +301,7 @@ function process_timeout_checks($pdo, $attempt, $questions)
         if ($elapsed >= $time_limit) {
             $qid = $current_q['question_id'];
             if (!isset($answers[$qid])) {
-                $answers[$qid] = ($current_q['question_type'] === 'text') ? '' : -1;
+                $answers[$qid] = -1;
             }
             $curr_idx++;
             $started_at += $time_limit;
@@ -336,18 +336,9 @@ function calculate_attempt_score($questions, $answers)
     $score = 0;
     foreach ($questions as $q) {
         $qid = $q['question_id'];
-        $q_type = $q['question_type'] ?? 'mcq';
         if (isset($answers[$qid])) {
-            if ($q_type === 'mcq') {
-                if ((int) $answers[$qid] === (int) $q['answer_index']) {
-                    $score++;
-                }
-            } else {
-                $user_clean = mb_strtolower(trim((string) $answers[$qid]));
-                $target_clean = mb_strtolower(trim((string) ($q['correct_answer'] ?? '')));
-                if (!empty($target_clean) && ($user_clean === $target_clean || strpos($user_clean, $target_clean) !== false)) {
-                    $score++;
-                }
+            if ((int) $answers[$qid] === (int) $q['answer_index']) {
+                $score++;
             }
         }
     }
@@ -404,15 +395,15 @@ function build_response_payload($attempt, $questions, $max_allowed_attempts)
             'question_id' => $q['question_id'],
             'question_number' => $curr_idx + 1,
             'question' => $q['question'],
-            'question_type' => $q['question_type'] ?? 'mcq',
+            'question_type' => 'mcq',
             'image_path' => $q['image_path'] ?? null,
             'time_limit_seconds' => (int) ($q['time_limit_seconds'] ?? 30),
-            'options' => ($q['question_type'] ?? 'mcq') === 'mcq' ? [
+            'options' => [
                 $q['option_1'],
                 $q['option_2'],
                 $q['option_3'],
                 $q['option_4']
-            ] : []
+            ]
         ];
     }
 
@@ -422,54 +413,28 @@ function build_response_payload($attempt, $questions, $max_allowed_attempts)
 
         foreach ($questions as $q_idx => $q) {
             $qid = $q['question_id'];
-            $q_type = $q['question_type'] ?? 'mcq';
             $user_ans = $user_answers[$qid] ?? null;
-            $is_correct = false;
+            $user_sel = ($user_ans !== null) ? (int) $user_ans : -1;
+            $correct_idx = (int) $q['answer_index'];
+            $is_correct = ($user_sel === $correct_idx);
 
-            if ($q_type === 'mcq') {
-                $user_sel = ($user_ans !== null) ? (int) $user_ans : -1;
-                $correct_idx = (int) $q['answer_index'];
-                $is_correct = ($user_sel === $correct_idx);
-
-                $review[] = [
-                    'question_number' => $q_idx + 1,
-                    'question_id' => $qid,
-                    'question' => $q['question'],
-                    'question_type' => 'mcq',
-                    'image_path' => $q['image_path'] ?? null,
-                    'options' => [
-                        $q['option_1'],
-                        $q['option_2'],
-                        $q['option_3'],
-                        $q['option_4']
-                    ],
-                    'user_selection' => $user_sel,
-                    'correct_index' => $correct_idx,
-                    'is_correct' => $is_correct,
-                    'explanation' => $q['explanation'] ?? __('default_explanation', 'Refer to course materials.')
-                ];
-            } else {
-                $user_text = (string) ($user_ans ?? '');
-                $target_pattern = (string) ($q['correct_answer'] ?? '');
-                $user_clean = mb_strtolower(trim($user_text));
-                $target_clean = mb_strtolower(trim($target_pattern));
-
-                if (!empty($target_clean) && ($user_clean === $target_clean || strpos($user_clean, $target_clean) !== false)) {
-                    $is_correct = true;
-                }
-
-                $review[] = [
-                    'question_number' => $q_idx + 1,
-                    'question_id' => $qid,
-                    'question' => $q['question'],
-                    'question_type' => 'text',
-                    'image_path' => $q['image_path'] ?? null,
-                    'user_text' => $user_text,
-                    'correct_answer' => $target_pattern,
-                    'is_correct' => $is_correct,
-                    'explanation' => $q['explanation'] ?? __('default_explanation', 'Refer to course materials.')
-                ];
-            }
+            $review[] = [
+                'question_number' => $q_idx + 1,
+                'question_id' => $qid,
+                'question' => $q['question'],
+                'question_type' => 'mcq',
+                'image_path' => $q['image_path'] ?? null,
+                'options' => [
+                    $q['option_1'],
+                    $q['option_2'],
+                    $q['option_3'],
+                    $q['option_4']
+                ],
+                'user_selection' => $user_sel,
+                'correct_index' => $correct_idx,
+                'is_correct' => $is_correct,
+                'explanation' => $q['explanation'] ?? __('default_explanation', 'Refer to course materials.')
+            ];
         }
 
         $response['review'] = $review;

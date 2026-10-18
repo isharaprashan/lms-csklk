@@ -74,17 +74,23 @@ try {
     $stmt->execute([$user_id, $course_id]);
     $watched_lessons = array_unique(array_merge($completed_lessons ?? [], $stmt->fetchAll(PDO::FETCH_COLUMN)));
 
-    // Fetch lessons with finalized quizzes for the student
-    $stmt = $pdo->prepare("SELECT DISTINCT lesson_id FROM quiz_attempts WHERE user_id = ? AND course_id = ? AND status = 'finalized'");
+    // Fetch lessons with completed or finalized quizzes for the student
+    $stmt = $pdo->prepare("SELECT DISTINCT lesson_id FROM quiz_attempts WHERE user_id = ? AND course_id = ? AND status IN ('completed', 'finalized')");
     $stmt->execute([$user_id, $course_id]);
-    $finalized_quiz_lessons = $stmt->fetchAll(PDO::FETCH_COLUMN);
+    $completed_quiz_lessons = $stmt->fetchAll(PDO::FETCH_COLUMN) ?: [];
+
+    $stmt = $pdo->prepare("SELECT DISTINCT lesson_id FROM quiz_results WHERE user_id = ? AND course_id = ? AND (status IN ('completed', 'finalized') OR score > 0)");
+    $stmt->execute([$user_id, $course_id]);
+    $completed_quiz_lessons = array_unique(array_filter(array_merge($completed_quiz_lessons, $stmt->fetchAll(PDO::FETCH_COLUMN) ?: [])));
+    $finalized_quiz_lessons = $completed_quiz_lessons;
 
     // Fetch all lessons that have quizzes configured
-    $stmt = $pdo->prepare("SELECT DISTINCT lesson_id FROM quizzes WHERE course_id = ?");
+    $stmt = $pdo->prepare("SELECT lesson_id, COUNT(*) as q_count FROM quizzes WHERE course_id = ? AND lesson_id IS NOT NULL AND lesson_id != '' GROUP BY lesson_id");
     $stmt->execute([$course_id]);
-    $lessons_with_quizzes = $stmt->fetchAll(PDO::FETCH_COLUMN);
+    $quiz_counts_by_lesson = $stmt->fetchAll(PDO::FETCH_KEY_PAIR) ?: [];
+    $lessons_with_quizzes = array_keys(array_filter($quiz_counts_by_lesson, fn($cnt) => $cnt > 0));
 
-    // Determine unlocked lessons (Lesson 1 is unlocked; subsequent require previous lesson watched/completed)
+    // Determine unlocked lessons (for watching)
     $unlocked_lessons = [];
     foreach ($course_lessons as $index => $l) {
         if ($is_teacher || $is_admin || $index === 0) {
@@ -92,9 +98,41 @@ try {
         } else {
             $prev_l = $course_lessons[$index - 1];
             $prev_watched = in_array($prev_l['id'], $watched_lessons) || in_array($prev_l['id'], $completed_lessons);
+            $prev_has_quiz = in_array($prev_l['id'], $lessons_with_quizzes);
+            $prev_quiz_done = !$prev_has_quiz || in_array($prev_l['id'], $completed_quiz_lessons);
 
-            if ($prev_watched) {
+            if ($prev_watched && $prev_quiz_done) {
                 $unlocked_lessons[] = $l['id'];
+            }
+        }
+    }
+
+    // Determine unlocked QUIZZES strictly:
+    // A quiz for Lesson i is accessible ONLY IF:
+    // 1. The student has watched Lesson i video in its entirety (100%)
+    // 2. AND all preceding lessons (0..i-1) were watched 100% and their quizzes completed/finalized
+    $unlocked_quizzes = [];
+    foreach ($course_lessons as $index => $l) {
+        if ($is_teacher || $is_admin) {
+            $unlocked_quizzes[] = $l['id'];
+        } else {
+            $this_watched = in_array($l['id'], $watched_lessons) || in_array($l['id'], $completed_lessons);
+            $all_prev_quizzes_done = true;
+
+            for ($j = 0; $j < $index; $j++) {
+                $prev_l = $course_lessons[$j];
+                $prev_watched = in_array($prev_l['id'], $watched_lessons) || in_array($prev_l['id'], $completed_lessons);
+                $prev_has_quiz = in_array($prev_l['id'], $lessons_with_quizzes);
+                $prev_quiz_done = !$prev_has_quiz || in_array($prev_l['id'], $completed_quiz_lessons);
+
+                if (!$prev_watched || !$prev_quiz_done) {
+                    $all_prev_quizzes_done = false;
+                    break;
+                }
+            }
+
+            if ($this_watched && $all_prev_quizzes_done) {
+                $unlocked_quizzes[] = $l['id'];
             }
         }
     }
@@ -110,11 +148,13 @@ try {
 
     $is_current_lesson_watched = in_array($lesson_id, $watched_lessons) || in_array($lesson_id, $completed_lessons) || $is_admin || $is_teacher;
     $is_next_lesson_unlocked = ($next_lesson && in_array($next_lesson['id'], $unlocked_lessons));
+    $is_next_quiz_unlocked = ($next_lesson && in_array($next_lesson['id'], $unlocked_quizzes));
 
-    // Check if the requested lesson quiz is locked (Quiz is accessible ONLY if the corresponding lesson is unlocked)
-    $is_lesson_locked = (!in_array($lesson_id, $unlocked_lessons) && !$is_admin && !$is_teacher);
+    // Check if the requested lesson quiz is locked
+    $is_quiz_unlocked = in_array($lesson_id, $unlocked_quizzes) || $is_admin || $is_teacher;
+    $is_quiz_locked = !$is_quiz_unlocked;
 
-    if ($is_lesson_locked) {
+    if ($is_quiz_locked) {
         ?>
         <!DOCTYPE html>
         <html lang="<?php echo $_SESSION['lang'] ?? 'en'; ?>">
@@ -130,7 +170,7 @@ try {
             <?php render_i18n_js(); ?>
             <style>
                 body { font-family: 'Inter', sans-serif; background-color: #f4f6f9; color: #212529; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 2rem 1rem; }
-                .locked-quiz-card { border: none; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.06); background: #ffffff; padding: 3rem 2rem; max-width: 520px; width: 100%; text-align: center; }
+                .locked-quiz-card { border: none; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.06); background: #ffffff; padding: 3rem 2rem; max-width: 540px; width: 100%; text-align: center; }
                 .locked-icon-box { width: 80px; height: 80px; border-radius: 50%; background-color: #fff3bf; color: #f59f00; display: inline-flex; align-items: center; justify-content: center; font-size: 2.75rem; margin-bottom: 1.75rem; }
             </style>
         </head>
@@ -140,14 +180,28 @@ try {
                     <i class="bi bi-lock-fill"></i>
                 </div>
                 <h2 class="fw-bold mb-2"><?php echo __('quiz_locked', 'Quiz Locked'); ?></h2>
-                <p class="text-muted mb-4">
-                    This quiz is currently locked. To unlock it, you must complete reviewing the previous lesson (100%) and finalize its quiz score.
-                </p>
-                <div class="d-flex flex-wrap gap-2 justify-content-center">
-                    <a href="classroom.php?course_id=<?php echo urlencode($course_id); ?>" class="btn btn-primary px-4 py-2.5 rounded-pill fw-semibold border-0" style="background-color: #0f4c81;">
-                        <i class="bi bi-arrow-left me-1"></i> <?php echo __('go_back_to_classroom', 'Go back to Classroom'); ?>
-                    </a>
-                </div>
+                <?php if (!$is_current_lesson_watched): ?>
+                    <p class="text-muted mb-4 fs-7 leading-relaxed">
+                        To access this quiz, you must first watch the relevant lesson video (<strong><?php echo htmlspecialchars($active_quiz_lesson['title'] ?? 'Lesson Video'); ?></strong>) in its entirety (100%).
+                    </p>
+                    <div class="d-flex flex-wrap gap-2 justify-content-center">
+                        <a href="watch_lesson.php?course_id=<?php echo urlencode($course_id); ?>&lesson_id=<?php echo urlencode($lesson_id); ?><?php echo $admin_preview_param; ?>" class="btn btn-primary px-4 py-2.5 rounded-pill fw-semibold border-0 shadow-sm" style="background-color: #0f4c81;">
+                            <i class="bi bi-play-circle-fill me-1.5"></i> Watch Lesson Video (100%)
+                        </a>
+                        <a href="classroom.php?course_id=<?php echo urlencode($course_id); ?>" class="btn btn-outline-secondary px-4 py-2.5 rounded-pill fw-semibold">
+                            <i class="bi bi-arrow-left me-1"></i> <?php echo __('go_back_to_classroom', 'Go back to Classroom'); ?>
+                        </a>
+                    </div>
+                <?php else: ?>
+                    <p class="text-muted mb-4 fs-7 leading-relaxed">
+                        This quiz is currently locked. To unlock it, you must complete reviewing previous lessons (100%) and finalize their quizzes first.
+                    </p>
+                    <div class="d-flex flex-wrap gap-2 justify-content-center">
+                        <a href="classroom.php?course_id=<?php echo urlencode($course_id); ?>" class="btn btn-primary px-4 py-2.5 rounded-pill fw-semibold border-0" style="background-color: #0f4c81;">
+                            <i class="bi bi-arrow-left me-1"></i> <?php echo __('go_back_to_classroom', 'Go back to Classroom'); ?>
+                        </a>
+                    </div>
+                <?php endif; ?>
             </div>
         </body>
         </html>
@@ -550,6 +604,21 @@ try {
             padding: 1rem 1.25rem;
             margin-top: 1rem;
         }
+
+        @media (max-width: 575.98px) {
+            .option-card {
+                padding: 0.85rem 1rem !important;
+                gap: 0.75rem !important;
+            }
+            .option-badge {
+                width: 32px !important;
+                height: 32px !important;
+                font-size: 0.8rem !important;
+            }
+            .question-image-box {
+                max-height: 200px;
+            }
+        }
     </style>
 </head>
 
@@ -596,18 +665,19 @@ try {
                     <?php foreach ($course_lessons as $idx => $cl): ?>
                         <?php 
                             $is_sel = ($cl['id'] === $lesson_id);
-                            $is_unlocked = in_array($cl['id'], $unlocked_lessons ?? []);
-                            $is_done = in_array($cl['id'], $finalized_quiz_lessons ?? []) || in_array($cl['id'], $completed_lessons ?? []);
+                            $is_q_unlocked = in_array($cl['id'], $unlocked_quizzes ?? []);
+                            $is_q_done = in_array($cl['id'], $finalized_quiz_lessons ?? []);
+                            $cl_watched = in_array($cl['id'], $watched_lessons ?? []) || in_array($cl['id'], $completed_lessons ?? []);
                         ?>
-                        <?php if ($is_unlocked): ?>
+                        <?php if ($is_q_unlocked): ?>
                             <a href="quiz.php?course_id=<?php echo urlencode($course_id); ?>&lesson_id=<?php echo urlencode($cl['id']); ?><?php echo $admin_preview_param; ?>"
                                 class="btn btn-sm rounded-pill px-3 py-1.5 fs-8 fw-semibold text-nowrap <?php echo $is_sel ? 'btn-primary text-white shadow-sm' : 'btn-outline-secondary border-secondary border-opacity-25'; ?>"
                                 style="<?php echo $is_sel ? 'background-color: #0f4c81; border: none;' : ''; ?>">
-                                <i class="bi <?php echo $is_done ? 'bi-check-circle-fill text-success' : ($is_sel ? 'bi-patch-check-fill' : 'bi-journal-text'); ?> me-1"></i>
+                                <i class="bi <?php echo $is_q_done ? 'bi-check-circle-fill text-success' : ($is_sel ? 'bi-patch-check-fill' : 'bi-journal-text'); ?> me-1"></i>
                                 Lesson <?php echo $idx + 1; ?> Quiz
                             </a>
                         <?php else: ?>
-                            <span class="btn btn-sm btn-light border text-muted rounded-pill px-3 py-1.5 fs-8 text-nowrap opacity-60" style="cursor: not-allowed;" title="Locked - Complete previous quiz first">
+                            <span class="btn btn-sm btn-light border text-muted rounded-pill px-3 py-1.5 fs-8 text-nowrap opacity-60" style="cursor: not-allowed;" title="<?php echo !$cl_watched ? 'Locked - Watch Lesson ' . ($idx + 1) . ' video (100%) first to unlock quiz' : 'Locked - Complete previous lesson quizzes first'; ?>">
                                 <i class="bi bi-lock-fill me-1"></i>
                                 Lesson <?php echo $idx + 1; ?> Quiz
                             </span>
@@ -751,6 +821,7 @@ try {
         const NEXT_LESSON = <?php echo json_encode($next_lesson); ?>;
         const IS_CURRENT_LESSON_WATCHED = <?php echo json_encode($is_current_lesson_watched); ?>;
         const IS_NEXT_LESSON_UNLOCKED = <?php echo json_encode($is_next_lesson_unlocked); ?>;
+        const IS_NEXT_QUIZ_UNLOCKED = <?php echo json_encode($is_next_quiz_unlocked); ?>;
         let timerInterval = null;
         let remainingSeconds = 30;
         let maxQuestionTimer = 30;
@@ -872,31 +943,20 @@ try {
                             </div>
                         ` : ''}
 
-                        <!-- Answer Input: MCQ vs Text Input -->
-                        ${currentQType === 'mcq' ? `
-                            <div class="d-flex flex-column gap-3 mb-4" id="options-container">
-                                ${currQ.options.map((optText, oIdx) => `
-                                    <div class="option-card" data-index="${oIdx}" onclick="selectOption(${oIdx})">
-                                        <div class="option-badge">${String.fromCharCode(65 + oIdx)}</div>
-                                        <span class="fw-medium text-dark flex-grow-1">${escapeHtml(optText)}</span>
-                                    </div>
-                                `).join('')}
-                            </div>
-                        ` : `
-                            <div class="mb-4">
-                                <label class="form-label fw-semibold text-secondary fs-7 mb-2">
-                                    <i class="bi bi-pencil-square me-1 text-primary"></i>Your Answer:
-                                </label>
-                                <textarea id="text-answer-input" class="form-control bg-light border p-3" rows="3" 
-                                    placeholder="${window.i18n__ ? window.i18n__('type_your_answer', 'Type your answer here...') : 'Type your answer here...'}"
-                                    oninput="onTextInputChange()"></textarea>
-                            </div>
-                        `}
+                        <!-- Answer Input: MCQ Options -->
+                        <div class="d-flex flex-column gap-3 mb-4" id="options-container">
+                            ${currQ.options.map((optText, oIdx) => `
+                                <div class="option-card" data-index="${oIdx}" onclick="selectOption(${oIdx})">
+                                    <div class="option-badge">${String.fromCharCode(65 + oIdx)}</div>
+                                    <span class="fw-medium text-dark flex-grow-1">${escapeHtml(optText)}</span>
+                                </div>
+                            `).join('')}
+                        </div>
 
                         <!-- Submit / Next Button -->
                         <div class="d-flex justify-content-between align-items-center pt-3 border-top">
                             <span class="text-muted fs-8">
-                                <i class="bi bi-info-circle me-1"></i>Select or type an answer, or wait for auto-advance.
+                                <i class="bi bi-info-circle me-1"></i>Select an option, or wait for auto-advance.
                             </span>
                             <button id="next-question-btn" onclick="submitCurrentQuestion()" class="btn btn-primary btn-lg px-4 py-2.5 border-0 shadow-sm fw-bold" style="background-color: #0f4c81;" disabled>
                                 ${qNum === total ? (window.i18n__ ? window.i18n__('finish_quiz', 'Finish Quiz') : 'Finish Quiz') : (window.i18n__ ? window.i18n__('next_question', 'Next Question') : 'Next Question')}
@@ -926,15 +986,6 @@ try {
 
             const nextBtn = document.getElementById('next-question-btn');
             if (nextBtn) nextBtn.disabled = false;
-        }
-
-        function onTextInputChange() {
-            if (isSubmitting) return;
-            const textVal = document.getElementById('text-answer-input').value.trim();
-            const nextBtn = document.getElementById('next-question-btn');
-            if (nextBtn) {
-                nextBtn.disabled = (textVal.length === 0);
-            }
         }
 
         function startCountdownTimer() {
@@ -994,12 +1045,7 @@ try {
                 lesson_id: LESSON_ID
             };
 
-            if (currentQType === 'mcq') {
-                payload.selected_index = isTimedOut ? -1 : selectedOptionIndex;
-            } else {
-                const textInput = document.getElementById('text-answer-input');
-                payload.user_answer_text = isTimedOut ? '' : (textInput ? textInput.value : '');
-            }
+            payload.selected_index = isTimedOut ? -1 : selectedOptionIndex;
 
             try {
                 const response = await fetch('api/quiz_action.php', {
@@ -1098,13 +1144,19 @@ try {
                                         <p class="text-muted fs-8 mb-3">
                                             You have finalized this quiz and the next lesson is unlocked. Proceed to <strong>${escapeHtml(NEXT_LESSON.title)}</strong>.
                                         </p>
-                                        <div class="d-flex flex-wrap gap-2 justify-content-center">
+                                        <div class="d-flex flex-wrap gap-2 justify-content-center align-items-center">
                                             <a href="watch_lesson.php?course_id=${encodeURIComponent(COURSE_ID)}&lesson_id=${encodeURIComponent(NEXT_LESSON.id)}" class="btn btn-primary px-4 py-2.5 rounded-pill fw-bold shadow-sm" style="background-color: #0f4c81;">
-                                                <i class="bi bi-play-circle-fill me-1"></i> Watch Next Lesson
+                                                <i class="bi bi-play-circle-fill me-1"></i> Watch Next Lesson (100%)
                                             </a>
-                                            <a href="quiz.php?course_id=${encodeURIComponent(COURSE_ID)}&lesson_id=${encodeURIComponent(NEXT_LESSON.id)}" class="btn btn-outline-primary px-4 py-2.5 rounded-pill fw-bold">
-                                                Start Next Quiz <i class="bi bi-arrow-right ms-1"></i>
-                                            </a>
+                                            ${IS_NEXT_QUIZ_UNLOCKED ? `
+                                                <a href="quiz.php?course_id=${encodeURIComponent(COURSE_ID)}&lesson_id=${encodeURIComponent(NEXT_LESSON.id)}" class="btn btn-outline-primary px-4 py-2.5 rounded-pill fw-bold">
+                                                    Start Next Quiz <i class="bi bi-arrow-right ms-1"></i>
+                                                </a>
+                                            ` : `
+                                                <span class="btn btn-light border text-muted px-4 py-2.5 rounded-pill fw-semibold opacity-75" style="cursor: not-allowed;" title="Watch the full lesson video (100%) to unlock this quiz">
+                                                    <i class="bi bi-lock-fill me-1 text-secondary"></i> Next Quiz Locked (Watch 100% First)
+                                                </span>
+                                            `}
                                         </div>
                                     ` : `
                                         <div class="d-flex align-items-center justify-content-center gap-2 mb-2">
@@ -1157,9 +1209,8 @@ try {
                                             </div>
                                         ` : ''}
 
-                                        ${item.question_type === 'mcq' ? `
-                                            <div class="mb-3">
-                                                ${item.options.map((optText, oIdx) => {
+                                        <div class="mb-3">
+                                            ${item.options.map((optText, oIdx) => {
                 let optClass = 'border bg-light text-secondary';
                 let labelBadge = '';
 
@@ -1184,19 +1235,7 @@ try {
                                                         </div>
                                                     `;
             }).join('')}
-                                            </div>
-                                        ` : `
-                                            <div class="mb-3">
-                                                <div class="p-3 rounded border mb-2 ${item.is_correct ? 'bg-success bg-opacity-10 border-success' : 'bg-danger bg-opacity-10 border-danger'}">
-                                                    <small class="text-muted fw-bold d-block mb-1">Your Typed Answer:</small>
-                                                    <span class="fw-semibold text-dark">${escapeHtml(item.user_text || '(No Answer / Timed Out)')}</span>
-                                                </div>
-                                                <div class="p-3 rounded border bg-info bg-opacity-10 border-info">
-                                                    <small class="text-muted fw-bold d-block mb-1">Expected Pattern / Answer Key:</small>
-                                                    <span class="fw-semibold text-dark">${escapeHtml(item.correct_answer)}</span>
-                                                </div>
-                                            </div>
-                                        `}
+                                        </div>
 
                                         <div class="explanation-box">
                                             <div class="fw-bold text-dark fs-7 mb-1 d-flex align-items-center gap-1.5">

@@ -71,16 +71,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $insStmt->execute([$admin['email'], $token, $admin['role']]);
 
                         // Build dynamic universal reset URL
-                        $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (isset($_SERVER['SERVER_PORT']) && $_SERVER['SERVER_PORT'] == 443);
-                        $protocol = $isHttps ? "https://" : "http://";
-                        $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
-                        $scriptDir = str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME']));
-                        if ($isInsideAdmin) {
-                            $scriptDir = dirname($scriptDir);
-                        }
-                        $scriptDir = rtrim($scriptDir, '/');
-                        
-                        $resetUrl = $protocol . $host . ($scriptDir ? $scriptDir : '') . '/admin_reset_password.php?token=' . urlencode($token) . '&email=' . urlencode($admin['email']);
+                        $resetUrl = url('admin_reset_password.php?token=' . urlencode($token) . '&email=' . urlencode($admin['email']));
 
                         // Dispatch Branded Admin Security Email via PHPMailer SMTP
                         $clientIp = $_SERVER['REMOTE_ADDR'] ?? 'Unknown IP';

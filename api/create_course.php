@@ -68,9 +68,9 @@ if (isset($_FILES['thumbnail']) && $_FILES['thumbnail']['error'] === UPLOAD_ERR_
     
     $allowedfileExtensions = array('jpg', 'gif', 'png', 'jpeg', 'webp');
     if (in_array($fileExtension, $allowedfileExtensions)) {
-        $uploadFileDir = __DIR__ . '/../uploads/';
+        $uploadFileDir = root_path('uploads/');
         if (!is_dir($uploadFileDir)) {
-            mkdir($uploadFileDir, 0777, true);
+            @mkdir($uploadFileDir, 0755, true);
         }
         $newFileName = md5(time() . $fileName) . '.' . $fileExtension;
         $dest_path = $uploadFileDir . $newFileName;
@@ -165,9 +165,9 @@ try {
             // Save any uploaded lesson attachments
             $files_input = $_FILES["lesson_files_{$idx}"] ?? null;
             if ($files_input && !empty($files_input['name'])) {
-                $upload_dir = __DIR__ . '/../uploads/lesson_resources/';
+                $upload_dir = root_path('uploads/lesson_resources/');
                 if (!is_dir($upload_dir)) {
-                    @mkdir($upload_dir, 0777, true);
+                    @mkdir($upload_dir, 0755, true);
                 }
 
                 $allowed_extensions = ['pdf', 'doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx', 'txt', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'zip', 'rar'];

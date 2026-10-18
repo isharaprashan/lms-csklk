@@ -68,9 +68,9 @@ try {
         
         $allowedfileExtensions = array('jpg', 'gif', 'png', 'jpeg', 'webp');
         if (in_array($fileExtension, $allowedfileExtensions)) {
-            $uploadFileDir = __DIR__ . '/../uploads/';
+            $uploadFileDir = root_path('uploads/');
             if (!is_dir($uploadFileDir)) {
-                mkdir($uploadFileDir, 0777, true);
+                @mkdir($uploadFileDir, 0755, true);
             }
             $newFileName = md5(time() . $fileName) . '.' . $fileExtension;
             $dest_path = $uploadFileDir . $newFileName;

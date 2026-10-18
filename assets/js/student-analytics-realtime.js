@@ -45,7 +45,7 @@
     if (!summaries || summaries.length === 0) {
       tbody.innerHTML = `
         <tr>
-          <td colspan="${isAdmin ? 9 : 8}" class="text-center py-5 text-muted">
+          <td colspan="${isAdmin ? 10 : 9}" class="text-center py-5 text-muted">
             <i class="bi bi-folder-x fs-1 d-block mb-2 text-secondary"></i>
             No student enrollment records found.
           </td>
@@ -133,6 +133,16 @@
             </span>
           </td>
 
+          <!-- Assignments Submitted -->
+          <td>
+            ${(s.total_assignments > 0) ? `
+              <span class="badge ${s.all_assignments_done ? 'bg-success bg-opacity-10 text-success border border-success' : 'bg-warning bg-opacity-10 text-dark border border-warning'} fs-8 fw-semibold">
+                <i class="bi ${s.all_assignments_done ? 'bi-check2-circle' : 'bi-hourglass-split'} me-1"></i>${s.submitted_assignments} / ${s.total_assignments}
+              </span>
+              ${s.avg_assignment_grade !== null && s.avg_assignment_grade !== undefined ? `<div class="text-muted fs-9 mt-0.5">Avg: <strong>${s.avg_assignment_grade}%</strong></div>` : ''}
+            ` : `<span class="text-muted fs-9 italic">No assignments</span>`}
+          </td>
+
           <!-- Avg Quiz Score -->
           <td>${avgScoreBadge}</td>
 
@@ -164,7 +174,7 @@
     if (!rows || rows.length === 0) {
       tbody.innerHTML = `
         <tr>
-          <td colspan="${isAdmin ? 6 : 5}" class="text-center py-5 text-muted">
+          <td colspan="${isAdmin ? 7 : 6}" class="text-center py-5 text-muted">
             <i class="bi bi-folder-x fs-1 d-block mb-2 text-secondary"></i>
             No granular progress records found.
           </td>
@@ -196,7 +206,7 @@
       const fallbackAvatar = getInitialsAvatar(row.student_name);
       const studentAvatarSrc = row.student_avatar || fallbackAvatar;
 
-      let quizDisplay = '<span class="text-muted fs-9"><i class="bi bi-slash-circle me-1"></i>No quiz for lesson</span>';
+      let quizDisplay = '<span class="text-muted fs-9"><i class="bi bi-slash-circle me-1"></i>No quiz</span>';
       if (hasQ) {
         if (row.quiz_attempts > 0) {
           const passClass = qPassed ? 'bg-success bg-opacity-10 text-success border border-success' : 'bg-warning bg-opacity-10 text-dark border border-warning';
@@ -226,12 +236,38 @@
             <i class="bi bi-check-circle-fill me-1"></i> 100% Completed
           </span>
         `;
-      } else if (dispPct > 0 || row.quiz_attempts > 0) {
+      } else if (dispPct > 0 || row.quiz_attempts > 0 || row.assignment_is_submitted) {
         statusBadge = `
           <span class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-35 px-3 py-1.5 rounded-pill fs-8">
             <i class="bi bi-play-circle me-1"></i> In Progress (${dispPct}%)
           </span>
         `;
+      }
+
+      // Assignment pill
+      let asgDisplay = '<span class="text-muted fs-9 italic">No assignment</span>';
+      if (row.has_assignment) {
+        if (row.assignment_is_submitted) {
+          const isGraded = (row.assignment_status === 'graded');
+          asgDisplay = `
+            <div class="fw-semibold text-dark fs-9 text-truncate mb-0.5" style="max-width: 170px;" title="${escapeHtml(row.assignment_title)}">
+              <i class="bi bi-file-earmark-text text-primary me-1"></i>${escapeHtml(row.assignment_title)}
+            </div>
+            <span class="badge ${isGraded ? 'bg-success bg-opacity-10 text-success border border-success' : 'bg-primary bg-opacity-10 text-primary border border-primary'} fs-9">
+              ${isGraded ? (row.assignment_grade !== null ? row.assignment_grade + ' pts' : 'Graded') : 'Submitted'}
+            </span>
+            ${row.assignment_submitted_at ? `<small class="text-muted fs-9 d-block">${escapeHtml(row.assignment_submitted_at)}</small>` : ''}
+          `;
+        } else {
+          asgDisplay = `
+            <div class="fw-semibold text-dark fs-9 text-truncate mb-0.5" style="max-width: 170px;" title="${escapeHtml(row.assignment_title)}">
+              <i class="bi bi-file-earmark-text text-muted me-1"></i>${escapeHtml(row.assignment_title)}
+            </div>
+            <span class="badge bg-danger bg-opacity-10 text-danger border border-danger fs-9">
+              <i class="bi bi-exclamation-circle me-1"></i>Missing
+            </span>
+          `;
+        }
       }
 
       html += `
@@ -285,6 +321,9 @@
           <!-- Quiz Performance -->
           <td>${quizDisplay}</td>
 
+          <!-- Assignment Status -->
+          <td>${asgDisplay}</td>
+
           <!-- Module Status -->
           <td class="text-center">${statusBadge}</td>
 
@@ -294,6 +333,128 @@
 
     tbody.innerHTML = html;
   }
+
+  function renderAssignmentsTable(summaries, isAdmin) {
+    const tbody = document.getElementById('assignments-tbody');
+    if (!tbody) return;
+
+    let rowsHtml = '';
+    let asgCounter = 0;
+
+    (summaries || []).forEach(s => {
+      const fallbackAvatar = getInitialsAvatar(s.student_name);
+      const studentAvatarSrc = s.student_avatar || fallbackAvatar;
+      const tutorColumn = isAdmin ? `
+        <td>
+          <span class="badge bg-light text-secondary border fs-9 fw-semibold">
+            ${escapeHtml(s.tutor_name || 'Lecturer')}
+          </span>
+        </td>
+      ` : '';
+
+      (s.assignments || []).forEach(asg => {
+        asgCounter++;
+        const isSub = Boolean(asg.is_submitted);
+        const status = asg.status || 'not_submitted';
+        const gradeDisplay = (asg.grade !== null && asg.grade !== undefined)
+          ? `<span class="badge bg-success bg-opacity-10 text-success border border-success fs-8 fw-bold">${asg.grade} / 100</span>`
+          : '<span class="text-muted fs-9 italic">Not graded</span>';
+
+        let statusBadge = `<span class="badge bg-danger bg-opacity-10 text-danger border border-danger px-2.5 py-1 rounded-pill fs-9 fw-semibold"><i class="bi bi-x-circle me-1"></i>Missing</span>`;
+        if (status === 'graded') {
+          statusBadge = `<span class="badge bg-success bg-opacity-10 text-success border border-success px-2.5 py-1 rounded-pill fs-9 fw-semibold"><i class="bi bi-check-circle-fill me-1"></i>Graded</span>`;
+        } else if (isSub) {
+          statusBadge = `<span class="badge bg-primary bg-opacity-10 text-primary border border-primary px-2.5 py-1 rounded-pill fs-9 fw-semibold"><i class="bi bi-clock-history me-1"></i>Submitted</span>`;
+        }
+
+        const fileDownload = asg.submission_file ? `
+          <a href="${isAdmin ? '../' : ''}download_assignment.php?type=submission&id=${asg.assignment_id}&user_id=${s.student_id}" 
+             target="_blank" class="btn btn-xs btn-outline-primary rounded-pill px-2.5 py-1 fs-9 text-nowrap d-inline-flex align-items-center gap-1">
+            <i class="bi bi-download"></i> ${escapeHtml(asg.file_name || 'Download')}
+          </a>
+        ` : '<span class="text-muted fs-9">No submission</span>';
+
+        const gradeLink = `
+          <a href="${isAdmin ? '../' : ''}teacher_assignments.php?course_id=${encodeURIComponent(s.course_id)}" 
+             class="btn btn-sm btn-outline-secondary rounded-pill px-3 py-1 fs-9 fw-semibold text-nowrap">
+            <i class="bi bi-pencil-square me-1"></i>Grade
+          </a>
+        `;
+
+        rowsHtml += `
+          <tr class="assignment-row"
+              data-course="${escapeHtml(s.course_title)}"
+              data-student-name="${escapeHtml(s.student_name)}"
+              data-student-email="${escapeHtml(s.student_email)}"
+              data-academic-id="${escapeHtml(s.student_academic_id)}"
+              data-status="${isSub ? (status === 'graded' ? 'Graded' : 'Submitted') : 'Missing'}"
+              data-assignment="${escapeHtml(asg.assignment_title)}">
+            
+            <!-- Student Info -->
+            <td>
+              <div class="d-flex align-items-center gap-2">
+                <img src="${escapeHtml(studentAvatarSrc)}"
+                     onerror="this.onerror=null; this.src='${fallbackAvatar}';"
+                     class="rounded-circle border" style="width: 34px; height: 34px; object-fit: cover;" alt="Avatar">
+                <div>
+                  <div class="fw-bold text-dark fs-8 text-truncate" style="max-width: 150px;">${escapeHtml(s.student_name)}</div>
+                  <small class="text-muted fs-9">${escapeHtml(s.student_academic_id)}</small>
+                </div>
+              </div>
+            </td>
+
+            ${tutorColumn}
+
+            <!-- Course & Lesson -->
+            <td>
+              <span class="badge bg-light text-primary border fs-9 mb-0.5 text-truncate d-inline-block" style="max-width: 180px;">${escapeHtml(s.course_title)}</span>
+              <div class="text-muted fs-9 text-truncate" style="max-width: 180px;">${escapeHtml(asg.lesson_title)}</div>
+            </td>
+
+            <!-- Assignment Title -->
+            <td>
+              <div class="fw-bold text-dark fs-8">${escapeHtml(asg.assignment_title)}</div>
+              ${asg.due_date ? `<small class="text-muted fs-9"><i class="bi bi-calendar-event me-1"></i>Due: ${escapeHtml(asg.due_date)}</small>` : ''}
+            </td>
+
+            <!-- Submission Status -->
+            <td>
+              ${statusBadge}
+              ${asg.submitted_at ? `<div class="text-muted fs-9 mt-1"><i class="bi bi-clock me-1"></i>${escapeHtml(asg.submitted_at)}</div>` : ''}
+            </td>
+
+            <!-- Student File -->
+            <td>${fileDownload}</td>
+
+            <!-- Grade & Feedback -->
+            <td>
+              ${gradeDisplay}
+              ${asg.feedback ? `<div class="text-muted fs-9 text-truncate mt-1 fst-italic" style="max-width: 160px;" title="${escapeHtml(asg.feedback)}">"${escapeHtml(asg.feedback)}"</div>` : ''}
+            </td>
+
+            <!-- Actions -->
+            <td class="text-center">${gradeLink}</td>
+
+          </tr>
+        `;
+      });
+    });
+
+    if (asgCounter === 0) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="${isAdmin ? 8 : 7}" class="text-center py-5 text-muted">
+            <i class="bi bi-folder-x fs-1 d-block mb-2 text-secondary"></i>
+            No assignments found for enrolled courses.
+          </td>
+        </tr>
+      `;
+      return;
+    }
+
+    tbody.innerHTML = rowsHtml;
+  }
+
 
   function renderInsightsTable(insights, isAdmin) {
     const tbody = document.getElementById(config.insightsTbodyId);
@@ -425,12 +586,14 @@
       // Re-render table bodies
       renderRosterTable(window.STUDENT_SUMMARIES, config.isAdmin);
       renderMatrixTable(window.MATRIX_ROWS, config.isAdmin);
+      renderAssignmentsTable(window.STUDENT_SUMMARIES, config.isAdmin);
       renderInsightsTable(window.LESSON_INSIGHTS, config.isAdmin);
 
       // Re-apply client-side search/filter state (which also updates dynamic KPI cards & tab counters)
       if (typeof window.filterAllTables === 'function') {
         window.filterAllTables();
       }
+
 
       lastSyncTimestamp = Date.now();
       const lastSyncEl = document.getElementById(config.lastSyncId);

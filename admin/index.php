@@ -102,6 +102,21 @@ if (!empty($_SESSION['flash_error'])) {
   unset($_SESSION['flash_error']);
 }
 
+// Pre-initialize all data arrays and view variables so page components never fail on undefined variables
+$teachers = [];
+$all_students = [];
+$courses = [];
+$bank_payments = [];
+$managed_bank_accounts = [];
+$all_site_announcements = [];
+$all_promotional_banners = [];
+$admin_categories = [];
+$admin_target_audiences = [];
+$hero_settings = [];
+$about_settings = [];
+$admin_about_bg_preview = '../uploads/about/default_about_bg.jpg';
+$admin_hero_portrait_preview = null;
+
 try {
   $pdo = getDBConnection();
 
@@ -446,7 +461,7 @@ try {
 
     $image_path = '';
     $allowed = ['jpg', 'jpeg', 'png', 'webp', 'svg', 'gif'];
-    $upload_dir = __DIR__ . '/../uploads/banners';
+    $upload_dir = root_path('uploads/banners');
 
     if (isset($_FILES['banner_image_file']) && $_FILES['banner_image_file']['error'] === UPLOAD_ERR_OK) {
       $file = $_FILES['banner_image_file'];
@@ -454,7 +469,7 @@ try {
 
       if (in_array($ext, $allowed)) {
         if (!file_exists($upload_dir)) {
-          mkdir($upload_dir, 0777, true);
+          @mkdir($upload_dir, 0755, true);
         }
         $filename = 'banner_' . time() . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
         $dest_path = $upload_dir . '/' . $filename;
@@ -503,7 +518,7 @@ try {
       $image_path = $existing_image;
 
       $allowed = ['jpg', 'jpeg', 'png', 'webp', 'svg', 'gif'];
-      $upload_dir = __DIR__ . '/../uploads/banners';
+      $upload_dir = root_path('uploads/banners');
 
       if (isset($_FILES['banner_image_file']) && $_FILES['banner_image_file']['error'] === UPLOAD_ERR_OK) {
         $file = $_FILES['banner_image_file'];
@@ -511,14 +526,14 @@ try {
 
         if (in_array($ext, $allowed)) {
           if (!file_exists($upload_dir)) {
-            mkdir($upload_dir, 0777, true);
+            @mkdir($upload_dir, 0755, true);
           }
           $filename = 'banner_' . time() . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
           $dest_path = $upload_dir . '/' . $filename;
           if (move_uploaded_file($file['tmp_name'], $dest_path)) {
             // Unlink old local image
-            if (!empty($existing_image) && strpos($existing_image, 'uploads/banners/') !== false && file_exists(__DIR__ . '/../' . $existing_image)) {
-              @unlink(__DIR__ . '/../' . $existing_image);
+            if (!empty($existing_image) && strpos($existing_image, 'uploads/banners/') !== false && file_exists(root_path($existing_image))) {
+              @unlink(root_path($existing_image));
             }
             $image_path = 'uploads/banners/' . $filename;
           }
@@ -643,7 +658,7 @@ try {
   // Handle Hero Portrait Image Upload (update_hero_portrait_image)
   if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_hero_portrait_image') {
     $hero_image_alt_input = trim($_POST['hero_image_alt'] ?? 'Student with books');
-    $upload_dir = __DIR__ . '/../uploads/hero';
+    $upload_dir = root_path('uploads/hero');
     $allowed_exts  = ['png', 'jpg', 'jpeg', 'webp'];
     $allowed_mimes = ['image/png', 'image/jpeg', 'image/webp'];
 
@@ -652,7 +667,7 @@ try {
       $stmt_old = $pdo->query("SELECT hero_image_path FROM hero_settings WHERE id = 1 LIMIT 1");
       $old_row  = $stmt_old->fetch();
       if ($old_row && !empty($old_row['hero_image_path'])) {
-        $old_local = __DIR__ . '/../' . $old_row['hero_image_path'];
+        $old_local = root_path($old_row['hero_image_path']);
         if (strpos($old_row['hero_image_path'], 'uploads/hero/') !== false && file_exists($old_local)) {
           @unlink($old_local);
         }
@@ -671,7 +686,7 @@ try {
 
       if (in_array($ext, $allowed_exts) && in_array($mime_type, $allowed_mimes)) {
         if (!file_exists($upload_dir)) {
-          mkdir($upload_dir, 0755, true);
+          @mkdir($upload_dir, 0755, true);
         }
 
         // Sanitized filename — no user input in name
@@ -683,7 +698,7 @@ try {
           $stmt_old = $pdo->query("SELECT hero_image_path FROM hero_settings WHERE id = 1 LIMIT 1");
           $old_row  = $stmt_old->fetch();
           if ($old_row && !empty($old_row['hero_image_path'])) {
-            $old_local = __DIR__ . '/../' . $old_row['hero_image_path'];
+            $old_local = root_path($old_row['hero_image_path']);
             if (strpos($old_row['hero_image_path'], 'uploads/hero/') !== false && file_exists($old_local)) {
               @unlink($old_local);
             }
@@ -708,6 +723,183 @@ try {
       $success_message = 'Hero portrait alt text updated successfully!';
     } else {
       $error_message = 'Please select a valid image file to upload as the hero portrait.';
+    }
+  }
+
+  // Handle About Us Content & Details Update
+  if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_about_content') {
+    $badge_text = trim($_POST['badge_text'] ?? 'About Computerscience.lk');
+    $title = trim($_POST['title'] ?? '');
+    $subtitle = trim($_POST['subtitle'] ?? '');
+    $story_badge = trim($_POST['story_badge'] ?? 'Our Heritage & Journey');
+    $story_title = trim($_POST['story_title'] ?? '');
+    $story_content = trim($_POST['story_content'] ?? '');
+    $mission_title = trim($_POST['mission_title'] ?? 'Our Mission');
+    $mission_content = trim($_POST['mission_content'] ?? '');
+    $vision_title = trim($_POST['vision_title'] ?? 'Our Vision');
+    $vision_content = trim($_POST['vision_content'] ?? '');
+    $stat_1_number = trim($_POST['stat_1_number'] ?? '30,000+');
+    $stat_1_label = trim($_POST['stat_1_label'] ?? 'Enrolled Students');
+    $stat_2_number = trim($_POST['stat_2_number'] ?? '120+');
+    $stat_2_label = trim($_POST['stat_2_label'] ?? 'Certified Courses');
+    $stat_3_number = trim($_POST['stat_3_number'] ?? '50+');
+    $stat_3_label = trim($_POST['stat_3_label'] ?? 'Expert Mentors');
+    $stat_4_number = trim($_POST['stat_4_number'] ?? '98.5%');
+    $stat_4_label = trim($_POST['stat_4_label'] ?? 'Student Satisfaction');
+    $pillar_1_icon = trim($_POST['pillar_1_icon'] ?? 'bi-cpu');
+    $pillar_1_title = trim($_POST['pillar_1_title'] ?? '');
+    $pillar_1_desc = trim($_POST['pillar_1_desc'] ?? '');
+    $pillar_2_icon = trim($_POST['pillar_2_icon'] ?? 'bi-award-fill');
+    $pillar_2_title = trim($_POST['pillar_2_title'] ?? '');
+    $pillar_2_desc = trim($_POST['pillar_2_desc'] ?? '');
+    $pillar_3_icon = trim($_POST['pillar_3_icon'] ?? 'bi-camera-video-fill');
+    $pillar_3_title = trim($_POST['pillar_3_title'] ?? '');
+    $pillar_3_desc = trim($_POST['pillar_3_desc'] ?? '');
+    $pillar_4_icon = trim($_POST['pillar_4_icon'] ?? 'bi-people-fill');
+    $pillar_4_title = trim($_POST['pillar_4_title'] ?? '');
+    $pillar_4_desc = trim($_POST['pillar_4_desc'] ?? '');
+    $contact_email = trim($_POST['contact_email'] ?? '');
+    $contact_phone = trim($_POST['contact_phone'] ?? '');
+    $contact_address = trim($_POST['contact_address'] ?? '');
+    $contact_hours = trim($_POST['contact_hours'] ?? '');
+    $cta_title = trim($_POST['cta_title'] ?? '');
+    $cta_desc = trim($_POST['cta_desc'] ?? '');
+    $cta_btn_text = trim($_POST['cta_btn_text'] ?? 'Browse Courses');
+    $cta_btn_url = trim($_POST['cta_btn_url'] ?? 'index.php#courses-section');
+
+    if (!empty($title)) {
+      try {
+        $stmt = $pdo->prepare("UPDATE about_settings SET
+          badge_text = ?, title = ?, subtitle = ?,
+          story_badge = ?, story_title = ?, story_content = ?,
+          mission_title = ?, mission_content = ?, vision_title = ?, vision_content = ?,
+          stat_1_number = ?, stat_1_label = ?, stat_2_number = ?, stat_2_label = ?,
+          stat_3_number = ?, stat_3_label = ?, stat_4_number = ?, stat_4_label = ?,
+          pillar_1_icon = ?, pillar_1_title = ?, pillar_1_desc = ?,
+          pillar_2_icon = ?, pillar_2_title = ?, pillar_2_desc = ?,
+          pillar_3_icon = ?, pillar_3_title = ?, pillar_3_desc = ?,
+          pillar_4_icon = ?, pillar_4_title = ?, pillar_4_desc = ?,
+          contact_email = ?, contact_phone = ?, contact_address = ?, contact_hours = ?,
+          cta_title = ?, cta_desc = ?, cta_btn_text = ?, cta_btn_url = ?
+          WHERE id = 1");
+        $stmt->execute([
+          $badge_text, $title, $subtitle,
+          $story_badge, $story_title, $story_content,
+          $mission_title, $mission_content, $vision_title, $vision_content,
+          $stat_1_number, $stat_1_label, $stat_2_number, $stat_2_label,
+          $stat_3_number, $stat_3_label, $stat_4_number, $stat_4_label,
+          $pillar_1_icon, $pillar_1_title, $pillar_1_desc,
+          $pillar_2_icon, $pillar_2_title, $pillar_2_desc,
+          $pillar_3_icon, $pillar_3_title, $pillar_3_desc,
+          $pillar_4_icon, $pillar_4_title, $pillar_4_desc,
+          $contact_email, $contact_phone, $contact_address, $contact_hours,
+          $cta_title, $cta_desc, $cta_btn_text, $cta_btn_url
+        ]);
+        $success_message = 'About Us page details and content updated successfully!';
+      } catch (PDOException $e) {
+        $error_message = 'Failed to update About Us details: ' . $e->getMessage();
+      }
+    } else {
+      $error_message = 'Please provide at least a main title for the About Us page.';
+    }
+  }
+
+  // Handle About Us Background Image & Fade Effect Update
+  if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_about_background') {
+    try {
+      $overlay_fade_style = trim($_POST['overlay_fade_style'] ?? 'dark_vignette');
+      $overlay_opacity = floatval($_POST['overlay_opacity'] ?? 0.65);
+      if ($overlay_opacity < 0.1) $overlay_opacity = 0.1;
+      if ($overlay_opacity > 0.95) $overlay_opacity = 0.95;
+
+      // Ensure row with id = 1 exists in about_settings
+      $stmtCheck = $pdo->query("SELECT id FROM about_settings WHERE id = 1 LIMIT 1");
+      if (!$stmtCheck || !$stmtCheck->fetch()) {
+        $stmtInit = $pdo->prepare("INSERT INTO about_settings (id, bg_image, overlay_fade_style, overlay_opacity) VALUES (1, 'uploads/about/default_about_bg.jpg', ?, ?)");
+        $stmtInit->execute([$overlay_fade_style, $overlay_opacity]);
+      }
+
+      $upload_dir = root_path('uploads/about');
+      $allowed_exts  = ['png', 'jpg', 'jpeg', 'webp'];
+      $allowed_mimes = ['image/png', 'image/jpeg', 'image/webp'];
+
+      if (isset($_POST['remove_about_bg']) && $_POST['remove_about_bg'] === '1') {
+        // Revert to default preset
+        $stmt_old = $pdo->query("SELECT bg_image FROM about_settings WHERE id = 1 LIMIT 1");
+        $old_row = $stmt_old ? $stmt_old->fetch() : null;
+        if ($old_row && !empty($old_row['bg_image']) && $old_row['bg_image'] !== 'uploads/about/default_about_bg.jpg') {
+          $old_local = root_path($old_row['bg_image']);
+          if (strpos($old_row['bg_image'], 'uploads/about/') !== false && file_exists($old_local)) {
+            @unlink($old_local);
+          }
+        }
+        $stmt = $pdo->prepare("UPDATE about_settings SET bg_image = 'uploads/about/default_about_bg.jpg', overlay_fade_style = ?, overlay_opacity = ? WHERE id = 1");
+        $stmt->execute([$overlay_fade_style, $overlay_opacity]);
+        $success_message = 'About Us background reverted to default image successfully!';
+      } elseif (isset($_FILES['about_bg_file']) && $_FILES['about_bg_file']['error'] === UPLOAD_ERR_OK) {
+        $file = $_FILES['about_bg_file'];
+        $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+
+        $mime_type = '';
+        if (function_exists('finfo_open')) {
+          $finfo = @finfo_open(FILEINFO_MIME_TYPE);
+          if ($finfo) {
+            $mime_type = @finfo_file($finfo, $file['tmp_name']) ?: '';
+            @finfo_close($finfo);
+          }
+        }
+        if (empty($mime_type) && function_exists('mime_content_type')) {
+          $mime_type = @mime_content_type($file['tmp_name']) ?: '';
+        }
+        if (empty($mime_type)) {
+          $ext_to_mime = ['png' => 'image/png', 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'webp' => 'image/webp'];
+          $mime_type = $ext_to_mime[$ext] ?? '';
+        }
+
+        if (in_array($ext, $allowed_exts) && in_array($mime_type, $allowed_mimes)) {
+          if (!file_exists($upload_dir)) {
+            @mkdir($upload_dir, 0755, true);
+          }
+
+          $filename = 'about_bg_' . time() . '_' . bin2hex(random_bytes(5)) . '.' . $ext;
+          $dest_path = $upload_dir . '/' . $filename;
+
+          if (move_uploaded_file($file['tmp_name'], $dest_path)) {
+            // Delete old custom file if not default
+            $stmt_old = $pdo->query("SELECT bg_image FROM about_settings WHERE id = 1 LIMIT 1");
+            $old_row = $stmt_old ? $stmt_old->fetch() : null;
+            if ($old_row && !empty($old_row['bg_image']) && $old_row['bg_image'] !== 'uploads/about/default_about_bg.jpg') {
+              $old_local = root_path($old_row['bg_image']);
+              if (strpos($old_row['bg_image'], 'uploads/about/') !== false && file_exists($old_local)) {
+                @unlink($old_local);
+              }
+            }
+
+            $new_path = 'uploads/about/' . $filename;
+            $stmt = $pdo->prepare("UPDATE about_settings SET bg_image = ?, overlay_fade_style = ?, overlay_opacity = ? WHERE id = 1");
+            $stmt->execute([$new_path, $overlay_fade_style, $overlay_opacity]);
+            $success_message = 'About Us background image and fade effect updated successfully!';
+          } else {
+            $error_message = 'Failed to upload background image. Please check directory permissions.';
+          }
+        } else {
+          $error_message = 'Invalid file type. Only JPG, PNG, and WebP images are allowed.';
+        }
+      } elseif (isset($_FILES['about_bg_file']) && $_FILES['about_bg_file']['error'] !== UPLOAD_ERR_NO_FILE) {
+        $upload_err = $_FILES['about_bg_file']['error'];
+        if ($upload_err === UPLOAD_ERR_INI_SIZE || $upload_err === UPLOAD_ERR_FORM_SIZE) {
+          $error_message = 'Uploaded image file exceeds the maximum allowed size (5MB).';
+        } else {
+          $error_message = 'Image upload encountered an error (Code: ' . $upload_err . '). Please try again.';
+        }
+      } else {
+        // Just update overlay fade style and opacity
+        $stmt = $pdo->prepare("UPDATE about_settings SET overlay_fade_style = ?, overlay_opacity = ? WHERE id = 1");
+        $stmt->execute([$overlay_fade_style, $overlay_opacity]);
+        $success_message = 'About Us background fade effect settings updated successfully!';
+      }
+    } catch (Throwable $e) {
+      $error_message = 'Failed to update About Us background: ' . $e->getMessage();
     }
   }
 
@@ -841,9 +1033,9 @@ try {
       $allowed = ['png', 'jpg', 'jpeg', 'webp', 'gif'];
 
       if (in_array($ext, $allowed)) {
-        $upload_dir = __DIR__ . '/uploads/avatars';
+        $upload_dir = root_path('admin/uploads/avatars');
         if (!file_exists($upload_dir)) {
-          mkdir($upload_dir, 0777, true);
+          @mkdir($upload_dir, 0755, true);
         }
 
         $filename = 'admin_avatar_' . $_SESSION['user_id'] . '_' . time() . '.' . $ext;
@@ -886,9 +1078,9 @@ try {
       $allowed = ['png', 'jpg', 'jpeg', 'svg', 'webp'];
 
       if (in_array($ext, $allowed)) {
-        $upload_dir = __DIR__ . '/../uploads/logo';
+        $upload_dir = root_path('uploads/logo');
         if (!file_exists($upload_dir)) {
-          mkdir($upload_dir, 0777, true);
+          @mkdir($upload_dir, 0755, true);
         }
 
         $filename = 'site_logo_' . time() . '.' . $ext;
@@ -901,7 +1093,7 @@ try {
           $stmt->execute([$relative_path]);
 
           // Overwrite default assets/logo.png for static image compatibility
-          $assets_logo = __DIR__ . '/../assets/logo.png';
+          $assets_logo = root_path('assets/logo.png');
           @copy($dest_path, $assets_logo);
 
           $success_message = 'Site Logo updated successfully and synchronized across all pages!';
@@ -924,9 +1116,9 @@ try {
       $allowed = ['ico', 'png', 'svg', 'webp', 'jpg', 'jpeg'];
 
       if (in_array($ext, $allowed)) {
-        $upload_dir = __DIR__ . '/../uploads/favicon';
+        $upload_dir = root_path('uploads/favicon');
         if (!file_exists($upload_dir)) {
-          mkdir($upload_dir, 0777, true);
+          @mkdir($upload_dir, 0755, true);
         }
 
         $filename = 'site_favicon_' . time() . '.' . $ext;
@@ -940,12 +1132,12 @@ try {
 
           // Also synchronize with fallback files for static and native browser requests
           if ($ext === 'ico') {
-            @copy($dest_path, __DIR__ . '/../assets/favicon.ico');
-            @copy($dest_path, __DIR__ . '/../favicon.ico');
+            @copy($dest_path, root_path('assets/favicon.ico'));
+            @copy($dest_path, root_path('favicon.ico'));
           } else {
-            @copy($dest_path, __DIR__ . '/../assets/favicon.' . $ext);
-            @copy($dest_path, __DIR__ . '/../assets/favicon.ico');
-            @copy($dest_path, __DIR__ . '/../favicon.ico');
+            @copy($dest_path, root_path('assets/favicon.' . $ext));
+            @copy($dest_path, root_path('assets/favicon.ico'));
+            @copy($dest_path, root_path('favicon.ico'));
           }
 
           $success_message = 'Website Favicon updated successfully and synchronized across all pages!';
@@ -970,9 +1162,9 @@ try {
       $allowed = ['png', 'jpg', 'jpeg', 'webp', 'svg'];
 
       if (in_array($ext, $allowed)) {
-        $upload_dir = __DIR__ . '/../uploads/auth';
+        $upload_dir = root_path('uploads/auth');
         if (!file_exists($upload_dir)) {
-          mkdir($upload_dir, 0777, true);
+          @mkdir($upload_dir, 0755, true);
         }
 
         $filename = 'login_bg_' . time() . '.' . $ext;
@@ -1015,9 +1207,9 @@ try {
       $allowed = ['png', 'jpg', 'jpeg', 'webp', 'svg'];
 
       if (in_array($ext, $allowed)) {
-        $upload_dir = __DIR__ . '/../uploads/auth';
+        $upload_dir = root_path('uploads/auth');
         if (!file_exists($upload_dir)) {
-          mkdir($upload_dir, 0777, true);
+          @mkdir($upload_dir, 0755, true);
         }
 
         $filename = 'register_bg_' . time() . '.' . $ext;
@@ -1179,6 +1371,12 @@ try {
   $admin_hero_portrait_preview = !empty($hero_settings['hero_image_path'])
     ? '../' . htmlspecialchars($hero_settings['hero_image_path'])
     : null;
+
+  // Fetch About Us page settings for admin panel
+  $about_settings = function_exists('get_about_settings') ? get_about_settings($pdo) : [];
+  $admin_about_bg_preview = !empty($about_settings['bg_image'])
+    ? '../' . htmlspecialchars($about_settings['bg_image'])
+    : '../uploads/about/default_about_bg.jpg';
 
 } catch (PDOException $e) {
   $error_message = 'Database error: ' . $e->getMessage();
@@ -1427,7 +1625,7 @@ try {
       <div class="sidebar-section-title"><?php echo $is_super_admin ? 'Super Admin Main Menu' : 'Main Menu'; ?></div>
 
       <!-- Teacher Requests -->
-      <?php $pending_teachers = array_filter($teachers, function ($t) {
+      <?php $pending_teachers = array_filter(is_array($teachers ?? null) ? $teachers : [], function ($t) {
         return ($t['status'] ?? '') === 'pending';
       }); ?>
       <a class="nav-link-item active" id="btn-teachers-tab">
@@ -1475,7 +1673,7 @@ try {
       </a>
 
       <!-- Course Approvals -->
-      <?php $pending_courses = array_filter($courses, function ($c) {
+      <?php $pending_courses = array_filter(is_array($courses ?? null) ? $courses : [], function ($c) {
         return ($c['status'] ?? '') === 'pending';
       }); ?>
       <a class="nav-link-item" id="btn-courses-tab">
@@ -1491,7 +1689,7 @@ try {
       <div class="sidebar-section-title mt-3">Financials</div>
 
       <!-- Bank Slip Approvals -->
-      <?php $pending_slips = array_filter($bank_payments, function ($bp) {
+      <?php $pending_slips = array_filter(is_array($bank_payments ?? null) ? $bank_payments : [], function ($bp) {
         return ($bp['status'] ?? '') === 'pending';
       }); ?>
       <a class="nav-link-item" id="btn-bank-tab">
@@ -1535,6 +1733,14 @@ try {
         <div class="d-flex align-items-center gap-2.5">
           <i class="bi bi-layout-text-window-reverse text-success"></i>
           <span>Hero Banner</span>
+        </div>
+      </a>
+
+      <!-- About Us Page Customization -->
+      <a class="nav-link-item" id="btn-about-tab">
+        <div class="d-flex align-items-center gap-2.5">
+          <i class="bi bi-info-circle-fill text-info"></i>
+          <span>About Us Page</span>
         </div>
       </a>
 
@@ -1673,7 +1879,7 @@ try {
         </div>
 
         <div class="glass-card p-4">
-          <?php if (count($teachers) === 0): ?>
+          <?php if (count(is_array($teachers ?? null) ? $teachers : []) === 0): ?>
             <div class="text-center py-5">
               <i class="bi bi-people text-muted fs-1"></i>
               <p class="text-muted mt-3 mb-0">No teacher registration requests found in the system.</p>
@@ -1692,7 +1898,7 @@ try {
                   </tr>
                 </thead>
                 <tbody>
-                  <?php foreach ($teachers as $teacher): ?>
+                  <?php foreach ((is_array($teachers ?? null) ? $teachers : []) as $teacher): ?>
                     <?php
                     $t_name = !empty($teacher['name']) ? $teacher['name'] : 'Teacher';
                     $raw_teacher_avatar = trim($teacher['avatar'] ?? '');
@@ -2807,7 +3013,7 @@ try {
                   <h5 class="fw-bold mb-0 text-dark">Visual Featured Carousel Slider</h5>
                   <span class="badge bg-success bg-opacity-10 text-success rounded-pill px-2.5 py-1 fs-8">
                     <?php 
-                      $active_count = count(array_filter($all_promotional_banners, function($b) { return $b['is_active'] == 1; }));
+                      $active_count = count(array_filter(is_array($all_promotional_banners ?? null) ? $all_promotional_banners : [], function($b) { return ($b['is_active'] ?? 0) == 1; }));
                       echo $active_count . ' Active on Homepage'; 
                     ?>
                   </span>
@@ -3293,6 +3499,490 @@ try {
         </div>
 
       </div><!-- /#hero-section -->
+
+      <!-- About Us Page Management & Customization Section -->
+      <div id="about-section" class="d-none">
+        <div class="mb-4 d-flex align-items-center justify-content-between flex-wrap gap-3">
+          <div>
+            <h2 class="fw-bold text-dark mb-1 d-flex align-items-center gap-2">
+              <i class="bi bi-info-circle-fill text-info"></i>
+              <span>About Us Page Management &amp; Customization</span>
+            </h2>
+            <p class="text-secondary mb-0">Customize the background image, slight fade effect, narrative story, mission/vision statements, key stats, and institutional pillars.</p>
+          </div>
+          <div>
+            <a href="../about.php" target="_blank" class="btn btn-outline-primary rounded-pill px-3 py-2 fw-semibold fs-8 d-inline-flex align-items-center gap-1.5 shadow-sm">
+              <i class="bi bi-box-arrow-up-right"></i>
+              <span>View Live 'About Us' Page</span>
+            </a>
+          </div>
+        </div>
+
+        <div class="row g-4 mb-4">
+          <!-- Card 1: Background Image & Live Fade Effect Visualizer -->
+          <div class="col-lg-6">
+            <div class="glass-card p-4 h-100 d-flex flex-column justify-content-between">
+              <div>
+                <div class="d-flex align-items-center justify-content-between border-bottom pb-2 mb-3">
+                  <h5 class="fw-bold text-dark mb-0 fs-6 d-flex align-items-center gap-2">
+                    <i class="bi bi-image-fill text-info"></i>
+                    <span>Background Image &amp; Fade Effect</span>
+                  </h5>
+                  <span class="badge bg-info bg-opacity-10 text-info rounded-pill px-2.5 py-1 fs-9 fw-semibold">
+                    <i class="bi bi-sliders me-1"></i>Visual Styling
+                  </span>
+                </div>
+
+                <p class="text-secondary fs-8 mb-3">
+                  Upload a high-definition background image for the About Us hero section, adjust the slight fade overlay style, and fine-tune opacity with the live simulator below.
+                </p>
+
+                <!-- Live Simulator Container -->
+                <div class="mb-3">
+                  <div class="d-flex justify-content-between align-items-center mb-1">
+                    <label class="form-label fw-bold text-dark fs-8 mb-0">Live Fade Effect Simulator</label>
+                    <span class="badge <?php echo (!empty($about_settings['bg_image']) && $about_settings['bg_image'] !== 'uploads/about/default_about_bg.jpg') ? 'bg-success' : 'bg-primary'; ?> text-white rounded-pill fs-9 px-2">
+                      <?php echo (!empty($about_settings['bg_image']) && $about_settings['bg_image'] !== 'uploads/about/default_about_bg.jpg') ? 'Custom Image' : 'Default Preset'; ?>
+                    </span>
+                  </div>
+
+                  <div id="about-bg-live-simulator" class="rounded-3 border overflow-hidden position-relative p-4 text-center d-flex flex-column justify-content-center align-items-center"
+                    style="min-height: 200px; background-image: url('<?php echo $admin_about_bg_preview; ?>'); background-size: cover; background-position: center;">
+                    <!-- Simulated Overlay -->
+                    <div id="about-simulator-overlay" class="position-absolute inset-0 w-100 h-100" style="top:0;left:0;right:0;bottom:0;pointer-events:none;"></div>
+                    <!-- Simulated Bottom Fade -->
+                    <div class="position-absolute bottom-0 start-0 end-0" style="height: 50px; background: linear-gradient(to bottom, transparent 0%, rgba(244, 247, 251, 0.7) 100%); pointer-events: none;"></div>
+
+                    <!-- Simulated Foreground Content -->
+                    <div class="position-relative text-white" style="z-index: 2;">
+                      <span class="badge bg-white bg-opacity-25 text-white rounded-pill px-2.5 py-1 fs-9 fw-bold mb-2 d-inline-block">
+                        <i class="bi bi-stars text-warning me-1"></i>Simulated Preview
+                      </span>
+                      <h5 class="fw-bold text-white mb-1 fs-6" id="simulated-hero-title">
+                        <?php echo htmlspecialchars($about_settings['title'] ?? 'Empowering Tech Leaders'); ?>
+                      </h5>
+                      <small class="text-white text-opacity-80 fs-9 d-block">
+                        Slight fade effect applied over background image
+                      </small>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Form: Background Image & Fade Effect -->
+                <form action="index.php?tab=about" method="POST" enctype="multipart/form-data">
+                  <input type="hidden" name="action" value="update_about_background">
+
+                  <div class="mb-3">
+                    <label for="about_bg_file" class="form-label fw-bold text-dark fs-8 mb-1">
+                      Upload New Background Image
+                    </label>
+                    <input type="file" name="about_bg_file" id="about_bg_file" class="form-control form-control-sm"
+                      accept=".png,.webp,.jpg,.jpeg,image/png,image/webp,image/jpeg"
+                      onchange="previewAboutBgFile(this)">
+                    <small class="text-muted d-block fs-9 mt-1">
+                      <i class="bi bi-info-circle text-primary me-1"></i>Recommended: 1920&times;1080px or 1600&times;900px landscape photo. Max 5MB.
+                    </small>
+                  </div>
+
+                  <div class="row g-3 mb-3">
+                    <div class="col-md-7">
+                      <label for="about_fade_style_select" class="form-label fw-bold text-dark fs-8 mb-1">
+                        Slight Fade Effect Style
+                      </label>
+                      <select name="overlay_fade_style" id="about_fade_style_select" class="form-select form-select-sm" onchange="updateAboutSimulator()">
+                        <option value="dark_vignette" <?php echo (($about_settings['overlay_fade_style'] ?? 'dark_vignette') === 'dark_vignette') ? 'selected' : ''; ?>>Deep Navy Vignette Fade (Recommended)</option>
+                        <option value="navy_gradient" <?php echo (($about_settings['overlay_fade_style'] ?? '') === 'navy_gradient') ? 'selected' : ''; ?>>Royal Navy Gradient Fade</option>
+                        <option value="soft_black" <?php echo (($about_settings['overlay_fade_style'] ?? '') === 'soft_black') ? 'selected' : ''; ?>>Minimal Charcoal Fade</option>
+                        <option value="glass_blur" <?php echo (($about_settings['overlay_fade_style'] ?? '') === 'glass_blur') ? 'selected' : ''; ?>>Frosted Translucent Blur Fade</option>
+                      </select>
+                    </div>
+
+                    <div class="col-md-5">
+                      <div class="d-flex justify-content-between align-items-center mb-1">
+                        <label for="about_opacity_slider" class="form-label fw-bold text-dark fs-8 mb-0">Fade Opacity</label>
+                        <span class="badge bg-secondary rounded-pill fs-9" id="about_opacity_val">
+                          <?php echo intval(($about_settings['overlay_opacity'] ?? 0.65) * 100); ?>%
+                        </span>
+                      </div>
+                      <input type="range" name="overlay_opacity" id="about_opacity_slider" class="form-range mt-2"
+                        min="0.20" max="0.90" step="0.05"
+                        value="<?php echo htmlspecialchars($about_settings['overlay_opacity'] ?? '0.65'); ?>"
+                        oninput="updateAboutSimulator()">
+                    </div>
+                  </div>
+
+                  <?php if (!empty($about_settings['bg_image']) && $about_settings['bg_image'] !== 'uploads/about/default_about_bg.jpg'): ?>
+                    <div class="form-check mb-3 p-2 bg-danger bg-opacity-10 rounded-3 border border-danger border-opacity-25">
+                      <input class="form-check-input ms-0 me-2" type="checkbox" name="remove_about_bg" value="1" id="remove_about_bg_chk">
+                      <label class="form-check-label text-danger fs-8 fw-bold" for="remove_about_bg_chk">
+                        <i class="bi bi-trash me-1"></i> Revert to default preset background image
+                      </label>
+                    </div>
+                  <?php endif; ?>
+
+                  <button type="submit" class="btn btn-primary text-white w-100 py-2 rounded-pill fw-bold shadow-sm d-flex align-items-center justify-content-center gap-2"
+                    style="background-color:<?php echo $is_super_admin ? '#0b4528' : '#0f4c81'; ?>;border:none;">
+                    <i class="bi bi-cloud-upload-fill"></i>
+                    <span>Save Background &amp; Fade Effect</span>
+                  </button>
+                </form>
+              </div>
+
+              <div class="mt-3 pt-2 border-top">
+                <p class="text-muted fs-9 mb-0">
+                  <i class="bi bi-shield-check text-success me-1"></i> Changes apply immediately to the public About Us page.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 2: Hero Header & Core Lead Content -->
+          <div class="col-lg-6">
+            <div class="glass-card p-4 h-100 d-flex flex-column justify-content-between">
+              <div>
+                <div class="d-flex align-items-center justify-content-between border-bottom pb-2 mb-3">
+                  <h5 class="fw-bold text-dark mb-0 fs-6 d-flex align-items-center gap-2">
+                    <i class="bi bi-card-heading text-primary"></i>
+                    <span>Hero Header &amp; Tagline Content</span>
+                  </h5>
+                  <span class="badge bg-primary bg-opacity-10 text-primary rounded-pill px-2.5 py-1 fs-9 fw-semibold">
+                    Top Banner Text
+                  </span>
+                </div>
+
+                <div class="mb-3">
+                  <label class="form-label fw-bold text-dark fs-8">Floating Badge Pill Text</label>
+                  <input type="text" form="aboutContentForm" name="badge_text" class="form-control form-control-sm"
+                    value="<?php echo htmlspecialchars($about_settings['badge_text'] ?? 'About Computerscience.lk'); ?>" required>
+                  <small class="text-muted fs-9">Small pill shown directly above the main headline.</small>
+                </div>
+
+                <div class="mb-3">
+                  <label class="form-label fw-bold text-dark fs-8">Main Page Headline <span class="text-danger">*</span></label>
+                  <input type="text" form="aboutContentForm" name="title" id="admin_about_title_input" class="form-control"
+                    value="<?php echo htmlspecialchars($about_settings['title'] ?? 'Empowering the Next Generation of Tech Leaders & Innovators'); ?>"
+                    required oninput="const st = document.getElementById('simulated-hero-title'); if(st) st.textContent = this.value || 'Empowering Tech Leaders';">
+                  <small class="text-muted fs-9">The primary display title of the About Us page.</small>
+                </div>
+
+                <div class="mb-3">
+                  <label class="form-label fw-bold text-dark fs-8">Subtitle / Introductory Narrative</label>
+                  <textarea form="aboutContentForm" name="subtitle" class="form-control" rows="4"><?php echo htmlspecialchars($about_settings['subtitle'] ?? ''); ?></textarea>
+                  <small class="text-muted fs-9">Supporting paragraph displayed beneath the main headline.</small>
+                </div>
+
+                <div class="row g-3 mb-2">
+                  <div class="col-md-6">
+                    <label class="form-label fw-bold text-dark fs-8">Our Story Badge</label>
+                    <input type="text" form="aboutContentForm" name="story_badge" class="form-control form-control-sm"
+                      value="<?php echo htmlspecialchars($about_settings['story_badge'] ?? 'Our Heritage & Journey'); ?>">
+                  </div>
+                  <div class="col-md-6">
+                    <label class="form-label fw-bold text-dark fs-8">Our Story Headline</label>
+                    <input type="text" form="aboutContentForm" name="story_title" class="form-control form-control-sm"
+                      value="<?php echo htmlspecialchars($about_settings['story_title'] ?? 'Bridging Higher Academics with Real-World Software Engineering'); ?>">
+                  </div>
+                </div>
+              </div>
+
+              <div class="mt-3 pt-2 border-top">
+                <small class="text-muted fs-9">All text sections support UTF-8 English and Sinhala text.</small>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Master Content Form for Detailed Text, Story, Mission, Stats & Pillars -->
+        <form action="index.php?tab=about" method="POST" id="aboutContentForm">
+          <input type="hidden" name="action" value="update_about_content">
+
+          <div class="row g-4 mb-4">
+            <!-- Card 3: Our Narrative Story -->
+            <div class="col-lg-6">
+              <div class="glass-card p-4 h-100">
+                <div class="d-flex align-items-center justify-content-between border-bottom pb-2 mb-3">
+                  <h5 class="fw-bold text-dark mb-0 fs-6 d-flex align-items-center gap-2">
+                    <i class="bi bi-book-half text-primary"></i>
+                    <span>The Platform Story &amp; Editorial</span>
+                  </h5>
+                  <span class="badge bg-secondary bg-opacity-10 text-secondary rounded-pill px-2.5 py-1 fs-9 fw-semibold">
+                    Long Form
+                  </span>
+                </div>
+
+                <div class="mb-3">
+                  <label class="form-label fw-bold text-dark fs-8">Platform History &amp; Educational Story</label>
+                  <textarea name="story_content" class="form-control" rows="8"><?php echo htmlspecialchars($about_settings['story_content'] ?? ''); ?></textarea>
+                  <small class="text-muted fs-9">Write multi-paragraph narrative detailing the institution's origins, vision, and pedagogy.</small>
+                </div>
+              </div>
+            </div>
+
+            <!-- Card 4: Mission & Vision -->
+            <div class="col-lg-6">
+              <div class="glass-card p-4 h-100">
+                <div class="d-flex align-items-center justify-content-between border-bottom pb-2 mb-3">
+                  <h5 class="fw-bold text-dark mb-0 fs-6 d-flex align-items-center gap-2">
+                    <i class="bi bi-compass text-success"></i>
+                    <span>Mission &amp; Vision Statements</span>
+                  </h5>
+                  <span class="badge bg-success bg-opacity-10 text-success rounded-pill px-2.5 py-1 fs-9 fw-semibold">
+                    Core Pillars
+                  </span>
+                </div>
+
+                <div class="mb-3">
+                  <label class="form-label fw-bold text-dark fs-8">Mission Title</label>
+                  <input type="text" name="mission_title" class="form-control form-control-sm mb-1.5"
+                    value="<?php echo htmlspecialchars($about_settings['mission_title'] ?? 'Our Mission'); ?>">
+                  <label class="form-label fw-bold text-dark fs-8">Mission Statement Content</label>
+                  <textarea name="mission_content" class="form-control" rows="3"><?php echo htmlspecialchars($about_settings['mission_content'] ?? ''); ?></textarea>
+                </div>
+
+                <div class="mb-2">
+                  <label class="form-label fw-bold text-dark fs-8">Vision Title</label>
+                  <input type="text" name="vision_title" class="form-control form-control-sm mb-1.5"
+                    value="<?php echo htmlspecialchars($about_settings['vision_title'] ?? 'Our Vision'); ?>">
+                  <label class="form-label fw-bold text-dark fs-8">Vision Statement Content</label>
+                  <textarea name="vision_content" class="form-control" rows="3"><?php echo htmlspecialchars($about_settings['vision_content'] ?? ''); ?></textarea>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 5: Key Milestones / Platform Metrics (4 Stats) -->
+          <div class="glass-card p-4 mb-4">
+            <div class="d-flex align-items-center justify-content-between border-bottom pb-2 mb-3">
+              <h5 class="fw-bold text-dark mb-0 fs-6 d-flex align-items-center gap-2">
+                <i class="bi bi-bar-chart-line-fill text-warning"></i>
+                <span>Platform Milestones &amp; Numerical Counters (4 Metrics)</span>
+              </h5>
+              <span class="badge bg-warning bg-opacity-10 text-dark rounded-pill px-2.5 py-1 fs-9 fw-semibold">
+                Counters
+              </span>
+            </div>
+
+            <div class="row g-3">
+              <!-- Stat 1 -->
+              <div class="col-md-3">
+                <div class="p-3 bg-light rounded-3 border">
+                  <span class="badge bg-primary text-white rounded-pill px-2 py-0.5 fs-9 mb-2">Metric #1</span>
+                  <label class="form-label fw-bold text-dark fs-9 mb-1 d-block">Number / Value</label>
+                  <input type="text" name="stat_1_number" class="form-control form-control-sm mb-2"
+                    value="<?php echo htmlspecialchars($about_settings['stat_1_number'] ?? '30,000+'); ?>">
+                  <label class="form-label fw-bold text-dark fs-9 mb-1 d-block">Label / Caption</label>
+                  <input type="text" name="stat_1_label" class="form-control form-control-sm"
+                    value="<?php echo htmlspecialchars($about_settings['stat_1_label'] ?? 'Enrolled Students'); ?>">
+                </div>
+              </div>
+
+              <!-- Stat 2 -->
+              <div class="col-md-3">
+                <div class="p-3 bg-light rounded-3 border">
+                  <span class="badge bg-primary text-white rounded-pill px-2 py-0.5 fs-9 mb-2">Metric #2</span>
+                  <label class="form-label fw-bold text-dark fs-9 mb-1 d-block">Number / Value</label>
+                  <input type="text" name="stat_2_number" class="form-control form-control-sm mb-2"
+                    value="<?php echo htmlspecialchars($about_settings['stat_2_number'] ?? '120+'); ?>">
+                  <label class="form-label fw-bold text-dark fs-9 mb-1 d-block">Label / Caption</label>
+                  <input type="text" name="stat_2_label" class="form-control form-control-sm"
+                    value="<?php echo htmlspecialchars($about_settings['stat_2_label'] ?? 'Certified Courses'); ?>">
+                </div>
+              </div>
+
+              <!-- Stat 3 -->
+              <div class="col-md-3">
+                <div class="p-3 bg-light rounded-3 border">
+                  <span class="badge bg-primary text-white rounded-pill px-2 py-0.5 fs-9 mb-2">Metric #3</span>
+                  <label class="form-label fw-bold text-dark fs-9 mb-1 d-block">Number / Value</label>
+                  <input type="text" name="stat_3_number" class="form-control form-control-sm mb-2"
+                    value="<?php echo htmlspecialchars($about_settings['stat_3_number'] ?? '50+'); ?>">
+                  <label class="form-label fw-bold text-dark fs-9 mb-1 d-block">Label / Caption</label>
+                  <input type="text" name="stat_3_label" class="form-control form-control-sm"
+                    value="<?php echo htmlspecialchars($about_settings['stat_3_label'] ?? 'Expert Mentors'); ?>">
+                </div>
+              </div>
+
+              <!-- Stat 4 -->
+              <div class="col-md-3">
+                <div class="p-3 bg-light rounded-3 border">
+                  <span class="badge bg-primary text-white rounded-pill px-2 py-0.5 fs-9 mb-2">Metric #4</span>
+                  <label class="form-label fw-bold text-dark fs-9 mb-1 d-block">Number / Value</label>
+                  <input type="text" name="stat_4_number" class="form-control form-control-sm mb-2"
+                    value="<?php echo htmlspecialchars($about_settings['stat_4_number'] ?? '98.5%'); ?>">
+                  <label class="form-label fw-bold text-dark fs-9 mb-1 d-block">Label / Caption</label>
+                  <input type="text" name="stat_4_label" class="form-control form-control-sm"
+                    value="<?php echo htmlspecialchars($about_settings['stat_4_label'] ?? 'Student Satisfaction'); ?>">
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="row g-4 mb-4">
+            <!-- Card 6: Why Choose Us / 4 Core Pillars -->
+            <div class="col-lg-7">
+              <div class="glass-card p-4 h-100">
+                <div class="d-flex align-items-center justify-content-between border-bottom pb-2 mb-3">
+                  <h5 class="fw-bold text-dark mb-0 fs-6 d-flex align-items-center gap-2">
+                    <i class="bi bi-shield-check text-primary"></i>
+                    <span>Why Choose Us — 4 Core Pillars</span>
+                  </h5>
+                  <span class="badge bg-primary bg-opacity-10 text-primary rounded-pill px-2.5 py-1 fs-9 fw-semibold">
+                    Key Features
+                  </span>
+                </div>
+
+                <!-- Pillar 1 -->
+                <div class="p-3 bg-light rounded-3 border mb-3">
+                  <span class="fw-bold fs-9 text-uppercase text-primary d-block mb-1.5">Pillar 1</span>
+                  <div class="row g-2">
+                    <div class="col-md-4">
+                      <input type="text" name="pillar_1_icon" class="form-control form-control-sm"
+                        value="<?php echo htmlspecialchars($about_settings['pillar_1_icon'] ?? 'bi-cpu'); ?>" placeholder="Icon (e.g. bi-cpu)">
+                    </div>
+                    <div class="col-md-8">
+                      <input type="text" name="pillar_1_title" class="form-control form-control-sm"
+                        value="<?php echo htmlspecialchars($about_settings['pillar_1_title'] ?? 'Industry-Aligned Curricula'); ?>" placeholder="Title">
+                    </div>
+                    <div class="col-12">
+                      <input type="text" name="pillar_1_desc" class="form-control form-control-sm"
+                        value="<?php echo htmlspecialchars($about_settings['pillar_1_desc'] ?? ''); ?>" placeholder="Short description">
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Pillar 2 -->
+                <div class="p-3 bg-light rounded-3 border mb-3">
+                  <span class="fw-bold fs-9 text-uppercase text-warning d-block mb-1.5">Pillar 2</span>
+                  <div class="row g-2">
+                    <div class="col-md-4">
+                      <input type="text" name="pillar_2_icon" class="form-control form-control-sm"
+                        value="<?php echo htmlspecialchars($about_settings['pillar_2_icon'] ?? 'bi-award-fill'); ?>" placeholder="Icon">
+                    </div>
+                    <div class="col-md-8">
+                      <input type="text" name="pillar_2_title" class="form-control form-control-sm"
+                        value="<?php echo htmlspecialchars($about_settings['pillar_2_title'] ?? 'Recognized Certificates'); ?>" placeholder="Title">
+                    </div>
+                    <div class="col-12">
+                      <input type="text" name="pillar_2_desc" class="form-control form-control-sm"
+                        value="<?php echo htmlspecialchars($about_settings['pillar_2_desc'] ?? ''); ?>" placeholder="Short description">
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Pillar 3 -->
+                <div class="p-3 bg-light rounded-3 border mb-3">
+                  <span class="fw-bold fs-9 text-uppercase text-danger d-block mb-1.5">Pillar 3</span>
+                  <div class="row g-2">
+                    <div class="col-md-4">
+                      <input type="text" name="pillar_3_icon" class="form-control form-control-sm"
+                        value="<?php echo htmlspecialchars($about_settings['pillar_3_icon'] ?? 'bi-camera-video-fill'); ?>" placeholder="Icon">
+                    </div>
+                    <div class="col-md-8">
+                      <input type="text" name="pillar_3_title" class="form-control form-control-sm"
+                        value="<?php echo htmlspecialchars($about_settings['pillar_3_title'] ?? 'Live & Interactive Classes'); ?>" placeholder="Title">
+                    </div>
+                    <div class="col-12">
+                      <input type="text" name="pillar_3_desc" class="form-control form-control-sm"
+                        value="<?php echo htmlspecialchars($about_settings['pillar_3_desc'] ?? ''); ?>" placeholder="Short description">
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Pillar 4 -->
+                <div class="p-3 bg-light rounded-3 border">
+                  <span class="fw-bold fs-9 text-uppercase text-success d-block mb-1.5">Pillar 4</span>
+                  <div class="row g-2">
+                    <div class="col-md-4">
+                      <input type="text" name="pillar_4_icon" class="form-control form-control-sm"
+                        value="<?php echo htmlspecialchars($about_settings['pillar_4_icon'] ?? 'bi-people-fill'); ?>" placeholder="Icon">
+                    </div>
+                    <div class="col-md-8">
+                      <input type="text" name="pillar_4_title" class="form-control form-control-sm"
+                        value="<?php echo htmlspecialchars($about_settings['pillar_4_title'] ?? 'Supportive Community'); ?>" placeholder="Title">
+                    </div>
+                    <div class="col-12">
+                      <input type="text" name="pillar_4_desc" class="form-control form-control-sm"
+                        value="<?php echo htmlspecialchars($about_settings['pillar_4_desc'] ?? ''); ?>" placeholder="Short description">
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Card 7: Campus Contact & Call to Action -->
+            <div class="col-lg-5">
+              <div class="glass-card p-4 h-100 d-flex flex-column justify-content-between">
+                <div>
+                  <div class="d-flex align-items-center justify-content-between border-bottom pb-2 mb-3">
+                    <h5 class="fw-bold text-dark mb-0 fs-6 d-flex align-items-center gap-2">
+                      <i class="bi bi-geo-alt-fill text-danger"></i>
+                      <span>Contact &amp; CTA Banner</span>
+                    </h5>
+                    <span class="badge bg-danger bg-opacity-10 text-danger rounded-pill px-2.5 py-1 fs-9 fw-semibold">
+                      Outreach
+                    </span>
+                  </div>
+
+                  <div class="mb-2">
+                    <label class="form-label fw-bold text-dark fs-9 mb-1">Contact Email</label>
+                    <input type="email" name="contact_email" class="form-control form-control-sm"
+                      value="<?php echo htmlspecialchars($about_settings['contact_email'] ?? 'info@computerscience.lk'); ?>">
+                  </div>
+
+                  <div class="mb-2">
+                    <label class="form-label fw-bold text-dark fs-9 mb-1">Contact Phone</label>
+                    <input type="text" name="contact_phone" class="form-control form-control-sm"
+                      value="<?php echo htmlspecialchars($about_settings['contact_phone'] ?? '011 234 5678'); ?>">
+                  </div>
+
+                  <div class="mb-2">
+                    <label class="form-label fw-bold text-dark fs-9 mb-1">Campus Headquarters Address</label>
+                    <input type="text" name="contact_address" class="form-control form-control-sm"
+                      value="<?php echo htmlspecialchars($about_settings['contact_address'] ?? 'Colombo, Western Province, Sri Lanka'); ?>">
+                  </div>
+
+                  <div class="mb-3">
+                    <label class="form-label fw-bold text-dark fs-9 mb-1">Operational Hours</label>
+                    <input type="text" name="contact_hours" class="form-control form-control-sm"
+                      value="<?php echo htmlspecialchars($about_settings['contact_hours'] ?? 'Mon - Sat: 8.30 AM - 6.00 PM'); ?>">
+                  </div>
+
+                  <div class="border-top pt-2 mt-2">
+                    <label class="form-label fw-bold text-dark fs-9 mb-1">CTA Card Headline</label>
+                    <input type="text" name="cta_title" class="form-control form-control-sm mb-2"
+                      value="<?php echo htmlspecialchars($about_settings['cta_title'] ?? 'Start Your Computing Journey Today'); ?>">
+
+                    <label class="form-label fw-bold text-dark fs-9 mb-1">CTA Card Subtitle</label>
+                    <textarea name="cta_desc" class="form-control form-control-sm mb-2" rows="2"><?php echo htmlspecialchars($about_settings['cta_desc'] ?? ''); ?></textarea>
+
+                    <div class="row g-2">
+                      <div class="col-6">
+                        <label class="form-label fw-bold text-dark fs-9 mb-1">Button Text</label>
+                        <input type="text" name="cta_btn_text" class="form-control form-control-sm"
+                          value="<?php echo htmlspecialchars($about_settings['cta_btn_text'] ?? 'Browse Courses'); ?>">
+                      </div>
+                      <div class="col-6">
+                        <label class="form-label fw-bold text-dark fs-9 mb-1">Button Link URL</label>
+                        <input type="text" name="cta_btn_url" class="form-control form-control-sm"
+                          value="<?php echo htmlspecialchars($about_settings['cta_btn_url'] ?? 'index.php#courses-section'); ?>">
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="pt-3 border-top mt-3">
+                  <button type="submit" class="btn btn-primary text-white w-100 py-2.5 rounded-pill fw-bold shadow-sm d-flex align-items-center justify-content-center gap-2"
+                    style="background-color:<?php echo $is_super_admin ? '#0b4528' : '#0f4c81'; ?>; border: none;">
+                    <i class="bi bi-check-circle-fill"></i>
+                    <span>Save All About Us Details</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </form>
+
+      </div><!-- /#about-section -->
 
       <!-- Course Dropdown Options Customization Section -->
       <div id="options-section" class="d-none">
@@ -4639,6 +5329,53 @@ try {
         }
       }
 
+      // About Us live background image preview
+      function previewAboutBgFile(input) {
+        if (input.files && input.files[0]) {
+          const reader = new FileReader();
+          reader.onload = function(e) {
+            const sim = document.getElementById('about-bg-live-simulator');
+            if (sim) {
+              sim.style.backgroundImage = 'url(' + e.target.result + ')';
+            }
+          };
+          reader.readAsDataURL(input.files[0]);
+        }
+      }
+
+      // About Us live fade overlay simulator
+      function updateAboutSimulator() {
+        const styleSelect = document.getElementById('about_fade_style_select');
+        const opacitySlider = document.getElementById('about_opacity_slider');
+        const opacityValTag = document.getElementById('about_opacity_val');
+        const overlay = document.getElementById('about-simulator-overlay');
+
+        if (!styleSelect || !opacitySlider || !overlay) return;
+
+        const op = parseFloat(opacitySlider.value) || 0.65;
+        const style = styleSelect.value || 'dark_vignette';
+
+        if (opacityValTag) {
+          opacityValTag.textContent = Math.round(op * 100) + '%';
+        }
+
+        let bgGrad = '';
+        overlay.style.backdropFilter = 'none';
+
+        if (style === 'navy_gradient') {
+          bgGrad = `linear-gradient(135deg, rgba(11, 25, 44, ${op}) 0%, rgba(15, 76, 129, ${op * 0.9}) 55%, rgba(6, 40, 75, ${op}) 100%)`;
+        } else if (style === 'soft_black') {
+          bgGrad = `linear-gradient(180deg, rgba(15, 23, 42, ${op}) 0%, rgba(15, 23, 42, ${op * 0.85}) 50%, rgba(15, 23, 42, ${op}) 100%)`;
+        } else if (style === 'glass_blur') {
+          bgGrad = `linear-gradient(180deg, rgba(15, 76, 129, ${op * 0.75}) 0%, rgba(11, 25, 44, ${op}) 100%)`;
+          overlay.style.backdropFilter = 'blur(4px)';
+        } else {
+          // dark_vignette
+          bgGrad = `linear-gradient(180deg, rgba(11, 25, 44, ${op}) 0%, rgba(15, 76, 129, ${op * 0.85}) 50%, rgba(11, 25, 44, ${op * 0.98}) 100%), radial-gradient(circle at center, transparent 35%, rgba(5, 15, 30, ${op * 0.9}) 100%)`;
+        }
+
+        overlay.style.background = bgGrad;
+      }
 
       function previewAuthFile(input, targetId) {
         if (input.files && input.files[0]) {
@@ -4712,6 +5449,7 @@ try {
         const btnOptions = document.getElementById('btn-options-tab');
         const btnAnnouncements = document.getElementById('btn-announcements-tab');
         const btnHero = document.getElementById('btn-hero-tab');
+        const btnAbout = document.getElementById('btn-about-tab');
         const btnDeliveryNote = document.getElementById('btn-delivery-note-tab');
         const btnGoogleAuth = document.getElementById('btn-google-auth-tab');
         const btnLogo = document.getElementById('btn-logo-tab');
@@ -4727,6 +5465,7 @@ try {
         const secOptions = document.getElementById('options-section');
         const secAnnouncements = document.getElementById('announcements-section');
         const secHero = document.getElementById('hero-section');
+        const secAbout = document.getElementById('about-section');
         const secDeliveryNote = document.getElementById('delivery-note-section');
         const secGoogleAuth = document.getElementById('google-auth-section');
         const secLogo = document.getElementById('logo-section');
@@ -4783,6 +5522,11 @@ try {
           });
         }
 
+        // Initialize About Us live simulator
+        if (typeof updateAboutSimulator === 'function') {
+          updateAboutSimulator();
+        }
+
         // Check URL parameter first (e.g. index.php?tab=courses), then persistent active tab from localStorage
         const urlParams = new URLSearchParams(window.location.search);
         const tabParam = urlParams.get('tab');
@@ -4796,6 +5540,7 @@ try {
           case 'options': switchToOptions(); break;
           case 'announcements': switchToAnnouncements(); break;
           case 'hero': switchToHero(); break;
+          case 'about': switchToAbout(); break;
           case 'delivery_note': switchToDeliveryNote(); break;
           case 'google_auth': switchToGoogleAuth(); break;
           case 'logo': switchToLogo(); break;
@@ -4812,14 +5557,15 @@ try {
         if (btnOptions) btnOptions.addEventListener('click', switchToOptions);
         if (btnAnnouncements) btnAnnouncements.addEventListener('click', switchToAnnouncements);
         if (btnHero) btnHero.addEventListener('click', switchToHero);
+        if (btnAbout) btnAbout.addEventListener('click', switchToAbout);
         if (btnDeliveryNote) btnDeliveryNote.addEventListener('click', switchToDeliveryNote);
         if (btnGoogleAuth) btnGoogleAuth.addEventListener('click', switchToGoogleAuth);
         if (btnLogo) btnLogo.addEventListener('click', switchToLogo);
         if (btnPassword) btnPassword.addEventListener('click', switchToPassword);
 
         function resetTabStyles() {
-          const allBtns = [btnTeachers, btnStudents, btnCourses, btnBank, btnManageBank, btnOptions, btnAnnouncements, btnHero, btnDeliveryNote, btnGoogleAuth, btnLogo, btnPassword];
-          const allSecs = [secTeachers, secStudents, secCourses, secBank, secManageBank, secOptions, secAnnouncements, secHero, secDeliveryNote, secGoogleAuth, secLogo, secPassword];
+          const allBtns = [btnTeachers, btnStudents, btnCourses, btnBank, btnManageBank, btnOptions, btnAnnouncements, btnHero, btnAbout, btnDeliveryNote, btnGoogleAuth, btnLogo, btnPassword];
+          const allSecs = [secTeachers, secStudents, secCourses, secBank, secManageBank, secOptions, secAnnouncements, secHero, secAbout, secDeliveryNote, secGoogleAuth, secLogo, secPassword];
 
           allBtns.forEach(btn => {
             if (btn) btn.classList.remove('active');
@@ -4849,6 +5595,7 @@ try {
         function switchToOptions() { setActiveTab(btnOptions, secOptions, 'options', 'Category & Batch Options'); }
         function switchToAnnouncements() { setActiveTab(btnAnnouncements, secAnnouncements, 'announcements', 'Site Announcements & Promotional Banners'); }
         function switchToHero() { setActiveTab(btnHero, secHero, 'hero', 'Hero Banner Settings'); }
+        function switchToAbout() { setActiveTab(btnAbout, secAbout, 'about', 'About Us Page Customization'); }
         function switchToDeliveryNote() { setActiveTab(btnDeliveryNote, secDeliveryNote, 'delivery_note', 'Certificate Delivery Note & COD Settings'); }
         function switchToGoogleAuth() { setActiveTab(btnGoogleAuth, secGoogleAuth, 'google_auth', 'Google Sign-In & OAuth Settings'); }
         function switchToLogo() { setActiveTab(btnLogo, secLogo, 'logo', 'Site Logo & Favicon Customization'); }
